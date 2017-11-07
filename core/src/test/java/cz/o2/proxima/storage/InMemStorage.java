@@ -39,13 +39,11 @@ import cz.o2.proxima.storage.commitlog.BulkLogObserver;
 import cz.o2.proxima.storage.commitlog.Cancellable;
 import cz.o2.proxima.view.PartitionedLogObserver;
 import cz.o2.proxima.view.PartitionedView;
+import cz.o2.proxima.view.input.DataSourceUtils;
 import cz.seznam.euphoria.core.client.dataset.Dataset;
 import cz.seznam.euphoria.core.client.flow.Flow;
-import cz.seznam.euphoria.core.client.io.DataSource;
-import java.io.IOException;
 import java.io.Serializable;
 import java.util.Collection;
-import java.util.Set;
 import java.util.concurrent.SynchronousQueue;
 
 /**
@@ -205,52 +203,7 @@ public class InMemStorage extends StorageDescriptor<InMemStorage.Writer> {
 
       });
 
-      return flow.createInput(new DataSource<T>() {
-
-        @Override
-        public List<cz.seznam.euphoria.core.client.io.Partition<T>> getPartitions() {
-          return Arrays.asList(new cz.seznam.euphoria.core.client.io.Partition<T>() {
-            @Override
-            public Set<String> getLocations() {
-              return Collections.singleton("local");
-            }
-
-            @Override
-            public cz.seznam.euphoria.core.client.io.Reader<T> openReader() throws IOException {
-
-              return new cz.seznam.euphoria.core.client.io.Reader<T>() {
-                @Override
-                public void close() throws IOException {
-
-                }
-
-                @Override
-                public boolean hasNext() {
-                  return true;
-                }
-
-                @Override
-                @SuppressWarnings("unchecked")
-                public T next() {
-                  try {
-                    return queue.take();
-                  } catch (InterruptedException ex) {
-                    Thread.currentThread().interrupt();
-                    return null;
-                  }
-                }
-              };
-            }
-
-          });
-        }
-
-        @Override
-        public boolean isBounded() {
-          return false;
-        }
-
-      });
+      return flow.createInput(DataSourceUtils.fromBlockingQueue(queue));
 
     }
 
