@@ -1,0 +1,23 @@
+apply from: "${rootProject.projectDir}/gradle/protobuf.gradle"
+
+configurations {
+  testArtifact
+}
+
+dependencies {
+  compile "org.slf4j:slf4j-api:${slf4jVersion}"
+  compile "cz.seznam.euphoria:euphoria-core:${euphoriaVersion}"
+  compile "com.google.guava:guava:${guavaVersion}"
+  compile "com.typesafe:config:${configVersion}"
+  compile "org.reflections:reflections:${reflectionsVersion}"
+  testCompile "cz.seznam.euphoria:euphoria-inmem:${euphoriaVersion}"
+}
+
+task testJar(type: Jar) {
+  baseName = "${project.name}-test"
+  from sourceSets.test.output
+}
+
+artifacts {
+  testArtifact testJar
+}

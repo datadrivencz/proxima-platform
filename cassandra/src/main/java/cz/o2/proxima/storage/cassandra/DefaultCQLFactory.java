@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package cz.o2.proxima.storage.cassandra;
 
 import com.datastax.driver.core.BoundStatement;
@@ -36,7 +35,8 @@ import org.slf4j.LoggerFactory;
  * take name of the attribute and change it from camelCase to underscore_case.
  * The cassandra URI looks like this:
  * <pre>
- *  cassandra://<authority>/<table>/?primary=<primaryField>&secondary=<secondaryKeyField>&data=<dataField>&reversed=true*
+ *  cassandra://<authority>/<table>/?primary=<primaryField>
+ *    &secondary=<secondaryKeyField>&data=<dataField>&reversed=true*
  * </pre>
  * where:
  *  * primaryField is the column where primary key (or first part of composite key) is stored
@@ -222,7 +222,8 @@ public class DefaultCQLFactory extends CacheableCQLFactory {
       // use the first part of the attribute name
       String colName = toColName(element.getAttributeDescriptor());
       return String.format("DELETE %s FROM %s USING TIMESTAMP ? WHERE %s=? AND %s=?",
-          toPayloadCol(element.getAttributeDescriptor()), tableName, toUnderScore(colName), primaryField);
+          toPayloadCol(element.getAttributeDescriptor()), tableName,
+          toUnderScore(colName), primaryField);
     } else {
       return String.format("DELETE %s FROM %s USING TIMESTAMP ? WHERE %s=?",
           toUnderScore(element.getAttribute()), tableName, primaryField);

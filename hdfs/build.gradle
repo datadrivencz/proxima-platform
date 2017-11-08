@@ -1,0 +1,5 @@
+dependencies {
+  compile project(':core')
+  compile "org.apache.hadoop:hadoop-common:${hadoopVersion}"
+  compile "org.apache.hadoop:hadoop-hdfs:${hadoopVersion}"
+}

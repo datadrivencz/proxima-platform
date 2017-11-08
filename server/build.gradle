@@ -1,0 +1,8 @@
+apply from: "${rootProject.projectDir}/gradle/protobuf.gradle"
+
+dependencies {
+  compile project(':core')
+  compile project(':rpc')
+  compileOnly 'com.google.code.findbugs:annotations:3.0.1'
+  testCompile project(path: ':core', configuration: 'testArtifact')
+}

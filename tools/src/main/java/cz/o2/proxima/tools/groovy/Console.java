@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package cz.o2.proxima.tools.groovy;
 
 import com.google.protobuf.AbstractMessage;
@@ -234,7 +233,8 @@ public class Console {
 
     DatasetBuilder<TypedIngest<Object>> builder = () -> {
       final Dataset<TypedIngest<Object>> input;
-      AttributeFamilyDescriptor<? extends AttributeWriterBase> family = repo.getFamiliesForAttribute(attrDesc)
+      AttributeFamilyDescriptor<? extends AttributeWriterBase> family = repo
+          .getFamiliesForAttribute(attrDesc)
           .stream()
           .filter(af -> af.getAccess().canReadBatchSnapshot())
           .filter(af -> af.getBatchObservable().isPresent())
@@ -249,7 +249,8 @@ public class Console {
             .map(af -> af.getCommitLogReader().get())
             .findAny()
             .orElseThrow(() -> new IllegalStateException(
-                "Cannot create batch snapshot, missing random access family and state commit log for " + attrDesc));
+                "Cannot create batch snapshot, missing random access family and" +
+                    " state commit log for " + attrDesc));
         Dataset<TypedIngest<Object>> stream = flow.get().createInput(
             StreamSource.of(reader, Position.OLDEST, true, TypedIngest::of));
 
@@ -272,7 +273,8 @@ public class Console {
             .output();
 
         input = FlatMap.of(reduced)
-            .using((Pair<Pair<String, String>, TypedIngest<Object>> e, Collector<TypedIngest<Object>> ctx) -> {
+            .using((Pair<Pair<String, String>, TypedIngest<Object>> e,
+                    Collector<TypedIngest<Object>> ctx) -> {
               if (e.getSecond().getValue() != null) {
                 ctx.collect(e.getSecond());
               }
@@ -315,7 +317,8 @@ public class Console {
       long startStamp,
       long endStamp) {
 
-    AttributeFamilyDescriptor<? extends AttributeWriterBase> family = repo.getFamiliesForAttribute(attrDesc)
+    AttributeFamilyDescriptor<? extends AttributeWriterBase> family = repo
+        .getFamiliesForAttribute(attrDesc)
         .stream()
         .filter(af -> af.getAccess().canReadBatchUpdates())
         .filter(af -> af.getBatchObservable().isPresent())

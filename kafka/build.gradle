@@ -1,0 +1,4 @@
+dependencies {
+  compile project(':core')
+  compile "org.apache.kafka:kafka-clients:${kafkaVersion}"
+}

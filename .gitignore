@@ -26,3 +26,5 @@ pom.xml.versionsBackup
 *.iml
 .idea
 server/log
+build
+.gradle

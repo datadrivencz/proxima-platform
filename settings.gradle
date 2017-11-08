@@ -1,0 +1,18 @@
+rootProject.name = 'proxima'
+
+// ~ core
+include(':core')
+
+// ~ rpc
+include(':rpc')
+include(':server')
+include(':client')
+
+// ~ storages
+include(':cassandra')
+include(':hdfs')
+include(':http')
+include(':kafka')
+
+// ~ command line tools
+include(':tools')

@@ -1,0 +1,55 @@
+plugins {
+  id "com.github.hierynomus.license" version "0.14.0" apply false
+  id 'com.github.johnrengelman.shadow' version '2.0.1' apply false
+  id "com.google.protobuf" version "0.8.3" apply false
+}
+
+allprojects {
+  apply plugin: 'idea'
+}
+
+subprojects {
+
+  group = 'cz.o2.proxima'
+
+  apply plugin: 'java'
+  apply plugin: 'checkstyle'
+  apply plugin: 'com.github.hierynomus.license'
+  apply from: "${rootProject.projectDir}/gradle/versions.gradle"
+
+  license {
+    include '**/*.java'
+    header = rootProject.file('HEADER')
+    strictCheck = true
+    ext.year = Calendar.getInstance().get(Calendar.YEAR)
+    ext.name = 'O2 Czech Republic, a.s.'
+  }
+
+  checkstyle {
+    configFile = rootProject.file('config/checkstyle/checkstyle.xml')
+  }
+
+  repositories {
+    mavenCentral()
+  }
+
+  dependencies {
+    compileOnly "org.projectlombok:lombok:${lombokVersion}"
+    testCompile "org.projectlombok:lombok:${lombokVersion}"
+    testCompile "junit:junit:${junitVersion}"
+    testCompile "org.mockito:mockito-core:${mockitoVersion}"
+    testCompile "org.slf4j:slf4j-simple:${slf4jVersion}"
+  }
+
+  test {
+    testLogging {
+      events 'skipped', 'failed'
+    }
+  }
+
+  gradle.projectsEvaluated {
+    tasks.withType(JavaCompile) {
+      options.compilerArgs << "-Xlint:unchecked" << "-Xlint:deprecation"
+    }
+  }
+}
