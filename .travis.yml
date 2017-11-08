@@ -1,19 +1,13 @@
 sudo: false
-
 language: java
 
 jdk:
   - oraclejdk8
 
-addons:
-  apt:
-    packages:
-      - oracle-java8-installer
-
-install: mvn install -DskipTests=true -Dmaven.javadoc.skip=true -B -V
-script: mvn test -B
+script:
+  - ./gradlew clean build
 
 cache:
   directories:
-    - ~/.m2/repository
-
+    - $HOME/.m2/repository
+    - $HOME/.gradle
