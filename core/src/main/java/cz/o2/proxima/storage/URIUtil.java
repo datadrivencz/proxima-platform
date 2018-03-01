@@ -1,5 +1,5 @@
 /**
- * Copyright 2017 O2 Czech Republic, a.s.
+ * Copyright 2017-2018 O2 Czech Republic, a.s.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,6 +40,24 @@ public class URIUtil {
     } catch(final UnsupportedEncodingException e) {
       throw new IllegalStateException("UTF-8 is a required encoding", e);
     }
+  }
+
+  /**
+   * Get normalized path from URI, which:
+   *  * is not null
+   *  * doesn't start or end with slash
+   * @param uri the URI to extract path from
+   * @return normalized path
+   */
+  public static String getPathNormalized(URI uri) {
+    String p = uri.getPath();
+    while (p.startsWith("/")) {
+      p = p.substring(1);
+    }
+    while (p.endsWith("/")) {
+      p = p.substring(0, p.length() - 1);
+    }
+    return p;
   }
 
 }
