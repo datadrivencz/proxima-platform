@@ -43,8 +43,17 @@ public class KafkaAccessor extends AbstractStorage implements DataAccessor {
 
   /** A poll interval in milliseconds. */
   public static final String POLL_INTERVAL_CFG = "poll.interval";
+
   /** Partitioner class for entity key-attribute pair. */
   public static final String PARTITIONER_CLASS = "partitioner";
+
+  /**
+   * Maximal number of uncommitted records in offset commit map.
+   * When the number is higher, the oldest offsets are committed anyway
+   * so that this restriction is fulfilled. This means that some records
+   * might not be processed, however.
+   **/
+  public static final String MAX_UNCOMMITTED_CFG = "uncommitted-records.max";
 
   public static final String WRITER_CONFIG_PREFIX = "kafka.";
   private static final int PRODUCE_CONFIG_PREFIX_LENGTH = WRITER_CONFIG_PREFIX.length();
@@ -59,6 +68,9 @@ public class KafkaAccessor extends AbstractStorage implements DataAccessor {
 
   @Getter(AccessLevel.PACKAGE)
   private long consumerPollInterval = 100;
+
+  @Getter(AccessLevel.PACKAGE)
+  private int maxNonCommittedRecords;
 
   public KafkaAccessor(
       EntityDescriptor entity,
@@ -95,6 +107,10 @@ public class KafkaAccessor extends AbstractStorage implements DataAccessor {
           }
         })
         .orElse(this.partitioner);
+
+    this.maxNonCommittedRecords = Optional.ofNullable(cfg.get(MAX_UNCOMMITTED_CFG))
+        .map(v -> Integer.valueOf(v.toString()))
+        .orElse(-1);
 
     log.info(
         "Using consumerPollInterval {} and partitionerClass {} for URI {}",

@@ -121,5 +121,24 @@ public class OffsetCommitterTest {
     assertEquals(offset + 1, committed.get());
   }
 
+  @Test
+  public void testMaxUncommittedRecords() {
+    committer = new OffsetCommitter<>(10);
+    String id = "dummy-0";
+    AtomicLong committed = new AtomicLong();
+    long offset = 1;
+    for (int i = 0; i < 20; i++) {
+      final long c = offset + i;
+      committer.register(id, c, 1, () -> committed.set(c));
+    }
+    assertEquals(10, committed.get());
+    committer.confirm(id, 11);
+    assertEquals(11, committed.get());
+    committer.register(id, 22, 1, () -> committed.set(22));
+    assertEquals(11, committed.get());
+    committer.register(id, 23, 1, () -> committed.set(23));
+    assertEquals(12, committed.get());
+  }
+
 
 }

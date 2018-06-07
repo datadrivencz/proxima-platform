@@ -77,6 +77,7 @@ public class KafkaLogReader extends AbstractStorage
   private final AtomicBoolean shutdown = new AtomicBoolean();
   private final long consumerPollInterval;
   private final String topic;
+  private final int maxNonCommittedRecords;
 
   KafkaLogReader(KafkaAccessor accessor, Context context) {
     super(accessor.getEntityDescriptor(), accessor.getURI());
@@ -84,6 +85,7 @@ public class KafkaLogReader extends AbstractStorage
     this.context = context;
     this.consumerPollInterval = accessor.getConsumerPollInterval();
     this.topic = accessor.getTopic();
+    this.maxNonCommittedRecords = accessor.getMaxNonCommittedRecords();
   }
 
   /**
@@ -291,7 +293,7 @@ public class KafkaLogReader extends AbstractStorage
     Map<TopicPartition, OffsetAndMetadata> kafkaCommitMap;
     kafkaCommitMap = Collections.synchronizedMap(new HashMap<>());
 
-    OffsetCommitter<TopicPartition> offsetCommitter = new OffsetCommitter<>();
+    OffsetCommitter<TopicPartition> offsetCommitter = newCommitter();
 
     BiConsumer<TopicPartition, ConsumerRecord<String, byte[]>> preWrite = (tp, r) ->
       offsetCommitter.register(tp, r.offset(), 1,
@@ -317,6 +319,9 @@ public class KafkaLogReader extends AbstractStorage
     return dynamicHandle(handle);
   }
 
+  private OffsetCommitter<TopicPartition> newCommitter() {
+    return new OffsetCommitter<>(maxNonCommittedRecords);
+  }
 
   /**
    * Process given consumer in bulk fashion.

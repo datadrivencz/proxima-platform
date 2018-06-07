@@ -21,6 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
@@ -77,9 +78,15 @@ public class OffsetCommitter<ID> {
   }
 
   final Map<ID, NavigableMap<Long, OffsetMeta>> waitingOffsets;
+  final int maxUncommittedRecords;
 
   public OffsetCommitter() {
+    this(-1);
+  }
+
+  public OffsetCommitter(int maxUncommittedRecords) {
     waitingOffsets = Collections.synchronizedMap(new HashMap<>());
+    this.maxUncommittedRecords = maxUncommittedRecords;
   }
 
   /**
@@ -99,7 +106,7 @@ public class OffsetCommitter<ID> {
       waitingOffsets.put(id, current);
     }
     current.put(offset, new OffsetMeta(numActions, commit));
-    if (numActions == 0) {
+    if (numActions == 0 || maxUncommittedRecords > 0) {
       checkCommitable(id, current);
     }
   }
@@ -124,7 +131,24 @@ public class OffsetCommitter<ID> {
   private void checkCommitable(ID id, Map<Long, OffsetMeta> current) {
     synchronized (current) {
       List<Map.Entry<Long, OffsetMeta>> commitable = new ArrayList<>();
-      for (Map.Entry<Long, OffsetMeta> e : current.entrySet()) {
+      // first make sure we hold the maxUncommittedRecords
+      Iterator<Map.Entry<Long, OffsetMeta>> currentIterator = current.entrySet().iterator();
+      if (maxUncommittedRecords > 0) {
+
+        while (current.size() - commitable.size() > maxUncommittedRecords
+            && currentIterator.hasNext()) {
+
+          Map.Entry<Long, OffsetMeta> e = currentIterator.next();
+          log.warn(
+              "Auto-committing offset {} with {} actions missing due to {} "
+                  + "maxUncommittedRecords. This might make your processing "
+                  + "unreliable and you should definitely seek cause of this.",
+              e.getKey(), e.getValue().getActions(), maxUncommittedRecords);
+          commitable.add(e);
+        }
+      }
+      while (currentIterator.hasNext()) {
+        Map.Entry<Long, OffsetMeta> e = currentIterator.next();
         if (e.getValue().getActions() <= 0) {
           log.debug(
               "Adding offset {} of ID {} to committable map.",
