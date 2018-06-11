@@ -15,6 +15,7 @@
  */
 package cz.o2.proxima.repository;
 
+import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigObject;
@@ -977,7 +978,7 @@ public class ConfigRepository implements Repository, Serializable {
       put("type", "primary");
     }};
 
-    {
+    if (!source.isEmpty()) {
       // create source
       Map<String, Object> cfg = new HashMap<>(cfgMapTemplate);
       cfg.putAll(source);
@@ -989,6 +990,9 @@ public class ConfigRepository implements Repository, Serializable {
       loadSingleFamily(String.format("replication_%s_source", name), cfg);
     }
     {
+      Preconditions.checkArgument(
+          !via.isEmpty(),
+          "Missing required settings for replication `via` settings");
       // create family for writes and replication
       Map<String, Object> cfg = new HashMap<>(cfgMapTemplate);
       // this can be overridden
@@ -1028,29 +1032,29 @@ public class ConfigRepository implements Repository, Serializable {
       EntityDescriptor entity,
       Set<String> targets) {
 
-    AttributeFamilyDescriptor source = findFamily(
+    Optional<AttributeFamilyDescriptor> source = findFamily(
         String.format("replication_%s_source", name));
-    AttributeFamilyDescriptor write = findFamily(
+    AttributeFamilyDescriptor write = findFamilyRequired(
         String.format("replication_%s_write", name));
 
-    {
+    source.ifPresent(s -> {
       // incoming data
       String transform = CamelCase.apply(String.format("_%s_replicated", name), false);
       String replPrefix = transform + "$";
       Map<AttributeDescriptor<?>, AttributeDescriptor<?>> sourceMapping;
-      sourceMapping = getReplMapping(entity, source, replPrefix);
+      sourceMapping = getReplMapping(entity, s, replPrefix);
 
       this.transformations.put(
           transform,
           TransformationDescriptor.newBuilder()
-              .addAttributes(source.getAttributes())
+              .addAttributes(s.getAttributes())
               .setEntity(entity)
               .setTransformation(
                   renameTransform(
                       sourceMapping::get,
                       a -> renameReplicated(replPrefix, a)))
               .build());
-    }
+    });
 
     {
       // local writes
@@ -1161,12 +1165,16 @@ public class ConfigRepository implements Repository, Serializable {
   }
 
 
-
-  private AttributeFamilyDescriptor findFamily(String name) {
+  private Optional<AttributeFamilyDescriptor> findFamily(String name) {
     return getAllFamilies()
         .filter(af -> af.getName().equals(name))
-        .findAny()
-        .get();
+        .findFirst();
+  }
+
+  private AttributeFamilyDescriptor findFamilyRequired(String name) {
+    return findFamily(name)
+        .orElseThrow(() -> new IllegalStateException(
+            "Missing required family '" + name + "'"));
   }
 
   @SuppressWarnings("unchecked")
