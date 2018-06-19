@@ -58,20 +58,22 @@ class AttributeFamilyProxyDescriptor extends AttributeFamilyDescriptor {
 
   AttributeFamilyProxyDescriptor(
       AttributeProxyDescriptorImpl<?> targetAttribute,
-      AttributeFamilyDescriptor targetFamily) {
+      AttributeFamilyDescriptor targetFamilyRead,
+      AttributeFamilyDescriptor targetFamilyWrite) {
+
     super(
-        "proxy::" + targetAttribute.getName() + "::" + targetFamily.getName(),
-        targetFamily.getType(),
-        Arrays.asList(targetAttribute), getWriter(targetAttribute, targetFamily),
-        getCommitLogReader(targetAttribute, targetFamily),
-        getBatchObservable(targetFamily),
-        getRandomAccess(targetAttribute, targetFamily),
-        getPartitionedView(targetAttribute, targetFamily),
-        getPartitionedCachedView(targetAttribute, targetFamily),
-        targetFamily.getType() == StorageType.PRIMARY
-            ? targetFamily.getAccess()
-            : AccessType.or(targetFamily.getAccess(), AccessType.from("read-only")),
-        targetFamily.getFilter(),
+        "proxy::" + targetAttribute.getName() + "::" + targetFamilyRead.getName(),
+        targetFamilyRead.getType(),
+        Arrays.asList(targetAttribute), getWriter(targetAttribute, targetFamilyWrite),
+        getCommitLogReader(targetAttribute, targetFamilyRead),
+        getBatchObservable(targetFamilyRead),
+        getRandomAccess(targetAttribute, targetFamilyRead),
+        getPartitionedView(targetAttribute, targetFamilyRead),
+        getPartitionedCachedView(targetAttribute, targetFamilyRead),
+        targetFamilyRead.getType() == StorageType.PRIMARY
+            ? targetFamilyRead.getAccess()
+            : AccessType.or(targetFamilyRead.getAccess(), AccessType.from("read-only")),
+        targetFamilyRead.getFilter(),
         null);
   }
 
@@ -248,7 +250,7 @@ class AttributeFamilyProxyDescriptor extends AttributeFamilyDescriptor {
 
         if (type == Listing.ATTRIBUTE) {
           return reader.fetchOffset(
-              type, targetAttribute.getTransform().fromProxy(key));
+              type, targetAttribute.getReadTransform().fromProxy(key));
         }
         return reader.fetchOffset(type, key);
       }
@@ -257,7 +259,7 @@ class AttributeFamilyProxyDescriptor extends AttributeFamilyDescriptor {
       public <T> Optional<KeyValue<T>> get(
           String key, String attribute, AttributeDescriptor<T> desc) {
 
-        ProxyTransform transform = targetAttribute.getTransform();
+        ProxyTransform transform = targetAttribute.getReadTransform();
         return reader.get(key, transform.fromProxy(attribute), desc)
             .map(kv -> transformToProxy(kv, targetAttribute));
       }
@@ -272,9 +274,8 @@ class AttributeFamilyProxyDescriptor extends AttributeFamilyDescriptor {
           throw new IllegalArgumentException(
               "Proxy target is not wildcard attribute!");
         }
-        reader.scanWildcard(key, targetAttribute.getTarget(), offset, limit, kv -> {
-          consumer.accept((KeyValue) transformToProxy(kv, targetAttribute));
-        });
+        reader.scanWildcard(key, targetAttribute.getReadTarget(), offset, limit,
+            kv -> consumer.accept((KeyValue) transformToProxy(kv, targetAttribute)));
       }
 
       @Override
@@ -383,7 +384,7 @@ class AttributeFamilyProxyDescriptor extends AttributeFamilyDescriptor {
 
         if (type == Listing.ATTRIBUTE) {
           return view.fetchOffset(
-              type, targetAttribute.getTransform().fromProxy(key));
+              type, targetAttribute.getReadTransform().fromProxy(key));
         }
         return view.fetchOffset(type, key);
       }
@@ -393,7 +394,7 @@ class AttributeFamilyProxyDescriptor extends AttributeFamilyDescriptor {
       public <T> Optional<KeyValue<T>> get(
           String key, String attribute, AttributeDescriptor<T> desc) {
 
-        ProxyTransform transform = targetAttribute.getTransform();
+        ProxyTransform transform = targetAttribute.getReadTransform();
         return view.get(key, transform.fromProxy(attribute), desc)
             .map(kv -> (KeyValue) transformToProxy(kv, targetAttribute));
       }
@@ -419,9 +420,8 @@ class AttributeFamilyProxyDescriptor extends AttributeFamilyDescriptor {
           throw new IllegalArgumentException(
               "Proxy target is not wildcard attribute!");
         }
-        view.scanWildcard(key, targetAttribute.getTarget(), offset, limit, kv -> {
-          consumer.accept((KeyValue) transformToProxy(kv, targetAttribute));
-        });
+        view.scanWildcard(key, targetAttribute.getReadTarget(), offset, limit,
+            kv -> consumer.accept((KeyValue) transformToProxy(kv, targetAttribute)));
       }
 
       @Override
@@ -585,8 +585,8 @@ class AttributeFamilyProxyDescriptor extends AttributeFamilyDescriptor {
       AttributeProxyDescriptorImpl targetDesc) {
 
     return transform(data,
-        targetDesc.getTarget(),
-        targetDesc.getTransform()::fromProxy);
+        targetDesc.getWriteTarget(),
+        targetDesc.getWriteTransform()::fromProxy);
   }
 
   @SuppressWarnings("unchecked")
@@ -594,7 +594,7 @@ class AttributeFamilyProxyDescriptor extends AttributeFamilyDescriptor {
       StreamElement data,
       AttributeProxyDescriptorImpl targetDesc) {
 
-    return transform(data, targetDesc, targetDesc.getTransform()::toProxy);
+    return transform(data, targetDesc, targetDesc.getReadTransform()::toProxy);
   }
 
   @SuppressWarnings("unchecked")
@@ -605,7 +605,7 @@ class AttributeFamilyProxyDescriptor extends AttributeFamilyDescriptor {
     return KeyValue.of(
         kv.getEntityDescriptor(),
         targetDesc, kv.getKey(),
-        targetDesc.getTransform().toProxy(kv.getAttribute()),
+        targetDesc.getReadTransform().toProxy(kv.getAttribute()),
         kv.getOffset(), kv.getValueBytes());
   }
 
