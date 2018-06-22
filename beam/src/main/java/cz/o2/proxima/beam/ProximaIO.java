@@ -104,7 +104,7 @@ public class ProximaIO implements Serializable {
    * to given {@link Repository}.
    * @param collection the {@link PCollection} to persist
    */
-  void write(PCollection<StreamElement> collection) {
+  public void write(PCollection<StreamElement> collection) {
     collection.apply(ParDo.of(new DoFn<StreamElement, Void>() {
 
       @SuppressFBWarnings("UMAC_UNCALLABLE_METHOD_OF_ANONYMOUS_CLASS")
