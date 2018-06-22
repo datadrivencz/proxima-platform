@@ -53,6 +53,7 @@ import lombok.Getter;
 import cz.o2.proxima.storage.commitlog.ObserveHandle;
 import cz.o2.proxima.storage.randomaccess.RawOffset;
 import cz.o2.proxima.view.PartitionedCachedView;
+import java.io.ObjectStreamException;
 import java.util.ArrayList;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
@@ -63,59 +64,58 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class InMemStorage extends StorageDescriptor {
 
+  private static InMemStorage THIS;
+
   @FunctionalInterface
   private interface InMemIngestWriter extends Serializable {
     void write(StreamElement data);
   }
 
-  public static final class Writer
+  public final class Writer
       extends AbstractOnlineAttributeWriter {
 
-    private final NavigableMap<String, Pair<Long, byte[]>> data;
     private final Map<Integer, InMemIngestWriter> observers;
 
     private Writer(
         EntityDescriptor entityDesc, URI uri,
-        NavigableMap<String, Pair<Long, byte[]>> data,
         Map<Integer, InMemIngestWriter> observers) {
 
       super(entityDesc, uri);
-      this.data = data;
       this.observers = observers;
     }
 
 
     @Override
-    public void write(StreamElement data, CommitCallback statusCallback) {
+    public void write(StreamElement ingest, CommitCallback statusCallback) {
       log.debug("Writing element {} to {}", data, getURI());
-      if (data.isDeleteWildcard()) {
-        String prefix = getURI().getPath() + "/" + data.getKey()
-            + "#" + data.getAttributeDescriptor().toAttributePrefix();
+      if (ingest.isDeleteWildcard()) {
+        String prefix = getURI().getPath() + "/" + ingest.getKey()
+            + "#" + ingest.getAttributeDescriptor().toAttributePrefix();
         for (Map.Entry<String, Pair<Long, byte[]>> e
-            : this.data.tailMap(prefix).entrySet()) {
+            : data.tailMap(prefix).entrySet()) {
           if (!e.getKey().startsWith(prefix)) {
             break;
           }
-          if (e.getValue().getFirst() < data.getStamp()) {
+          if (e.getValue().getFirst() < ingest.getStamp()) {
             String attr = e.getKey().substring(prefix.lastIndexOf('#') + 1);
             write(StreamElement.delete(
-                data.getEntityDescriptor(), data.getAttributeDescriptor(),
-                data.getUuid(), data.getKey(), attr, data.getStamp()),
+                ingest.getEntityDescriptor(), ingest.getAttributeDescriptor(),
+                ingest.getUuid(), ingest.getKey(), attr, ingest.getStamp()),
                 (succ, exc) -> { });
           }
         }
       } else {
-        this.data.compute(
-            getURI().getPath() + "/" + data.getKey() + "#" + data.getAttribute(),
+        data.compute(
+            getURI().getPath() + "/" + ingest.getKey() + "#" + ingest.getAttribute(),
             (key, old) -> {
-              if (old != null && old.getFirst() > data.getStamp()) {
+              if (old != null && old.getFirst() > ingest.getStamp()) {
                 return old;
               }
-              return Pair.of(data.getStamp(), data.getValue());
+              return Pair.of(ingest.getStamp(), ingest.getValue());
             });
       }
       synchronized (observers) {
-        observers.values().forEach(o -> o.write(data));
+        observers.values().forEach(o -> o.write(ingest));
       }
       statusCallback.commit(true, null);
     }
@@ -358,18 +358,14 @@ public class InMemStorage extends StorageDescriptor {
 
   }
 
-  private static final class Reader
+  private final class Reader
       extends AbstractStorage
       implements RandomAccessReader {
 
-    private final NavigableMap<String, Pair<Long, byte[]>> data;
-
     private Reader(
-        EntityDescriptor entityDesc, URI uri,
-        NavigableMap<String, Pair<Long, byte[]>> data) {
+        EntityDescriptor entityDesc, URI uri) {
 
       super(entityDesc, uri);
-      this.data = data;
     }
 
     @Override
@@ -625,6 +621,7 @@ public class InMemStorage extends StorageDescriptor {
     super(Arrays.asList("inmem"));
     this.data = Collections.synchronizedNavigableMap(new TreeMap<>());
     this.observers = new ConcurrentHashMap<>();
+    InMemStorage.THIS = this;
   }
 
   @Override
@@ -634,10 +631,10 @@ public class InMemStorage extends StorageDescriptor {
     observers.computeIfAbsent(uri, k -> Collections.synchronizedNavigableMap(
         new TreeMap<>()));
     NavigableMap<Integer, InMemIngestWriter> uriObservers = observers.get(uri);
-    Writer writer = new Writer(entityDesc, uri, data, uriObservers);
+    Writer writer = new Writer(entityDesc, uri, uriObservers);
     InMemCommitLogReader commitLogReader = new InMemCommitLogReader(
         entityDesc, uri, uriObservers);
-    Reader reader = new Reader(entityDesc, uri, data);
+    Reader reader = new Reader(entityDesc, uri);
     CachedView cachedView = new CachedView(reader, commitLogReader, writer);
 
     return new DataAccessor() {
@@ -672,6 +669,11 @@ public class InMemStorage extends StorageDescriptor {
       }
 
     };
+  }
+
+  // disable clone of the storage by serialization
+  private Object readResolve() throws ObjectStreamException {
+    return THIS;
   }
 
 }

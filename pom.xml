@@ -343,6 +343,7 @@
   </dependencyManagement>
 
   <modules>
+    <module>beam</module>
     <module>core</module>
     <module>example</module>
     <module>ingest-client</module>

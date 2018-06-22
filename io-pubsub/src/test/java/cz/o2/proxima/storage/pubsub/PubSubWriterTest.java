@@ -102,11 +102,7 @@ public class PubSubWriterTest {
   @Before
   public void setUp() {
     Context context = new Context(() -> Executors.newCachedThreadPool()) { };
-    try {
-      writer = new TestPubSubWriter(context);
-    } catch (Exception ex) {
-      ex.printStackTrace();
-    }
+    writer = new TestPubSubWriter(context);
   }
 
   @Test(timeout = 2000)
