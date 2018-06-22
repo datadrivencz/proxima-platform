@@ -48,7 +48,7 @@
             <excludes>
               <exclude>org.slf4j:slf4j-api:jar:</exclude>
               <exclude>cz.seznam.euphoria:*</exclude>
-              <exclude>cz.o2.proxima:*</exclude>
+              <exclude>cz.o2.proxima:core</exclude>
             </excludes>
           </artifactSet>
           <relocations>
