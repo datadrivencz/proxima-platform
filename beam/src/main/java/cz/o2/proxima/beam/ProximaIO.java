@@ -26,6 +26,7 @@ import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.storage.commitlog.Position;
 import cz.seznam.euphoria.beam.io.BeamUnboundedSource;
 import cz.seznam.euphoria.beam.io.KryoCoder;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.io.Serializable;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -60,12 +61,12 @@ public class ProximaIO implements Serializable {
 
   /**
    * Create {@link PCollection} for given attributes.
-   * The created {@PCollection} will represent streaming data
+   * The created {@link PCollection} will represent streaming data
    * read from configured (primary) attribute families.
    * @param pipeline the pipeline to add the {@link PCollection} to.
    * @param position position to read the associated commit-log from
    * @param attrs list of attributes to read
-   * @return
+   * @return {@link PCollection} representing the attributes
    */
   public PCollection<StreamElement> read(
       Pipeline pipeline,
@@ -106,6 +107,7 @@ public class ProximaIO implements Serializable {
   void write(PCollection<StreamElement> collection) {
     collection.apply(ParDo.of(new DoFn<StreamElement, Void>() {
 
+      @SuppressFBWarnings("UMAC_UNCALLABLE_METHOD_OF_ANONYMOUS_CLASS")
       @ProcessElement
       public void process(ProcessContext context) {
         StreamElement element = context.element();
@@ -113,9 +115,7 @@ public class ProximaIO implements Serializable {
             .getWriter(element.getAttributeDescriptor())
             .orElseThrow(() -> new IllegalArgumentException(
                 "Missing writer for " + element.getAttribute()));
-        System.err.println(" *** writing " + element + " into " + writer.getURI());
         writer.write(element, (succ, exc) -> {
-          System.err.println(" *** written");
           if (!succ) {
             throw new RuntimeException(exc);
           }

@@ -20,7 +20,6 @@ import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.ConfigRepository;
 import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.repository.Repository;
-import cz.o2.proxima.storage.AbstractStorage;
 import cz.o2.proxima.storage.StorageType;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.storage.commitlog.Position;
@@ -62,6 +61,7 @@ public class ProximaIOTest {
         .orElseThrow(() -> new IllegalStateException("Missing attribute status"));
   }
 
+  @SuppressWarnings("unchecked")
   @Test
   public void testUnboundedRead() {
     Pipeline pipeline = Pipeline.create();
@@ -98,7 +98,6 @@ public class ProximaIOTest {
         .findFirst()
         .orElseThrow(() -> new IllegalStateException(
             "Cannot get random access reader for status"));
-    System.err.println(" *** reading from " + ((AbstractStorage) reader).getURI());
     Optional<KeyValue<byte[]>> get = reader.get("key", status);
     assertTrue(get.isPresent());
     assertEquals("key", get.get().getKey());
