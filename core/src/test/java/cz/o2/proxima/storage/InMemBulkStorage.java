@@ -55,6 +55,11 @@ public class InMemBulkStorage extends StorageDescriptor {
       // nop
     }
 
+    @Override
+    public void flush() {
+      // nop
+    }
+
   }
 
   private class InMemBulkAccessor implements DataAccessor {

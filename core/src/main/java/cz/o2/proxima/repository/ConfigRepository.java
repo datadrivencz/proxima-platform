@@ -74,7 +74,7 @@ public class ConfigRepository implements Repository, Serializable {
    * @param config configuration to use
    * @return constructed repository
    */
-  public static Repository of(Config config) {
+  public static ConfigRepository of(Config config) {
     return Builder.of(config).build();
   }
 

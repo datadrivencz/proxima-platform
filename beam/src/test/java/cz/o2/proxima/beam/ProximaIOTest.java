@@ -15,11 +15,11 @@
  */
 package cz.o2.proxima.beam;
 
+import com.typesafe.config.Config;
 import com.typesafe.config.ConfigFactory;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.ConfigRepository;
 import cz.o2.proxima.repository.EntityDescriptor;
-import cz.o2.proxima.repository.Repository;
 import cz.o2.proxima.storage.StorageType;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.storage.commitlog.Position;
@@ -44,7 +44,7 @@ import static org.junit.Assert.*;
  */
 public class ProximaIOTest {
 
-  private final Repository repo;
+  private final ConfigRepository repo;
   private final EntityDescriptor gateway;
   private final AttributeDescriptor<byte[]> status;
 
@@ -65,8 +65,8 @@ public class ProximaIOTest {
   @Test
   public void testUnboundedRead() {
     Pipeline pipeline = Pipeline.create();
-    PCollection<StreamElement> input = ProximaIO.from(repo)
-        .read(pipeline, Position.NEWEST, status);
+    PCollection<StreamElement> input = pipeline.apply(
+        ProximaIO.from(repo).read(Position.NEWEST, status));
     BeamFlow bf = BeamFlow.create(pipeline);
     Dataset<Pair<Integer, Long>> output = CountByKey.of(bf.wrapped(input))
         .keyBy(e -> 0)
@@ -84,11 +84,11 @@ public class ProximaIOTest {
   }
 
   @Test
-  public void testPersist() {
+  public void testPersistOnline() {
     Pipeline pipeline = Pipeline.create();
     PCollection<StreamElement> input = pipeline.apply(
         Create.of(update(gateway, status)));
-    ProximaIO.from(repo).write(input);
+    input.apply(ProximaIO.from(repo).write());
     pipeline.run();
     RandomAccessReader reader = repo.getFamiliesForAttribute(status)
         .stream()
@@ -102,6 +102,33 @@ public class ProximaIOTest {
     assertTrue(get.isPresent());
     assertEquals("key", get.get().getKey());
   }
+
+  @Test
+  public void testPersistBulk() {
+    Config config = ConfigFactory.load()
+        .withFallback(ConfigFactory.parseString(
+            "attributeFamilies.gateway-storage-stream.storage = \"inmem-bulk:///proxima_gateway/bulk\""))
+        .withFallback(ConfigFactory.load("test-reference.conf"))
+        .resolve();
+    repo.reloadConfig(config);
+    Pipeline pipeline = Pipeline.create();
+    PCollection<StreamElement> input = pipeline.apply(
+        Create.of(update(gateway, status)));
+    input.apply(ProximaIO.from(repo).write());
+    pipeline.run();
+    RandomAccessReader reader = repo.getFamiliesForAttribute(status)
+        .stream()
+        .filter(af -> af.getType() == StorageType.PRIMARY)
+        .filter(af -> af.getAccess().canRandomRead())
+        .map(af -> af.getRandomAccessReader().get())
+        .findFirst()
+        .orElseThrow(() -> new IllegalStateException(
+            "Cannot get random access reader for status"));
+    Optional<KeyValue<byte[]>> get = reader.get("key", status);
+    assertTrue(get.isPresent());
+    assertEquals("key", get.get().getKey());
+  }
+
 
   private static StreamElement update(
       EntityDescriptor entity, AttributeDescriptor<?> attr) {
