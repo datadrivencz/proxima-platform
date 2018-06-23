@@ -157,10 +157,7 @@ public class HdfsDataAccessor
           new BytesWritable(toKey(data)),
           new TimestampedNullableBytesWritable(data.getStamp(), data.getValue()));
       if (++elementsSinceFlush > minElementsToFlush) {
-        writer.hflush();
-        writer.hsync();
-        log.debug("Hflushed chunk {}", writerTmpPath);
-        elementsSinceFlush = 0;
+        flush();
       }
       if (monothonicTime - lastRoll >= rollInterval) {
         // close the current writer
@@ -398,6 +395,18 @@ public class HdfsDataAccessor
   public Optional<BatchLogObservable> getBatchLogObservable(Context context) {
     executor = context.getExecutorService();
     return Optional.of(this);
+  }
+
+  @Override
+  public void flush() {
+    try {
+      writer.hflush();
+      writer.hsync();
+      log.debug("Hflushed chunk {}", writerTmpPath);
+      elementsSinceFlush = 0;
+    } catch (IOException ex) {
+      throw new RuntimeException(ex);
+    }
   }
 
 }

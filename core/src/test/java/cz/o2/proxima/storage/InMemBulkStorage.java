@@ -15,38 +15,54 @@
  */
 package cz.o2.proxima.storage;
 
+import cz.o2.proxima.functional.Consumer;
+import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.Context;
 import cz.o2.proxima.repository.EntityDescriptor;
+import cz.o2.proxima.storage.randomaccess.KeyValue;
+import cz.o2.proxima.storage.randomaccess.RandomAccessReader;
+import cz.o2.proxima.storage.randomaccess.RandomOffset;
+import cz.o2.proxima.storage.randomaccess.RawOffset;
+import cz.o2.proxima.util.Pair;
+import java.io.IOException;
 import java.net.URI;
 import java.util.Collections;
 import java.util.Map;
 import java.util.NavigableMap;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.TreeMap;
+import javax.annotation.Nullable;
 import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Storage acting as a bulk in memory storage.
  */
+@Slf4j
 public class InMemBulkStorage extends StorageDescriptor {
+
+  private static InMemBulkStorage THIS;
 
   private class Writer extends AbstractBulkAttributeWriter {
 
     int writtenSinceLastCommit = 0;
+    @Nullable CommitCallback lastCallback = null;
 
     public Writer(EntityDescriptor entityDesc, URI uri) {
       super(entityDesc, uri);
     }
 
     @Override
-    public void write(StreamElement data, CommitCallback statusCallback) {
+    public void write(StreamElement ingest, CommitCallback statusCallback) {
+      log.debug("Writing {} into {}", ingest, getURI());
       // store the data, commit after each 10 elements
-      InMemBulkStorage.this.data.put(
-          getURI().getPath() + "/" + data.getKey() + "#" + data.getAttribute(),
-          data.getValue());
+      data.put(
+          getURI().getPath() + "/" + ingest.getKey() + "#" + ingest.getAttribute(),
+          ingest.getValue());
+      lastCallback = statusCallback;
       if (++writtenSinceLastCommit >= 10) {
-        statusCallback.commit(true, null);
-        writtenSinceLastCommit = 0;
+        flush();
       }
     }
 
@@ -57,6 +73,67 @@ public class InMemBulkStorage extends StorageDescriptor {
 
     @Override
     public void flush() {
+      if (lastCallback != null) {
+        lastCallback.commit(true, null);
+        lastCallback = null;
+      }
+      writtenSinceLastCommit = 0;
+    }
+
+  }
+
+  private class Reader extends AbstractStorage implements RandomAccessReader {
+
+    public Reader(EntityDescriptor entityDesc, URI uri) {
+      super(entityDesc, uri);
+    }
+
+    @Override
+    public RandomOffset fetchOffset(Listing type, String key) {
+      return new RawOffset(key);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Override
+    public <T> Optional<KeyValue<T>> get(
+        String key, String attribute, AttributeDescriptor<T> desc) {
+
+      return Optional
+          .ofNullable(data.get(getURI().getPath() + "/" + key + "#" + attribute))
+          .map(b -> (KeyValue) KeyValue.of(
+              getEntityDescriptor(),
+              getEntityDescriptor().findAttribute(attribute).get(),
+              key,
+              attribute,
+              new RawOffset(attribute),
+              b));
+    }
+
+    @Override
+    public void scanWildcardAll(
+        String key, RandomOffset offset, int limit, Consumer<KeyValue<?>> consumer) {
+
+      throw new UnsupportedOperationException("Not supported yet.");
+    }
+
+    @Override
+    public <T> void scanWildcard(
+        String key, AttributeDescriptor<T> wildcard, RandomOffset offset,
+        int limit, Consumer<KeyValue<T>> consumer) {
+
+      throw new UnsupportedOperationException("Not supported yet.");
+    }
+
+    @Override
+    public void listEntities(
+        RandomOffset offset, int limit,
+        Consumer<Pair<RandomOffset, String>> consumer) {
+
+      throw new UnsupportedOperationException("Not supported yet.");
+    }
+
+    @Override
+    public void close() throws IOException {
       // nop
     }
 
@@ -77,6 +154,11 @@ public class InMemBulkStorage extends StorageDescriptor {
       return Optional.of(new Writer(entityDesc, uri));
     }
 
+    @Override
+    public Optional<RandomAccessReader> getRandomAccessReader(Context context) {
+      return Optional.of(new Reader(entityDesc, uri));
+    }
+
   }
 
   @Getter
@@ -84,6 +166,7 @@ public class InMemBulkStorage extends StorageDescriptor {
 
   public InMemBulkStorage() {
     super(Collections.singletonList("inmem-bulk"));
+    THIS = this;
   }
 
   @Override
@@ -92,6 +175,11 @@ public class InMemBulkStorage extends StorageDescriptor {
       Map<String, Object> cfg) {
 
     return new InMemBulkAccessor(entityDesc, uri);
+  }
+
+  // on deserialization use the singleton instance
+  private Object readResolve() {
+    return Objects.requireNonNull(THIS);
   }
 
 }

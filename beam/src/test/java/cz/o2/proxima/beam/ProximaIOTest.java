@@ -32,6 +32,7 @@ import cz.seznam.euphoria.core.client.operator.CountByKey;
 import cz.seznam.euphoria.core.client.util.Pair;
 import java.time.Duration;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.transforms.Create;
@@ -108,13 +109,15 @@ public class ProximaIOTest {
     Config config = ConfigFactory.load()
         .withFallback(ConfigFactory.parseString(
             "attributeFamilies.gateway-storage-stream.storage = \"inmem-bulk:///proxima_gateway/bulk\""))
+        .withFallback(ConfigFactory.parseString(
+            "attributeFamilies.gateway-storage-stream.access = \"random-access\""))
         .withFallback(ConfigFactory.load("test-reference.conf"))
         .resolve();
-    repo.reloadConfig(config);
+    repo.reloadConfig(true, config);
     Pipeline pipeline = Pipeline.create();
     PCollection<StreamElement> input = pipeline.apply(
         Create.of(update(gateway, status)));
-    input.apply(ProximaIO.from(repo).write());
+    input.apply(ProximaIO.from(repo).writeBulk(1, TimeUnit.SECONDS, 1));
     pipeline.run();
     RandomAccessReader reader = repo.getFamiliesForAttribute(status)
         .stream()

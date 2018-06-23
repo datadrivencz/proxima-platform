@@ -129,11 +129,8 @@ public class ProximaIO implements Serializable {
    * to given {@link Repository}.
    * This operation requires all attributes present in the {@link PCollection}
    * to have {@link OnlineAttributeWriter}, otherwise
-   * {@link IllegalArgumentException} will be thrown. In that case use
-   * {@link ProximaIO#writeBulk}.
+   * {@link ClassCastException} will be thrown. In that case use {@link ProximaIO#writeBulk}.
    * @return persisting {@link PTransform}
-   * @throws IllegalArgumentException when the {@link PCollection} encounters
-   * attribute with no {@link OnlineAttributeWriter}
    */
   public PTransform<PCollection<StreamElement>, PDone> write() {
 
@@ -201,6 +198,8 @@ public class ProximaIO implements Serializable {
   public PTransform<PCollection<StreamElement>, PDone> writeBulk(
       int windowLength, TimeUnit unit, int parallelism) {
 
+    Preconditions.checkArgument(windowLength > 0, "Window must be positive length");
+    Preconditions.checkArgument(parallelism > 0, "Parallelism must be positive");
     return new PTransform<PCollection<StreamElement>, PDone>() {
       @Override
       public PDone expand(PCollection<StreamElement> input) {
