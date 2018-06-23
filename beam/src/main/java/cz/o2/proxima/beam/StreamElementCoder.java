@@ -19,21 +19,37 @@ import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.repository.Repository;
 import cz.o2.proxima.storage.StreamElement;
+import java.io.DataInput;
 import java.io.DataInputStream;
 import java.io.DataOutput;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.Objects;
+import java.nio.charset.Charset;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.coders.CoderException;
 import org.apache.beam.sdk.coders.CustomCoder;
+import org.apache.commons.compress.utils.Charsets;
 
 /**
  * Naive implementation of {@link org.apache.beam.sdk.coders.Coder} for {@link StreamElement}s.
  */
 public class StreamElementCoder extends CustomCoder<StreamElement> {
 
+  private static final Charset UTF8 = Charsets.UTF_8;
+
+  private static enum Type {
+    UPDATE,
+    DELETE,
+    DELETE_WILDCARD
+  };
+
+  /**
+   * Create coder for StreamElements originating in given {@link Repository}.
+   * @param repository the repository to create coder for
+   * @return the coder
+   */
   public static StreamElementCoder of(Repository repository) {
     return new StreamElementCoder(repository);
   }
@@ -49,54 +65,80 @@ public class StreamElementCoder extends CustomCoder<StreamElement> {
       throws CoderException, IOException {
     final DataOutput output = new DataOutputStream(outStream);
     output.writeUTF(value.getEntityDescriptor().getName());
-    output.writeUTF(value.getAttributeDescriptor().getName());
     output.writeUTF(value.getUuid());
     output.writeUTF(value.getKey());
-    // FIXME (je-ik)
-    output.writeUTF(Objects.requireNonNull(value.getAttribute()));
+    Type type = value.isDelete()
+        ? value.isDeleteWildcard()
+            ? Type.DELETE_WILDCARD
+            : Type.DELETE
+        : Type.UPDATE;
+    output.writeInt(type.ordinal());
+    String attribute = value.getAttribute();
+    output.writeUTF(attribute == null
+        ? value.getAttributeDescriptor().getName()
+        : attribute);
     output.writeLong(value.getStamp());
-    if (value.isDelete()) {
-      output.writeInt(-1);
-    } else {
-      output.writeInt(Objects.requireNonNull(value.getValue()).length);
-      output.write(value.getValue());
-    }
+    writeBytes(value.getValue(), output);
   }
 
   @Override
   public StreamElement decode(InputStream inStream) throws CoderException, IOException {
-    final DataInputStream input = new DataInputStream(inStream);
+    final DataInput input = new DataInputStream(inStream);
 
     final String entityName = input.readUTF();
     final EntityDescriptor entityDescriptor = repository.findEntity(entityName)
         .orElseThrow(() -> new IOException("Unable to find entity " + entityName + "."));
 
-    final String attributeName = input.readUTF();
-    final AttributeDescriptor attributeDescriptor = entityDescriptor.findAttribute(attributeName)
-        .orElseThrow(() -> new IOException("Unable to find attribute " + attributeName + "."));
-
     final String uuid = input.readUTF();
     final String key = input.readUTF();
+    final int typeOrdinal = input.readInt();
+    final Type type = Type.values()[typeOrdinal];
     final String attribute = input.readUTF();
+    AttributeDescriptor<Object> attributeDescriptor = entityDescriptor
+        .findAttribute(attribute)
+        .orElseThrow(() -> new IOException(
+            "Unable to find attribute " + attribute + " of entity " + entityName));
     final long stamp = input.readLong();
 
-    final int valueLength = input.readInt();
-    if (valueLength == -1) {
-      // delete
-      return StreamElement.delete(
-          entityDescriptor, attributeDescriptor, uuid, key, attribute, stamp);
-    } else {
-      final byte[] value = new byte[valueLength];
-      if (valueLength != input.read(value, 0, valueLength)) {
-        throw new IOException("Premature end of input stream.");
-      }
-      return StreamElement.update(
-          entityDescriptor, attributeDescriptor, uuid, key, attribute, stamp, value);
+    byte[] value = readBytes(input);
+    switch (type) {
+      case DELETE:
+        return StreamElement.deleteWildcard(
+            entityDescriptor, attributeDescriptor, uuid, key, stamp);
+      case DELETE_WILDCARD:
+        return StreamElement.delete(
+            entityDescriptor, attributeDescriptor, uuid, key, attribute, stamp);
+      case UPDATE:
+        return StreamElement.update(
+            entityDescriptor, attributeDescriptor, uuid,
+            key, attribute, stamp, value);
     }
+    throw new IllegalStateException("Unknown type " + type);
   }
 
   @Override
   public void verifyDeterministic() throws NonDeterministicException {
     // deterministic
+  }
+
+  private static void writeBytes(@Nullable byte[] value, DataOutput output)
+      throws IOException {
+
+    if (value == null) {
+      output.writeInt(-1);
+    } else {
+      output.writeInt(value.length);
+      output.write(value);
+    }
+  }
+
+  private static @Nullable byte[] readBytes(DataInput input) throws IOException {
+    int length = input.readInt();
+    if (length >= 0) {
+      byte[] ret = new byte[length];
+      input.readFully(ret);
+      return ret;
+    }
+    return null;
   }
 }

@@ -25,7 +25,6 @@ import cz.o2.proxima.storage.StorageType;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.storage.commitlog.Position;
 import cz.seznam.euphoria.beam.io.BeamUnboundedSource;
-import cz.seznam.euphoria.beam.io.KryoCoder;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.io.Serializable;
 import java.util.Collections;
@@ -96,10 +95,10 @@ public class ProximaIO implements Serializable {
         .map(BeamUnboundedSource::wrap)
         // FIXME: port this to euphoria-beam full blown API, including
         // coder registration
-        .map(s -> pipeline.apply(Read.from(s)).setCoder(new KryoCoder<>()))
+        .map(s -> pipeline.apply(Read.from(s)).setCoder(StreamElementCoder.of(repo)))
         .forEach(list::and);
 
-    return list.apply(Flatten.pCollections()).setCoder(new KryoCoder<>());
+    return list.apply(Flatten.pCollections()).setCoder(StreamElementCoder.of(repo));
   }
 
   /**
@@ -110,7 +109,7 @@ public class ProximaIO implements Serializable {
   public void write(PCollection<StreamElement> collection) {
     collection.apply(ParDo.of(new DoFn<StreamElement, Void>() {
 
-      final Set<String> unconfirmed = Collections.synchronizedSet(new HashSet());
+      final Set<String> unconfirmed = Collections.synchronizedSet(new HashSet<>());
 
       @SuppressFBWarnings("UMAC_UNCALLABLE_METHOD_OF_ANONYMOUS_CLASS")
       @StartBundle
