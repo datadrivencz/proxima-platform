@@ -93,7 +93,12 @@ public class StreamElementCoder extends CustomCoder<StreamElement> {
     final String key = input.readUTF();
     final int typeOrdinal = input.readInt();
     final Type type = Type.values()[typeOrdinal];
-    final String attribute = input.readUTF();
+    String attributeName = input.readUTF();
+    if (type.equals(Type.DELETE_WILDCARD)) {
+        attributeName = attributeName.substring(0,attributeName.length()-1);
+    }
+    final String attribute = attributeName;
+
     AttributeDescriptor<Object> attributeDescriptor = entityDescriptor
         .findAttribute(attribute)
         .orElseThrow(() -> new IOException(
@@ -102,10 +107,10 @@ public class StreamElementCoder extends CustomCoder<StreamElement> {
 
     byte[] value = readBytes(input);
     switch (type) {
-      case DELETE:
+      case DELETE_WILDCARD:
         return StreamElement.deleteWildcard(
             entityDescriptor, attributeDescriptor, uuid, key, stamp);
-      case DELETE_WILDCARD:
+      case DELETE:
         return StreamElement.delete(
             entityDescriptor, attributeDescriptor, uuid, key, attribute, stamp);
       case UPDATE:
