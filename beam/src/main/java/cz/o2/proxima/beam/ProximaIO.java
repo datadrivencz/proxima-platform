@@ -28,6 +28,9 @@ import cz.seznam.euphoria.beam.io.BeamUnboundedSource;
 import cz.seznam.euphoria.beam.io.KryoCoder;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.io.Serializable;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.beam.sdk.Pipeline;
@@ -107,19 +110,43 @@ public class ProximaIO implements Serializable {
   public void write(PCollection<StreamElement> collection) {
     collection.apply(ParDo.of(new DoFn<StreamElement, Void>() {
 
+      final Set<String> unconfirmed = Collections.synchronizedSet(new HashSet());
+
+      @SuppressFBWarnings("UMAC_UNCALLABLE_METHOD_OF_ANONYMOUS_CLASS")
+      @StartBundle
+      public void startBundle() {
+        unconfirmed.clear();
+      }
+
       @SuppressFBWarnings("UMAC_UNCALLABLE_METHOD_OF_ANONYMOUS_CLASS")
       @ProcessElement
       public void process(ProcessContext context) {
         StreamElement element = context.element();
+        final String uuid = element.getUuid();
         OnlineAttributeWriter writer = repo
             .getWriter(element.getAttributeDescriptor())
             .orElseThrow(() -> new IllegalArgumentException(
                 "Missing writer for " + element.getAttribute()));
+        unconfirmed.add(uuid);
         writer.write(element, (succ, exc) -> {
           if (!succ) {
             throw new RuntimeException(exc);
           }
+          unconfirmed.remove(uuid);
+          synchronized (unconfirmed) {
+            unconfirmed.notify();
+          }
         });
+      }
+
+      @SuppressFBWarnings("UMAC_UNCALLABLE_METHOD_OF_ANONYMOUS_CLASS")
+      @FinishBundle
+      public void finishBundle() throws InterruptedException {
+        while (!unconfirmed.isEmpty()) {
+          synchronized (unconfirmed) {
+            unconfirmed.wait(1000);
+          }
+        }
       }
 
     }));
