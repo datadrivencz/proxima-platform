@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package cz.o2.proxima.storage.pubsub;
+package cz.o2.proxima.beam.io;
 
 import com.typesafe.config.ConfigFactory;
 import cz.o2.proxima.repository.AttributeDescriptor;
@@ -24,7 +24,7 @@ import cz.o2.proxima.repository.Repository;
 import cz.o2.proxima.storage.ListCommitLog;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.storage.commitlog.CommitLogReader;
-import cz.o2.proxima.storage.pubsub.io.CommitLogSource;
+import cz.o2.proxima.storage.commitlog.Position;
 import cz.seznam.euphoria.beam.BeamFlow;
 import cz.seznam.euphoria.core.client.dataset.Dataset;
 import cz.seznam.euphoria.core.client.dataset.windowing.Time;
@@ -80,10 +80,10 @@ public class CommitLogSourceTest {
                 "key3", attr.getName(), System.currentTimeMillis(), new byte[] { 3 })),
         context());
 
-    CommitLogSource source = CommitLogSource.of(reader, "name", 100);
+    CommitLogSource source = CommitLogSource.of(repo, reader, Position.OLDEST, 100);
     Pipeline pipeline = Pipeline.create();
     BeamFlow flow = BeamFlow.create(pipeline);
-    PCollection<AttributeData> input = flow
+    PCollection<StreamElement> input = flow
         .getPipeline()
         .apply(Read.from(source).withMaxNumRecords(3));
     Dataset<Integer> output = ReduceWindow.of(flow.wrapped(input))
@@ -98,8 +98,7 @@ public class CommitLogSourceTest {
   }
 
   private static Context context() {
-    return new Context(() -> Executors.newCachedThreadPool()) {
-    };
+    return new Context(() -> Executors.newCachedThreadPool()) { };
   }
 
 }

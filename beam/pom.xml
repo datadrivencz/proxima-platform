@@ -88,6 +88,21 @@
     </dependency>
 
     <dependency>
+      <groupId>cz.o2.proxima</groupId>
+      <artifactId>io-kafka</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>cz.o2.proxima</groupId>
+      <artifactId>io-kafka</artifactId>
+      <type>test-jar</type>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
       <groupId>cz.seznam.euphoria</groupId>
       <artifactId>euphoria-beam</artifactId>
       <version>${euphoria.version}</version>
@@ -171,6 +186,11 @@
       <artifactId>annotations</artifactId>
       <version>3.0.1u2</version>
       <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-all</artifactId>
     </dependency>
 
   </dependencies>

@@ -18,7 +18,11 @@ package cz.o2.proxima.beam;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.storage.StreamElement;
+import java.util.concurrent.CompletableFuture;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.beam.sdk.Pipeline;
 
+@Slf4j
 class Utils {
 
   static StreamElement update(
@@ -27,5 +31,21 @@ class Utils {
         entity, attr, "uuid", "key", attr.getName(),
         System.currentTimeMillis(), new byte[] {1, 2, 3});
   }
+
+  static CompletableFuture<Throwable> startPipeline(Pipeline pipeline) {
+    CompletableFuture<Throwable> result = new CompletableFuture<>();
+    new Thread(() -> {
+      try {
+        pipeline.run().waitUntilFinish();
+        result.complete(null);
+      } catch (Throwable e) {
+        log.error("Pipeline failed with exception", e);
+        result.complete(e);
+      }
+    }).start();
+    return result;
+  }
+
+
 
 }

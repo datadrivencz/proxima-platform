@@ -132,4 +132,7 @@ public class ReplicationPipeline {
     }
   }
 
+  // do not construct
+  private ReplicationPipeline() { }
+
 }

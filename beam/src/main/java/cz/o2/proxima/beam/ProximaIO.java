@@ -17,31 +17,33 @@ package cz.o2.proxima.beam;
 
 import com.google.common.base.Preconditions;
 import cz.o2.proxima.annotations.Experimental;
+import cz.o2.proxima.beam.io.CommitLogSource;
 import cz.o2.proxima.functional.UnaryFunction;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.AttributeFamilyDescriptor;
 import cz.o2.proxima.repository.Repository;
-import cz.o2.proxima.source.UnboundedStreamSource;
 import cz.o2.proxima.storage.AttributeWriterBase;
 import cz.o2.proxima.storage.BulkAttributeWriter;
 import cz.o2.proxima.storage.OnlineAttributeWriter;
 import cz.o2.proxima.storage.StorageType;
 import cz.o2.proxima.storage.StreamElement;
-import cz.o2.proxima.storage.commitlog.Offset;
 import cz.o2.proxima.storage.commitlog.Position;
-import cz.seznam.euphoria.beam.io.BeamUnboundedSource;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.io.Serializable;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import javax.annotation.Nullable;
 import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.io.Read;
 import org.apache.beam.sdk.transforms.DoFn;
@@ -58,12 +60,12 @@ import org.apache.beam.sdk.values.PBegin;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollectionList;
 import org.apache.beam.sdk.values.PDone;
-import org.joda.time.Duration;
 
 /**
  * IO for Apache Beam for reading and writing of named entities.
  */
 @Experimental("Need more valid use-cases, euphoria-beam not stable")
+@Slf4j
 public class ProximaIO implements Serializable {
 
   /**
@@ -72,14 +74,40 @@ public class ProximaIO implements Serializable {
    * @return new {@link ProximaIO}
    */
   public static ProximaIO from(Repository repo) {
-    return new ProximaIO(repo);
+    return new ProximaIO(repo, null, 0);
   }
 
   @Getter
   private final Repository repo;
 
-  private ProximaIO(Repository repo) {
-    this.repo = repo;
+  @Nullable
+  private final Duration maxReadTime;
+
+  private final long allowedLateness;
+
+  private ProximaIO(Repository repo, Duration maxReadTime, long allowedLateness) {
+    this.repo = Objects.requireNonNull(repo);
+    this.maxReadTime = maxReadTime;
+    this.allowedLateness = allowedLateness;
+  }
+
+  /**
+   * Specify maximal reading time from created sources.
+   * @param maxReadTime the maximal reading time after which the reading is
+   *                    terminated
+   * @return new {@link ProximaIO} with the given maxReadTime
+   */
+  public ProximaIO withMaxReadTime(Duration maxReadTime) {
+    return new ProximaIO(repo, maxReadTime, allowedLateness);
+  }
+
+  /**
+   * Specify allowed lateness for generated sources.
+   * @param allowedLateness the allowed lateness in milliseconds
+   * @return new {@link ProximaIO} with the given allowedLateness
+   */
+  public ProximaIO withAllowedLateness(long allowedLateness) {
+    return new ProximaIO(repo, maxReadTime, allowedLateness);
   }
 
   /**
@@ -129,11 +157,13 @@ public class ProximaIO implements Serializable {
                     "Attribute " + a + " has no primary commit-log")))
             .collect(Collectors.toSet())
             .stream()
-            .map(af -> af.getCommitLogReader().get())
-            .map(reader -> UnboundedStreamSource.of(reader, position))
-            .map(BeamUnboundedSource::wrap)
+            .map(af -> {
+              log.debug("Reading attribute family {}", af);
+              return af.getCommitLogReader().get();
+            })
+            .map(reader -> CommitLogSource.of(repo, reader, position, allowedLateness))
             .map(s -> pipeline
-                .apply(Read.from(s)).setCoder(StreamElementCoder.of(repo))
+                .apply(withReadTime(Read.from(s))).setCoder(StreamElementCoder.of(repo))
                 .apply(MapElements.via(new SimpleFunction<StreamElement, StreamElement>(e -> {
                   System.err.println(" *** AFTER MAP " + e);
                   return e;
@@ -154,22 +184,22 @@ public class ProximaIO implements Serializable {
    * @return {@link PTransform} to apply to create {@link PCollection}
    * representing the family
    */
-  public PTransform<PBegin, PCollection<StreamElement>> readCommitFrom(
+  public PTransform<PBegin, PCollection<StreamElement>> streamFrom(
       AttributeFamilyDescriptor family,
       Position position) {
 
-    BeamUnboundedSource<StreamElement, Offset> source = BeamUnboundedSource.wrap(
-        UnboundedStreamSource.of(
-            family.getCommitLogReader()
-                .orElseThrow(() -> new IllegalArgumentException(
-                    "Family " + family + " has no commit log")),
-            position));
+    CommitLogSource source = CommitLogSource.of(
+        repo, family.getCommitLogReader()
+            .orElseThrow(() -> new IllegalArgumentException(
+                "Family " + family + " has no commit log")),
+        position, allowedLateness);
+
     return new PTransform<PBegin, PCollection<StreamElement>>() {
 
       @Override
       public PCollection<StreamElement> expand(PBegin input) {
         Pipeline pipeline = input.getPipeline();
-        return pipeline.apply(Read.from(source))
+        return pipeline.apply(withReadTime(Read.from(source)))
             .setCoder(StreamElementCoder.of(repo));
       }
 
@@ -283,7 +313,7 @@ public class ProximaIO implements Serializable {
       @Override
       public PDone expand(PCollection<StreamElement> input) {
         input
-            .apply(Window.into(FixedWindows.of(Duration.millis(unit.toMillis(windowLength)))))
+            .apply(Window.into(FixedWindows.of(org.joda.time.Duration.millis(unit.toMillis(windowLength)))))
             .apply(MapElements.via(
                 new SimpleFunction<StreamElement, KV<Integer, StreamElement>>(
                     e -> KV.of(e.hashCode() % parallelism, e)) { }))
@@ -296,6 +326,7 @@ public class ProximaIO implements Serializable {
                   Set<String> unconfirmed = Collections.synchronizedSet(new HashSet<>());
                   Map<AttributeDescriptor, AttributeWriterBase> writers = new HashMap<>();
                   for (StreamElement element : context.element().getValue()) {
+                    System.err.println(" *** writeBulk " + element);
                     final String uuid = element.getUuid();
                     AttributeWriterBase writer = writers.computeIfAbsent(
                         element.getAttributeDescriptor(),
@@ -339,5 +370,16 @@ public class ProximaIO implements Serializable {
     };
   }
 
+  private <T> PTransform<PBegin, PCollection<T>> withReadTime(
+      Read.Unbounded<T> what) {
 
+    System.err.println(" **** " + maxReadTime);
+    if (maxReadTime != null) {
+      log.debug(
+          "Applying maxReadTime {} millis to Read.Unbounded",
+          maxReadTime.toMillis());
+      return what.withMaxReadTime(org.joda.time.Duration.millis(maxReadTime.toMillis()));
+    }
+    return what;
+  }
 }
