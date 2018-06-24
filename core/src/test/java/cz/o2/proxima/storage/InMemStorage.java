@@ -53,7 +53,10 @@ import lombok.Getter;
 import cz.o2.proxima.storage.commitlog.ObserveHandle;
 import cz.o2.proxima.storage.randomaccess.RawOffset;
 import cz.o2.proxima.view.PartitionedCachedView;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.io.ObjectStreamException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
@@ -71,19 +74,11 @@ public class InMemStorage extends StorageDescriptor {
     void write(StreamElement data);
   }
 
-  public final class Writer
-      extends AbstractOnlineAttributeWriter {
+  public final class Writer extends AbstractOnlineAttributeWriter {
 
-    private final Map<Integer, InMemIngestWriter> observers;
-
-    private Writer(
-        EntityDescriptor entityDesc, URI uri,
-        Map<Integer, InMemIngestWriter> observers) {
-
+    private Writer(EntityDescriptor entityDesc, URI uri) {
       super(entityDesc, uri);
-      this.observers = observers;
     }
-
 
     @Override
     public void write(StreamElement ingest, CommitCallback statusCallback) {
@@ -114,25 +109,20 @@ public class InMemStorage extends StorageDescriptor {
               return Pair.of(ingest.getStamp(), ingest.getValue());
             });
       }
-      synchronized (observers) {
-        observers.values().forEach(o -> o.write(ingest));
+      NavigableMap<Integer, InMemIngestWriter> local = observers.get(getURI());
+      synchronized (local) {
+        local.values().forEach(o -> o.write(ingest));
       }
       statusCallback.commit(true, null);
     }
   }
 
-  private static class InMemCommitLogReader
+  private class InMemCommitLogReader
       extends AbstractStorage
       implements CommitLogReader, PartitionedView {
 
-    private final NavigableMap<Integer, InMemIngestWriter> observers;
-
-    private InMemCommitLogReader(
-        EntityDescriptor entityDesc, URI uri,
-        NavigableMap<Integer, InMemIngestWriter> observers) {
-
+    private InMemCommitLogReader(EntityDescriptor entityDesc, URI uri) {
       super(entityDesc, uri);
-      this.observers = observers;
     }
 
     @Override
@@ -160,15 +150,15 @@ public class InMemStorage extends StorageDescriptor {
         boolean stopAtCurrent,
         LogObserver observer) {
 
-
       logAndFixPosition(position);
       final int id;
       if (!stopAtCurrent) {
-        synchronized (observers) {
-          id = observers.isEmpty() ? 0 : observers.lastKey() + 1;
-          observers.put(id, elem -> {
+        NavigableMap<Integer, InMemIngestWriter> local = observers.get(getURI());
+        synchronized (local) {
+          id = local.isEmpty() ? 0 : local.lastKey() + 1;
+          local.put(id, elem -> {
             try {
-              observer.onNext(elem, (suc, err) -> { });
+              observer.onNext(elem, (succ, err) -> { });
             } catch (Exception ex) {
               observer.onError(ex);
             }
@@ -182,7 +172,7 @@ public class InMemStorage extends StorageDescriptor {
 
         @Override
         public void cancel() {
-          observers.remove(id);
+          observers.get(getURI()).remove(id);
           observer.onCancelled();
         }
 
@@ -229,11 +219,16 @@ public class InMemStorage extends StorageDescriptor {
 
       logAndFixPosition(position);
       final int id;
+      System.err.println(
+          " *** starting to observe " + getURI() + " at "
+              + position + ", " + stopAtCurrent + " time " + Instant.now());
       if (!stopAtCurrent) {
-        synchronized (observers) {
-          id = observers.isEmpty() ? 0 : observers.lastKey();
-          observers.put(id, elem -> {
+        NavigableMap<Integer, InMemIngestWriter> local = observers.get(getURI());
+        synchronized (local) {
+          id = local.isEmpty() ? 0 : local.lastKey();
+          local.put(id, elem -> {
             try {
+              System.err.println(" *** next " + elem);
               observer.onNext(elem, () -> 0, (suc, err) -> { });
             } catch (Exception ex) {
               observer.onError(ex);
@@ -247,7 +242,7 @@ public class InMemStorage extends StorageDescriptor {
       return new ObserveHandle() {
         @Override
         public void cancel() {
-          observers.remove(id);
+          observers.get(getURI()).remove(id);
           observer.onCancelled();
         }
 
@@ -362,9 +357,7 @@ public class InMemStorage extends StorageDescriptor {
       extends AbstractStorage
       implements RandomAccessReader {
 
-    private Reader(
-        EntityDescriptor entityDesc, URI uri) {
-
+    private Reader(EntityDescriptor entityDesc, URI uri) {
       super(entityDesc, uri);
     }
 
@@ -613,9 +606,9 @@ public class InMemStorage extends StorageDescriptor {
   }
 
   @Getter
-  private final NavigableMap<String, Pair<Long, byte[]>> data;
+  private final transient NavigableMap<String, Pair<Long, byte[]>> data;
 
-  private final Map<URI, NavigableMap<Integer, InMemIngestWriter>> observers;
+  private final transient Map<URI, NavigableMap<Integer, InMemIngestWriter>> observers;
 
   public InMemStorage() {
     super(Arrays.asList("inmem"));
@@ -630,14 +623,14 @@ public class InMemStorage extends StorageDescriptor {
 
     observers.computeIfAbsent(uri, k -> Collections.synchronizedNavigableMap(
         new TreeMap<>()));
-    NavigableMap<Integer, InMemIngestWriter> uriObservers = observers.get(uri);
-    Writer writer = new Writer(entityDesc, uri, uriObservers);
+    Writer writer = new Writer(entityDesc, uri);
     InMemCommitLogReader commitLogReader = new InMemCommitLogReader(
-        entityDesc, uri, uriObservers);
+        entityDesc, uri);
     Reader reader = new Reader(entityDesc, uri);
     CachedView cachedView = new CachedView(reader, commitLogReader, writer);
 
     return new DataAccessor() {
+
       @Override
       public Optional<AttributeWriterBase> getWriter(Context context) {
         Objects.requireNonNull(context);
@@ -674,6 +667,14 @@ public class InMemStorage extends StorageDescriptor {
   // disable clone of the storage by serialization
   private Object readResolve() throws ObjectStreamException {
     return THIS;
+  }
+
+  private void readObject(ObjectInputStream ois) {
+
+  }
+
+  private void writeObject(ObjectOutputStream oos) {
+
   }
 
 }

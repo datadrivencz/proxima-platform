@@ -62,7 +62,6 @@ public class UnboundedStreamSource
     return new UnboundedStreamSource(name, reader, position);
   }
 
-
   final CommitLogReader reader;
   final Position position;
   @Nullable final String consumer;
@@ -123,6 +122,8 @@ public class UnboundedStreamSource
 
         @Override
         public StreamElement next() {
+          log.debug(" *** next {}", current.get(), new RuntimeException("blah"));
+          System.err.println(" *** WTF????");
           return current.get();
         }
 

@@ -265,4 +265,9 @@ public class BulkGCloudStorageWriter
         written / 1024.);
   }
 
+  @Override
+  public long getFlushPeriod() {
+    return rollPeriod;
+  }
+
 }

@@ -409,4 +409,9 @@ public class HdfsDataAccessor
     }
   }
 
+  @Override
+  public long getFlushPeriod() {
+    return rollInterval;
+  }
+
 }

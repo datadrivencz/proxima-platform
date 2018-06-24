@@ -80,6 +80,11 @@ public class InMemBulkStorage extends StorageDescriptor {
       writtenSinceLastCommit = 0;
     }
 
+    @Override
+    public long getFlushPeriod() {
+      return 100L;
+    }
+
   }
 
   private class Reader extends AbstractStorage implements RandomAccessReader {
@@ -162,7 +167,7 @@ public class InMemBulkStorage extends StorageDescriptor {
   }
 
   @Getter
-  private final NavigableMap<String, byte[]> data = new TreeMap<>();
+  private final transient NavigableMap<String, byte[]> data = new TreeMap<>();
 
   public InMemBulkStorage() {
     super(Collections.singletonList("inmem-bulk"));

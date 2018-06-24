@@ -26,18 +26,14 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.charset.Charset;
 import javax.annotation.Nullable;
 import org.apache.beam.sdk.coders.CoderException;
 import org.apache.beam.sdk.coders.CustomCoder;
-import org.apache.commons.compress.utils.Charsets;
 
 /**
  * Naive implementation of {@link org.apache.beam.sdk.coders.Coder} for {@link StreamElement}s.
  */
 public class StreamElementCoder extends CustomCoder<StreamElement> {
-
-  private static final Charset UTF8 = Charsets.UTF_8;
 
   private static enum Type {
     UPDATE,

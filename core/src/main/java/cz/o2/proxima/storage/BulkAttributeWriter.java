@@ -59,4 +59,12 @@ public interface BulkAttributeWriter extends AttributeWriterBase {
    */
   void flush();
 
+  /**
+   * Retrieve flush period (in ms).
+   * The flush period is amount of time that it usually takes between two
+   * consecutive flushes of the writer (subject to no external conditions).
+   * @return flush period in milliseconds
+   */
+  long getFlushPeriod();
+
 }

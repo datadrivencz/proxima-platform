@@ -17,6 +17,7 @@ package cz.o2.proxima.beam;
 
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigFactory;
+import static cz.o2.proxima.beam.Utils.update;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.ConfigRepository;
 import cz.o2.proxima.repository.EntityDescriptor;
@@ -37,8 +38,8 @@ import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.values.PCollection;
-import org.junit.Test;
 import static org.junit.Assert.*;
+import org.junit.Test;
 
 /**
  * Test suite for {@link ProximaIO}.
@@ -75,7 +76,35 @@ public class ProximaIOTest {
         .output();
     PAssert.that(bf.unwrapped(output))
         .containsInAnyOrder(Pair.of(0, 1L));
-    new Thread(() -> pipeline.run()).start();
+    new Thread(pipeline::run).start();
+    repo.getWriter(status)
+        .orElseThrow(() -> new IllegalStateException("status has no writer"))
+        .write(update(gateway, status),
+            (succ, exc) -> {
+              // nop
+            });
+  }
+
+  @SuppressWarnings("unchecked")
+  @Test
+  public void testReadSingleFamily() {
+    Pipeline pipeline = Pipeline.create();
+    PCollection<StreamElement> input = pipeline.apply(
+        ProximaIO.from(repo).readCommitFrom(
+            repo.getFamiliesForAttribute(status)
+                .stream()
+                .filter(af -> af.getType() == StorageType.PRIMARY)
+                .findFirst()
+                .get(),
+            Position.NEWEST));
+    BeamFlow bf = BeamFlow.create(pipeline);
+    Dataset<Pair<Integer, Long>> output = CountByKey.of(bf.wrapped(input))
+        .keyBy(e -> 0)
+        .windowBy(Time.of(Duration.ofSeconds(1)))
+        .output();
+    PAssert.that(bf.unwrapped(output))
+        .containsInAnyOrder(Pair.of(0, 1L));
+    new Thread(pipeline::run).start();
     repo.getWriter(status)
         .orElseThrow(() -> new IllegalStateException("status has no writer"))
         .write(update(gateway, status),
@@ -131,14 +160,5 @@ public class ProximaIOTest {
     assertTrue(get.isPresent());
     assertEquals("key", get.get().getKey());
   }
-
-
-  private static StreamElement update(
-      EntityDescriptor entity, AttributeDescriptor<?> attr) {
-    return StreamElement.update(
-        entity, attr, "uuid", "key", attr.getName(),
-        System.currentTimeMillis(), new byte[] {1, 2, 3});
-  }
-
 
 }

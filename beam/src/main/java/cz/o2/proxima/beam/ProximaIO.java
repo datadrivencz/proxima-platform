@@ -17,6 +17,7 @@ package cz.o2.proxima.beam;
 
 import com.google.common.base.Preconditions;
 import cz.o2.proxima.annotations.Experimental;
+import cz.o2.proxima.functional.UnaryFunction;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.AttributeFamilyDescriptor;
 import cz.o2.proxima.repository.Repository;
@@ -26,18 +27,21 @@ import cz.o2.proxima.storage.BulkAttributeWriter;
 import cz.o2.proxima.storage.OnlineAttributeWriter;
 import cz.o2.proxima.storage.StorageType;
 import cz.o2.proxima.storage.StreamElement;
+import cz.o2.proxima.storage.commitlog.Offset;
 import cz.o2.proxima.storage.commitlog.Position;
 import cz.seznam.euphoria.beam.io.BeamUnboundedSource;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.io.Serializable;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
+import lombok.Getter;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.io.Read;
 import org.apache.beam.sdk.transforms.DoFn;
@@ -71,6 +75,7 @@ public class ProximaIO implements Serializable {
     return new ProximaIO(repo);
   }
 
+  @Getter
   private final Repository repo;
 
   private ProximaIO(Repository repo) {
@@ -89,8 +94,23 @@ public class ProximaIO implements Serializable {
       Position position,
       AttributeDescriptor<?>... attrs) {
 
+    return read(position, Arrays.asList(attrs));
+  }
+
+  /**
+   * Create {@link PCollection} for given attributes.
+   * The created {@link PCollection} will represent streaming data
+   * read from configured (primary) attribute families.
+   * @param position position to read the associated commit-log from
+   * @param attrs list of attributes to read
+   * @return {@link PCollection} representing the attributes
+   */
+  public PTransform<PBegin, PCollection<StreamElement>> read(
+      Position position,
+      List<AttributeDescriptor<?>> attrs) {
+
     Preconditions.checkArgument(
-        attrs.length > 0,
+        !attrs.isEmpty(),
         "Please provide non-empty list of attributes");
 
     return new PTransform<PBegin, PCollection<StreamElement>>() {
@@ -99,7 +119,7 @@ public class ProximaIO implements Serializable {
       public PCollection<StreamElement> expand(PBegin input) {
         Pipeline pipeline = input.getPipeline();
         PCollectionList<StreamElement> list = PCollectionList.empty(pipeline);
-        Stream.of(attrs)
+        attrs.stream()
             .map(a -> repo.getFamiliesForAttribute(a)
                 .stream()
                 .filter(af -> af.getType() == StorageType.PRIMARY)
@@ -112,9 +132,12 @@ public class ProximaIO implements Serializable {
             .map(af -> af.getCommitLogReader().get())
             .map(reader -> UnboundedStreamSource.of(reader, position))
             .map(BeamUnboundedSource::wrap)
-            // FIXME: port this to euphoria-beam full blown API, including
-            // coder registration
-            .map(s -> pipeline.apply(Read.from(s)).setCoder(StreamElementCoder.of(repo)))
+            .map(s -> pipeline
+                .apply(Read.from(s)).setCoder(StreamElementCoder.of(repo))
+                .apply(MapElements.via(new SimpleFunction<StreamElement, StreamElement>(e -> {
+                  System.err.println(" *** AFTER MAP " + e);
+                  return e;
+                }) { })))
             .forEach(list::and);
         return list
             .apply(Flatten.pCollections())
@@ -122,6 +145,36 @@ public class ProximaIO implements Serializable {
       }
 
     };
+  }
+
+  /**
+   * Read all attributes from given {@link AttributeFamilyDescriptor}.
+   * @param family the family to read from
+   * @param position the position to read from
+   * @return {@link PTransform} to apply to create {@link PCollection}
+   * representing the family
+   */
+  public PTransform<PBegin, PCollection<StreamElement>> readCommitFrom(
+      AttributeFamilyDescriptor family,
+      Position position) {
+
+    BeamUnboundedSource<StreamElement, Offset> source = BeamUnboundedSource.wrap(
+        UnboundedStreamSource.of(
+            family.getCommitLogReader()
+                .orElseThrow(() -> new IllegalArgumentException(
+                    "Family " + family + " has no commit log")),
+            position));
+    return new PTransform<PBegin, PCollection<StreamElement>>() {
+
+      @Override
+      public PCollection<StreamElement> expand(PBegin input) {
+        Pipeline pipeline = input.getPipeline();
+        return pipeline.apply(Read.from(source))
+            .setCoder(StreamElementCoder.of(repo));
+      }
+
+    };
+
   }
 
   /**
@@ -133,6 +186,40 @@ public class ProximaIO implements Serializable {
    * @return persisting {@link PTransform}
    */
   public PTransform<PCollection<StreamElement>, PDone> write() {
+
+    return write(
+        attr -> repo
+                .getWriter(attr)
+                .orElseThrow(() -> new IllegalArgumentException(
+                    "Missing writer for " + attr)));
+  }
+
+  /**
+   * Persist given {@link PCollection} using either {@link OnlineAttributeWriter}
+   * or {@link BulkAttributeWriter}.
+   * @param windowLength length of bulk window
+   * @param unit timeunit of the window length
+   * @param parallelism the parallelism at which to create writers
+   * @return {@link PTransform} for persisting the {@link PCollection}
+   */
+  public PTransform<PCollection<StreamElement>, PDone> writeBulk(
+      int windowLength, TimeUnit unit, int parallelism) {
+
+    return writeBulk(
+        windowLength, unit, parallelism,
+        attr -> repo.getFamiliesForAttribute(attr)
+            .stream()
+            .filter(af -> af.getType() == StorageType.PRIMARY)
+            .filter(af -> !af.getAccess().isReadonly())
+            .findFirst()
+            .flatMap(AttributeFamilyDescriptor::getWriter)
+            .map(w -> w.bulk())
+            .orElseThrow(() -> new IllegalArgumentException(
+                "Attribute " + attr + " has no writable primary storage")));
+  }
+
+  PTransform<PCollection<StreamElement>, PDone> write(
+      UnaryFunction<AttributeDescriptor, OnlineAttributeWriter> writerFn) {
 
     return new PTransform<PCollection<StreamElement>, PDone>() {
       @Override
@@ -153,10 +240,8 @@ public class ProximaIO implements Serializable {
           public void process(ProcessContext context) {
             StreamElement element = context.element();
             final String uuid = element.getUuid();
-            OnlineAttributeWriter writer = repo
-                .getWriter(element.getAttributeDescriptor())
-                .orElseThrow(() -> new IllegalArgumentException(
-                    "Missing writer for " + element.getAttribute()));
+            OnlineAttributeWriter writer = writerFn.apply(
+                element.getAttributeDescriptor());
             unconfirmed.add(uuid);
             writer.write(element, (succ, exc) -> {
               if (!succ) {
@@ -187,18 +272,12 @@ public class ProximaIO implements Serializable {
     };
   }
 
-  /**
-   * Persist given {@link PCollection} using either {@link OnlineAttributeWriter}
-   * or {@link BulkAttributeWriter}.
-   * @param windowLength length of bulk window
-   * @param unit timeunit of the window length
-   * @param parallelism the parallelism at which to create writers
-   * @return {@link PTransform} for persisting the {@link PCollection}
-   */
-  public PTransform<PCollection<StreamElement>, PDone> writeBulk(
-      int windowLength, TimeUnit unit, int parallelism) {
 
-    Preconditions.checkArgument(windowLength > 0, "Window must be positive length");
+  PTransform<PCollection<StreamElement>, PDone> writeBulk(
+      long windowLength, TimeUnit unit, int parallelism,
+      UnaryFunction<AttributeDescriptor, BulkAttributeWriter> writerFn) {
+
+    Preconditions.checkArgument(windowLength > 0, "Window must have positive length");
     Preconditions.checkArgument(parallelism > 0, "Parallelism must be positive");
     return new PTransform<PCollection<StreamElement>, PDone>() {
       @Override
@@ -220,16 +299,7 @@ public class ProximaIO implements Serializable {
                     final String uuid = element.getUuid();
                     AttributeWriterBase writer = writers.computeIfAbsent(
                         element.getAttributeDescriptor(),
-                        k -> {
-                          return repo.getFamiliesForAttribute(k)
-                              .stream()
-                              .filter(af -> af.getType() == StorageType.PRIMARY)
-                              .filter(af -> !af.getAccess().isReadonly())
-                              .findFirst()
-                              .flatMap(AttributeFamilyDescriptor::getWriter)
-                              .orElseThrow(() -> new IllegalArgumentException(
-                                  "Attribute " + k + " has no writable primary storage"));
-                        });
+                        writerFn::apply);
                     if (writer.getType() == AttributeWriterBase.Type.ONLINE) {
                       writer.online().write(element, (succ, exc) -> {
                         if (!succ) {
@@ -268,5 +338,6 @@ public class ProximaIO implements Serializable {
 
     };
   }
+
 
 }
