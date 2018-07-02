@@ -58,6 +58,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import javax.annotation.Nullable;
 
 /**
  * Attribute writer to HDFS as {@code SequenceFiles}.
@@ -94,6 +95,9 @@ public class HdfsDataAccessor
   private long monothonicTime = 0L;
 
   private Executor executor;
+
+  @Nullable
+  private CommitCallback lastWrittenCallback = null;
 
   public HdfsDataAccessor(EntityDescriptor entityDesc,
       URI uri, Map<String, Object> cfg) throws IOException {
@@ -156,26 +160,15 @@ public class HdfsDataAccessor
       writer.append(
           new BytesWritable(toKey(data)),
           new TimestampedNullableBytesWritable(data.getStamp(), data.getValue()));
+      lastWrittenCallback = commitCallback;
       if (++elementsSinceFlush > minElementsToFlush) {
-        flush();
+        writer.hflush();
+        writer.hsync();
+        log.debug("Hflushed chunk {}", writerTmpPath);
+        elementsSinceFlush = 0;
       }
       if (monothonicTime - lastRoll >= rollInterval) {
-        // close the current writer
-        writer.close();
-        Path tmpLocation = toTmpLocation(lastRoll);
-        Path target = toFinalLocation(lastRoll, minElementStamp, maxElementStamp);
-        // move the .tmp file to final location
-        if (!fs.exists(target.getParent())) {
-          try {
-            fs.mkdirs(target.getParent());
-          } catch (IOException ex) {
-            log.warn("Failed to mkdir {}, proceeding for now", target.getParent(), ex);
-          }
-        }
-        fs.rename(tmpLocation, target);
-        log.info("Completed chunk {}", target);
-        writer = null;
-        commitCallback.commit(true, null);
+        flush();
       }
     } catch (Exception ex) {
       try {
@@ -400,11 +393,23 @@ public class HdfsDataAccessor
   @Override
   public void flush() {
     try {
-      writer.hflush();
-      writer.hsync();
-      log.debug("Hflushed chunk {}", writerTmpPath);
-      elementsSinceFlush = 0;
-    } catch (IOException ex) {
+      // close the current writer
+      writer.close();
+      Path tmpLocation = toTmpLocation(lastRoll);
+      Path target = toFinalLocation(lastRoll, minElementStamp, maxElementStamp);
+      // move the .tmp file to final location
+      if (!fs.exists(target.getParent())) {
+        try {
+          fs.mkdirs(target.getParent());
+        } catch (IOException ex) {
+          log.warn("Failed to mkdir {}, proceeding for now", target.getParent(), ex);
+        }
+      }
+      fs.rename(tmpLocation, target);
+      log.info("Completed chunk {}", target);
+      writer = null;
+      lastWrittenCallback.commit(true, null);
+    } catch (IOException | URISyntaxException ex) {
       throw new RuntimeException(ex);
     }
   }
