@@ -34,6 +34,7 @@ import java.util.Optional;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import javax.annotation.Nullable;
@@ -61,7 +62,6 @@ public class UnboundedStreamSource
 
     return new UnboundedStreamSource(name, reader, position);
   }
-
 
   final CommitLogReader reader;
   final Position position;
@@ -110,7 +110,9 @@ public class UnboundedStreamSource
         @Override
         public boolean hasNext() {
           try {
-            Optional<StreamElement> elem = queue.take();
+            Optional<StreamElement> elem = Optional
+                .ofNullable(queue.poll(100, TimeUnit.MILLISECONDS))
+                .flatMap(o -> o);
             if (elem.isPresent()) {
               current.set(elem.get());
               return true;
@@ -123,6 +125,8 @@ public class UnboundedStreamSource
 
         @Override
         public StreamElement next() {
+          log.debug(" *** next {}", current.get(), new RuntimeException("blah"));
+          System.err.println(" *** WTF????");
           return current.get();
         }
 

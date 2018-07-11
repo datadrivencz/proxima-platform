@@ -44,6 +44,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Executor;
+import javax.annotation.Nullable;
 
 /**
  * {@link BulkAttributeWriter} for gcloud storage.
@@ -82,7 +83,7 @@ public class BulkGCloudStorageWriter
   private BinaryBlob localBlob = null;
   private BinaryBlob.Writer writer = null;
   private long lastFlushStamp;
-  private boolean forceFlush = false;
+  @Nullable private CommitCallback lastCallback = null;
 
   public BulkGCloudStorageWriter(
       EntityDescriptor entityDesc, URI uri, Map<String, Object> cfg,
@@ -134,19 +135,9 @@ public class BulkGCloudStorageWriter
         maxTimestamp = data.getStamp();
       }
       long now = System.currentTimeMillis();
-      if (now - lastFlushStamp >= rollPeriod || forceFlush) {
-        writer.close();
-        final File flushFile = localBlob.getPath();
-        final long flushMinStamp = minTimestamp;
-        final long flushMaxStamp = maxTimestamp;
-        lastFlushStamp = now;
-        flushExecutor.execute(() ->
-          flush(flushFile, flushMinStamp, flushMaxStamp, statusCallback)
-        );
-        writer = null;
-        minTimestamp = Long.MAX_VALUE;
-        maxTimestamp = Long.MIN_VALUE;
-        forceFlush = false;
+      lastCallback = statusCallback;
+      if (now - lastFlushStamp >= rollPeriod) {
+        flush();
       }
     } catch (Exception ex) {
       log.warn("Exception writing data {}", data, ex);
@@ -205,9 +196,23 @@ public class BulkGCloudStorageWriter
     localBlob = new BinaryBlob(new File(tmpDir, UUID.randomUUID().toString()));
   }
 
-  @VisibleForTesting
-  void flush() {
-    forceFlush = true;
+  @Override
+  public void flush() {
+    try {
+      writer.close();
+      final File flushFile = localBlob.getPath();
+      final long flushMinStamp = minTimestamp;
+      final long flushMaxStamp = maxTimestamp;
+      lastFlushStamp = System.currentTimeMillis();
+      flushExecutor.execute(() ->
+          flush(flushFile, flushMinStamp, flushMaxStamp, lastCallback)
+      );
+      writer = null;
+      minTimestamp = Long.MAX_VALUE;
+      maxTimestamp = Long.MIN_VALUE;
+    } catch (IOException ex) {
+      throw new RuntimeException(ex);
+    }
   }
 
   private void flush(
@@ -258,6 +263,11 @@ public class BulkGCloudStorageWriter
     log.info(
         "Flushed blob {} with size {} KiB", blob.getBlobId().getName(),
         written / 1024.);
+  }
+
+  @Override
+  public long getFlushPeriod() {
+    return rollPeriod;
   }
 
 }

@@ -18,8 +18,10 @@ package cz.o2.proxima.storage;
 import cz.o2.proxima.annotations.Stable;
 
 /**
- * Writer for attribute values. This is online version, where each
- * element is committed one after another.
+ * Writer for attribute values. This is bulk version, where elements
+ * are committed in bulks, the commit callback is called *once* after the bulk
+ * is persisted with the meaning that *all* writes that occurred between the
+ * write and commit are failed or successfully written.
  *
  * The ingest process works as follows:
  * <ul>
@@ -48,5 +50,21 @@ public interface BulkAttributeWriter extends AttributeWriterBase {
    * @param statusCallback callback to commit the data
    */
   void write(StreamElement data, CommitCallback statusCallback);
+
+  /**
+   * Flush any writes that are not yet pending.
+   * This is blocking and waits until the process is complete.
+   * The status callback of last write will be called as a result of this
+   * flush operation.
+   */
+  void flush();
+
+  /**
+   * Retrieve flush period (in ms).
+   * The flush period is amount of time that it usually takes between two
+   * consecutive flushes of the writer (subject to no external conditions).
+   * @return flush period in milliseconds
+   */
+  long getFlushPeriod();
 
 }

@@ -15,6 +15,7 @@
  */
 package cz.o2.proxima.repository;
 
+import com.google.common.base.Preconditions;
 import cz.o2.proxima.annotations.Stable;
 import java.io.Serializable;
 
@@ -23,6 +24,76 @@ import java.io.Serializable;
  */
 @Stable
 public interface ProxyTransform extends Serializable {
+
+  static final ProxyTransform IDENTITY = new ProxyTransform() {
+
+    @Override
+    public String fromProxy(String proxy) {
+      return proxy;
+    }
+
+    @Override
+    public String toProxy(String raw) {
+      return raw;
+    }
+
+  };
+
+
+  /**
+   * Proxy renaming attribute.
+   * @param proxy name of proxy attribute
+   * @param raw name of raw attribute
+   * @return the transform performing the rename operation
+   */
+  static ProxyTransform renaming(String proxy, String raw) {
+    return new ProxyTransform() {
+
+      @Override
+      public String fromProxy(String s) {
+        if (!s.startsWith(raw)) {
+          Preconditions.checkArgument(
+              s.length() >= proxy.length(),
+              "Invalid proxy attribute " + s + ", required " + proxy);
+          return raw + s.substring(proxy.length());
+        }
+        return s;
+      }
+
+      @Override
+      public String toProxy(String s) {
+        if (!s.startsWith(proxy)) {
+          Preconditions.checkArgument(
+              s.length() >= raw.length(),
+              "Invalid raw attribute " + s + ", required " + raw);
+          return proxy + s.substring(raw.length());
+        }
+        return s;
+      }
+
+    };
+  }
+
+  static ProxyTransform droppingUntilCharacter(char character, String rawPrefix) {
+    return new ProxyTransform() {
+
+      @Override
+      public String fromProxy(String proxy) {
+        return rawPrefix + proxy;
+      }
+
+      @Override
+      public String toProxy(String raw) {
+        int pos = raw.indexOf(character);
+        if (pos > 0) {
+          return raw.substring(pos + 1);
+        }
+        return raw;
+      }
+
+    };
+  }
+
 
   /**
    * Apply transformation to attribute name from proxy naming.
@@ -37,5 +108,13 @@ public interface ProxyTransform extends Serializable {
    * @return the proxy attribute name
    */
   String toProxy(String raw);
+
+  /**
+   * Setup this transform for given target attribute.
+   * @param target the target attribute descriptor
+   */
+  default void setup(AttributeDescriptor<?> target) {
+    // nop
+  }
 
 }

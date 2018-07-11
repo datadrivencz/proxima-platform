@@ -28,7 +28,7 @@ import cz.o2.proxima.storage.Partition;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.storage.commitlog.CommitLogReader;
 import cz.o2.proxima.storage.commitlog.Partitioner;
-import cz.o2.proxima.storage.pubsub.io.CommitLogSource;
+import cz.o2.proxima.beam.io.CommitLogSource;
 import cz.o2.proxima.storage.pubsub.proto.PubSub;
 import cz.o2.proxima.view.PartitionedLogObserver;
 import cz.o2.proxima.view.PartitionedView;

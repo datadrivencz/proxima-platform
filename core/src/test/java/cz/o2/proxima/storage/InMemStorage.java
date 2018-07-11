@@ -53,7 +53,12 @@ import lombok.Getter;
 import cz.o2.proxima.storage.commitlog.ObserveHandle;
 import cz.o2.proxima.storage.randomaccess.RawOffset;
 import cz.o2.proxima.view.PartitionedCachedView;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.ObjectStreamException;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -62,76 +67,62 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class InMemStorage extends StorageDescriptor {
 
+  private static InMemStorage THIS;
+
   @FunctionalInterface
   private interface InMemIngestWriter extends Serializable {
     void write(StreamElement data);
   }
 
-  public static final class Writer
-      extends AbstractOnlineAttributeWriter {
+  public final class Writer extends AbstractOnlineAttributeWriter {
 
-    private final NavigableMap<String, Pair<Long, byte[]>> data;
-    private final Map<Integer, InMemIngestWriter> observers;
-
-    private Writer(
-        EntityDescriptor entityDesc, URI uri,
-        NavigableMap<String, Pair<Long, byte[]>> data,
-        Map<Integer, InMemIngestWriter> observers) {
-
+    private Writer(EntityDescriptor entityDesc, URI uri) {
       super(entityDesc, uri);
-      this.data = data;
-      this.observers = observers;
     }
 
-
     @Override
-    public void write(StreamElement data, CommitCallback statusCallback) {
-      log.debug("Writing element {} to {}", data, getURI());
-      if (data.isDeleteWildcard()) {
-        String prefix = getURI().getPath() + "/" + data.getKey()
-            + "#" + data.getAttributeDescriptor().toAttributePrefix();
+    public void write(StreamElement ingest, CommitCallback statusCallback) {
+      log.debug("Writing element {} to {}", ingest, getURI());
+      if (ingest.isDeleteWildcard()) {
+        String prefix = getURI().getPath() + "/" + ingest.getKey()
+            + "#" + ingest.getAttributeDescriptor().toAttributePrefix();
         for (Map.Entry<String, Pair<Long, byte[]>> e
-            : this.data.tailMap(prefix).entrySet()) {
+            : data.tailMap(prefix).entrySet()) {
           if (!e.getKey().startsWith(prefix)) {
             break;
           }
-          if (e.getValue().getFirst() < data.getStamp()) {
+          if (e.getValue().getFirst() < ingest.getStamp()) {
             String attr = e.getKey().substring(prefix.lastIndexOf('#') + 1);
             write(StreamElement.delete(
-                data.getEntityDescriptor(), data.getAttributeDescriptor(),
-                data.getUuid(), data.getKey(), attr, data.getStamp()),
+                ingest.getEntityDescriptor(), ingest.getAttributeDescriptor(),
+                ingest.getUuid(), ingest.getKey(), attr, ingest.getStamp()),
                 (succ, exc) -> { });
           }
         }
       } else {
-        this.data.compute(
-            getURI().getPath() + "/" + data.getKey() + "#" + data.getAttribute(),
+        data.compute(
+            getURI().getPath() + "/" + ingest.getKey() + "#" + ingest.getAttribute(),
             (key, old) -> {
-              if (old != null && old.getFirst() > data.getStamp()) {
+              if (old != null && old.getFirst() > ingest.getStamp()) {
                 return old;
               }
-              return Pair.of(data.getStamp(), data.getValue());
+              return Pair.of(ingest.getStamp(), ingest.getValue());
             });
       }
-      synchronized (observers) {
-        observers.values().forEach(o -> o.write(data));
+      NavigableMap<Integer, InMemIngestWriter> local = observers.get(getURI());
+      synchronized (local) {
+        local.values().forEach(o -> o.write(ingest));
       }
       statusCallback.commit(true, null);
     }
   }
 
-  private static class InMemCommitLogReader
+  private class InMemCommitLogReader
       extends AbstractStorage
       implements CommitLogReader, PartitionedView {
 
-    private final NavigableMap<Integer, InMemIngestWriter> observers;
-
-    private InMemCommitLogReader(
-        EntityDescriptor entityDesc, URI uri,
-        NavigableMap<Integer, InMemIngestWriter> observers) {
-
+    private InMemCommitLogReader(EntityDescriptor entityDesc, URI uri) {
       super(entityDesc, uri);
-      this.observers = observers;
     }
 
     @Override
@@ -150,42 +141,54 @@ public class InMemStorage extends StorageDescriptor {
         Position position,
         LogObserver observer) {
 
-      if (position != Position.NEWEST) {
-        throw new UnsupportedOperationException(
-            "Cannot read from position " + position);
-      }
+      return observe(name, position, false, observer);
+    }
+
+    private ObserveHandle observe(
+        String name,
+        Position position,
+        boolean stopAtCurrent,
+        LogObserver observer) {
+
+      logAndFixPosition(position);
       final int id;
-      synchronized (observers) {
-        id = observers.isEmpty() ? 0 : observers.lastKey() + 1;
-        observers.put(id, elem -> {
-          try {
-            observer.onNext(elem, (suc, err) -> { });
-          } catch (Exception ex) {
-            observer.onError(ex);
-          }
-        });
+      if (!stopAtCurrent) {
+        NavigableMap<Integer, InMemIngestWriter> local = observers.get(getURI());
+        synchronized (local) {
+          id = local.isEmpty() ? 0 : local.lastKey() + 1;
+          local.put(id, elem -> {
+            try {
+              observer.onNext(elem, (succ, err) -> { });
+            } catch (Exception ex) {
+              observer.onError(ex);
+            }
+          });
+        }
+      } else {
+        observer.onCompleted();
+        id = -1;
       }
       return new ObserveHandle() {
 
         @Override
         public void cancel() {
-          observers.remove(id);
+          observers.get(getURI()).remove(id);
           observer.onCancelled();
         }
 
         @Override
         public List<Offset> getCommittedOffsets() {
-          throw new UnsupportedOperationException("Not supported.");
+          return Arrays.asList(() -> () -> 0);
         }
 
         @Override
         public void resetOffsets(List<Offset> offsets) {
-          throw new UnsupportedOperationException("Not supported.");
+          // nop
         }
 
         @Override
         public List<Offset> getCurrentOffsets() {
-          throw new UnsupportedOperationException("Not supported.");
+          return getCommittedOffsets();
         }
 
         @Override
@@ -204,10 +207,7 @@ public class InMemStorage extends StorageDescriptor {
         boolean stopAtCurrent,
         LogObserver observer) {
 
-      if (stopAtCurrent) {
-        throw new UnsupportedOperationException("Cannot stop at current with this reader");
-      }
-      return observe(null, position, observer);
+      return observe(null, position, stopAtCurrent, observer);
     }
 
     @Override
@@ -217,41 +217,48 @@ public class InMemStorage extends StorageDescriptor {
         boolean stopAtCurrent,
         BulkLogObserver observer) {
 
-      if (position != Position.NEWEST) {
-        throw new UnsupportedOperationException(
-            "Cannot read from position " + position);
-      }
+      logAndFixPosition(position);
       final int id;
-      synchronized (observers) {
-        id = observers.isEmpty() ? 0 : observers.lastKey();
-        observers.put(id, elem -> {
-          try {
-            observer.onNext(elem, () -> 0, (suc, err) -> { });
-          } catch (Exception ex) {
-            observer.onError(ex);
-          }
-        });
+      System.err.println(
+          " *** starting to observe " + getURI() + " at "
+              + position + ", " + stopAtCurrent + " time " + Instant.now());
+      if (!stopAtCurrent) {
+        NavigableMap<Integer, InMemIngestWriter> local = observers.get(getURI());
+        synchronized (local) {
+          id = local.isEmpty() ? 0 : local.lastKey();
+          local.put(id, elem -> {
+            try {
+              System.err.println(" *** next " + elem);
+              observer.onNext(elem, () -> 0, (suc, err) -> { });
+            } catch (Exception ex) {
+              observer.onError(ex);
+            }
+          });
+        }
+      } else {
+        id = -1;
+        observer.onCompleted();
       }
       return new ObserveHandle() {
         @Override
         public void cancel() {
-          observers.remove(id);
+          observers.get(getURI()).remove(id);
           observer.onCancelled();
         }
 
         @Override
         public List<Offset> getCommittedOffsets() {
-          throw new UnsupportedOperationException("Not supported ");
+          return Arrays.asList(() -> () -> 0);
         }
 
         @Override
         public void resetOffsets(List<Offset> offsets) {
-          throw new UnsupportedOperationException("Not supported.");
+          // nop
         }
 
         @Override
         public List<Offset> getCurrentOffsets() {
-          throw new UnsupportedOperationException("Not supported.");
+          return getCommittedOffsets();
         }
 
         @Override
@@ -322,32 +329,36 @@ public class InMemStorage extends StorageDescriptor {
         boolean stopAtCurrent,
         BulkLogObserver observer) {
 
-      return observeBulk(name, position, observer);
+      return observeBulk(name, position, stopAtCurrent, observer);
     }
 
     @Override
     public ObserveHandle observeBulkOffsets(
         Collection<Offset> offsets, BulkLogObserver observer) {
+
       return observeBulkPartitions(
           offsets.stream().map(Offset::getPartition).collect(Collectors.toList()),
           Position.NEWEST,
           observer);
     }
 
+    private Position logAndFixPosition(Position position) {
+      if (position != Position.NEWEST) {
+        log.warn(
+            "InMemStorage cannot observe data other than NEWEST, got {}, fixing.",
+            position);
+      }
+      return Position.NEWEST;
+    }
+
   }
 
-  private static final class Reader
+  private final class Reader
       extends AbstractStorage
       implements RandomAccessReader {
 
-    private final NavigableMap<String, Pair<Long, byte[]>> data;
-
-    private Reader(
-        EntityDescriptor entityDesc, URI uri,
-        NavigableMap<String, Pair<Long, byte[]>> data) {
-
+    private Reader(EntityDescriptor entityDesc, URI uri) {
       super(entityDesc, uri);
-      this.data = data;
     }
 
     @Override
@@ -475,11 +486,17 @@ public class InMemStorage extends StorageDescriptor {
   private static class CachedView implements PartitionedCachedView {
 
     private final RandomAccessReader reader;
+    private final CommitLogReader commitLogReader;
     private final OnlineAttributeWriter writer;
     private BiConsumer<StreamElement, Pair<Long, Object>> updateCallback;
 
-    CachedView(RandomAccessReader reader, OnlineAttributeWriter writer) {
+    CachedView(
+        RandomAccessReader reader,
+        CommitLogReader commitLogReader,
+        OnlineAttributeWriter writer) {
+
       this.reader = reader;
+      this.commitLogReader = commitLogReader;
       this.writer = writer;
     }
 
@@ -489,6 +506,27 @@ public class InMemStorage extends StorageDescriptor {
         BiConsumer<StreamElement, Pair<Long, Object>> updateCallback) {
 
       this.updateCallback = updateCallback;
+      if (updateCallback != null) {
+        this.commitLogReader.observe(
+            UUID.randomUUID().toString(),
+            new LogObserver() {
+              @Override
+              public boolean onNext(
+                  StreamElement ingest,
+                  LogObserver.OffsetCommitter committer) {
+
+                cache(ingest);
+                committer.confirm();
+                return true;
+              }
+
+              @Override
+              public boolean onError(Throwable error) {
+                throw new RuntimeException(error);
+              }
+            });
+      }
+
     }
 
     @Override
@@ -539,11 +577,7 @@ public class InMemStorage extends StorageDescriptor {
 
     @Override
     public void write(StreamElement data, CommitCallback statusCallback) {
-      updateCallback.accept(
-          data,
-          Pair.of(-1L, get(
-              data.getKey(), data.getAttribute(),
-              data.getAttributeDescriptor()).orElse(null)));
+      cache(data);
       writer.write(data, statusCallback);
     }
 
@@ -560,17 +594,27 @@ public class InMemStorage extends StorageDescriptor {
       reader.scanWildcardAll(key, offset, limit, consumer);
     }
 
+    @Override
+    public void cache(StreamElement element) {
+      updateCallback.accept(
+          element,
+          Pair.of(-1L, get(
+              element.getKey(), element.getAttribute(),
+              element.getAttributeDescriptor()).orElse(null)));
+    }
+
   }
 
   @Getter
-  private final NavigableMap<String, Pair<Long, byte[]>> data;
+  private final transient NavigableMap<String, Pair<Long, byte[]>> data;
 
-  private final Map<URI, NavigableMap<Integer, InMemIngestWriter>> observers;
+  private final transient Map<URI, NavigableMap<Integer, InMemIngestWriter>> observers;
 
   public InMemStorage() {
     super(Arrays.asList("inmem"));
     this.data = Collections.synchronizedNavigableMap(new TreeMap<>());
     this.observers = new ConcurrentHashMap<>();
+    InMemStorage.THIS = this;
   }
 
   @Override
@@ -579,14 +623,14 @@ public class InMemStorage extends StorageDescriptor {
 
     observers.computeIfAbsent(uri, k -> Collections.synchronizedNavigableMap(
         new TreeMap<>()));
-    NavigableMap<Integer, InMemIngestWriter> uriObservers = observers.get(uri);
-    Writer writer = new Writer(entityDesc, uri, data, uriObservers);
+    Writer writer = new Writer(entityDesc, uri);
     InMemCommitLogReader commitLogReader = new InMemCommitLogReader(
-        entityDesc, uri, uriObservers);
-    Reader reader = new Reader(entityDesc, uri, data);
-    CachedView cachedView = new CachedView(reader, writer);
+        entityDesc, uri);
+    Reader reader = new Reader(entityDesc, uri);
+    CachedView cachedView = new CachedView(reader, commitLogReader, writer);
 
     return new DataAccessor() {
+
       @Override
       public Optional<AttributeWriterBase> getWriter(Context context) {
         Objects.requireNonNull(context);
@@ -618,6 +662,19 @@ public class InMemStorage extends StorageDescriptor {
       }
 
     };
+  }
+
+  // disable clone of the storage by serialization
+  private Object readResolve() throws ObjectStreamException {
+    return THIS;
+  }
+
+  private void readObject(ObjectInputStream ois) {
+
+  }
+
+  private void writeObject(ObjectOutputStream oos) {
+
   }
 
 }

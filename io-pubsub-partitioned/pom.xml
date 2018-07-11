@@ -117,6 +117,12 @@
 
     <dependency>
       <groupId>cz.o2.proxima</groupId>
+      <artifactId>beam</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>cz.o2.proxima</groupId>
       <artifactId>core</artifactId>
       <version>${project.version}</version>
       <type>test-jar</type>
