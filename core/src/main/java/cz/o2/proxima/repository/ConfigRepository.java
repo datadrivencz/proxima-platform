@@ -680,7 +680,7 @@ public class ConfigRepository implements Repository, Serializable {
       Map<String, Object> settings = toMap(
           "entities." + entityName + ".attributes." + key, value);
       if (settings.get("proxy") != null) {
-        loadProxy(key, settings, entity);
+        loadProxyAttribute(key, settings, entity);
       }
     });
     return entity.build();
@@ -698,58 +698,19 @@ public class ConfigRepository implements Repository, Serializable {
   }
 
   @SuppressWarnings("unchecked")
-  private void loadProxy(
+  private void loadProxyAttribute(
       String attrName,
       Map<String, Object> settings,
       EntityDescriptor.Builder entityBuilder) {
 
-    final AttributeDescriptor readTarget;
-    final AttributeDescriptor writeTarget;
-    final ProxyTransform readTransform;
-    final ProxyTransform writeTransform;
     if (settings.get("proxy") instanceof Map) {
       Map<String, Object> proxyMap = (Map) settings.get("proxy");
-      Map<String, Object> write = toMapOrNull(proxyMap.get("write"));
-      Map<String, Object> read = toMapOrNull(proxyMap.get("read"));
-      AttributeDescriptor<?> original = null;
-      if (write == null || read == null) {
-        // we need to load the original attribute, which must have been
-        // loaded (must contain `scheme`)
-        original = Objects.requireNonNull(
-            entityBuilder.findAttribute(attrName),
-            "Proxy attribute have to be either full (containing both `read` and `write` sides) "
-                + "or declare `scheme`.");
-      }
-      if (read != null) {
-        readTarget = Optional.ofNullable(read.get("from"))
-            .map(Object::toString)
-            .map(entityBuilder::findAttribute)
-            .orElseThrow(() -> new IllegalStateException(
-                "Invalid state: `read.from` must not be null"));
-      } else {
-        readTarget = original;
-      }
-      if (write != null) {
-        writeTarget = Optional.ofNullable(write.get("into"))
-            .map(Object::toString)
-            .map(entityBuilder::findAttribute)
-            .orElseThrow(() -> new IllegalStateException(
-                "Invalid state: `write.into` must not be null"));
-      } else {
-        writeTarget = original;
-      }
-
-      if (shouldLoadAccessors) {
-        readTransform = readTarget == original
-            ? ProxyTransform.IDENTITY : getProxyTransform(read);
-        writeTransform = writeTarget == original
-            ? ProxyTransform.IDENTITY : getProxyTransform(write);
-        readTransform.setup(readTarget);
-        writeTransform.setup(writeTarget);
-      } else {
-        readTransform = writeTransform = null;
-      }
+      addProxyAttributeAsymmetric(attrName, proxyMap, entityBuilder);
     } else {
+      final AttributeDescriptor readTarget;
+      final AttributeDescriptor writeTarget;
+      final ProxyTransform readTransform;
+      final ProxyTransform writeTransform;
       readTarget = writeTarget = Optional.ofNullable(settings.get("proxy"))
           .map(Object::toString)
           .map(entityBuilder::findAttribute)
@@ -762,6 +723,60 @@ public class ConfigRepository implements Repository, Serializable {
       } else {
         readTransform = writeTransform = null;
       }
+      entityBuilder.addAttribute(AttributeDescriptor.newProxy(
+          attrName, readTarget, readTransform, writeTarget, writeTransform));
+    }
+  }
+
+  @SuppressWarnings("unchecked")
+  private void addProxyAttributeAsymmetric(
+      String attrName,
+      Map<String, Object> proxyMap,
+      EntityDescriptor.Builder entityBuilder) {
+
+    final AttributeDescriptor readTarget;
+    final AttributeDescriptor writeTarget;
+    final ProxyTransform readTransform;
+    final ProxyTransform writeTransform;
+    Map<String, Object> write = toMapOrNull(proxyMap.get("write"));
+    Map<String, Object> read = toMapOrNull(proxyMap.get("read"));
+    AttributeDescriptor<?> original = null;
+    if (write == null || read == null) {
+      // we need to load the original attribute, which must have been
+      // loaded (must contain `scheme`)
+      original = Objects.requireNonNull(
+          entityBuilder.findAttribute(attrName),
+          "Proxy attribute have to be either full (containing both `read` and `write` sides) "
+              + "or declare `scheme`.");
+    }
+    if (read != null) {
+      readTarget = Optional.ofNullable(read.get("from"))
+          .map(Object::toString)
+          .map(entityBuilder::findAttribute)
+          .orElseThrow(() -> new IllegalStateException(
+              "Invalid state: `read.from` must not be null"));
+    } else {
+      readTarget = original;
+    }
+    if (write != null) {
+      writeTarget = Optional.ofNullable(write.get("into"))
+          .map(Object::toString)
+          .map(entityBuilder::findAttribute)
+          .orElseThrow(() -> new IllegalStateException(
+              "Invalid state: `write.into` must not be null"));
+    } else {
+      writeTarget = original;
+    }
+
+    if (shouldLoadAccessors) {
+      readTransform = readTarget == original
+          ? ProxyTransform.IDENTITY : getProxyTransform(read);
+      writeTransform = writeTarget == original
+          ? ProxyTransform.IDENTITY : getProxyTransform(write);
+      readTransform.setup(readTarget);
+      writeTransform.setup(writeTarget);
+    } else {
+      readTransform = writeTransform = null;
     }
     entityBuilder.addAttribute(AttributeDescriptor.newProxy(
         attrName, readTarget, readTransform, writeTarget, writeTransform));
@@ -890,8 +905,7 @@ public class ConfigRepository implements Repository, Serializable {
   private void loadSingleFamily(
       String name,
       boolean overwrite,
-      Map<String, Object> cfg)
-      throws URISyntaxException, IllegalArgumentException {
+      Map<String, Object> cfg) throws URISyntaxException {
 
     cfg = flatten(cfg);
     boolean isDisabled = Optional.ofNullable(cfg.get("disabled"))
@@ -940,42 +954,8 @@ public class ConfigRepository implements Repository, Serializable {
         .setAccess(access)
         .setSource((String) cfg.get("from"));
     if (shouldLoadAccessors) {
-      DataAccessor accessor = storageDesc.getAccessor(
-          entDesc, storageURI, cfg);
-
-      if (!isReadonly && !access.isReadonly()) {
-        family.setWriter(accessor.getWriter(context)
-            .orElseThrow(() -> new IllegalArgumentException(
-                "Storage " + storageDesc + " has no valid writer for family " + name
-                    + " or specify the family as read-only.")));
-      }
-      if (access.canRandomRead()) {
-        family.setRandomAccess(accessor.getRandomAccessReader(context)
-            .orElseThrow(() -> new IllegalArgumentException(
-                "Storage " + storageDesc + " has no valid random access storage for family "
-                    + name)));
-      }
-      if (access.canReadCommitLog()) {
-        family.setCommitLog(accessor.getCommitLogReader(context).orElseThrow(
-            () -> new IllegalArgumentException(
-                "Storage " + storageDesc
-                    + " has no valid commit-log storage for family " + name)));
-      }
-      if (access.canCreatePartitionedView()) {
-        family.setPartitionedView(accessor.getPartitionedView(context)
-            .orElseThrow(() -> new IllegalArgumentException(
-                "Storage " + storageDesc + " has no valid partitioned view.")));
-      }
-      if (access.canCreatePartitionedCachedView()) {
-        family.setCachedView(accessor.getCachedView(context)
-            .orElseThrow(() -> new IllegalArgumentException(
-                "Storage " + storageDesc + " has no cached partitioned view.")));
-      }
-      if (access.canReadBatchSnapshot() || access.canReadBatchUpdates()) {
-        family.setBatchObservable(accessor.getBatchLogObservable(context)
-            .orElseThrow(() -> new IllegalArgumentException(
-                "Storage " + storageDesc + " has no batch log observable.")));
-      }
+      loadFamilyAccessors(
+          name, entDesc, storageURI, cfg, storageDesc, access, family);
     }
     Collection<AttributeDescriptor<?>> allAttributes = new HashSet<>();
     for (String attr : attributes) {
@@ -985,23 +965,85 @@ public class ConfigRepository implements Repository, Serializable {
       allAttributes.addAll(attrDescs);
     }
     if (!filter.isEmpty() && !isReadonly) {
-      boolean allProtected = allAttributes.stream()
-          .map(a -> !a.isPublic())
-          .reduce(true, (a, b) -> a && b);
-      if (type == StorageType.PRIMARY)
-        if (!allProtected) {
-          throw new IllegalArgumentException(
-              "Primary storage for non-protected attributes "
-                  + allAttributes + " cannot have filters");
-        } else {
-          log.info(
-              "Allowing filter {} in PRIMARY family {} for protected targets {}",
-              filter, name, allAttributes);
-      }
-      family.setFilter(newInstance(filter, StorageFilter.class));
+      insertFilterIfPossible(allAttributes, type, filter, name, family);
     }
     allAttributes.forEach(family::addAttribute);
     insertFamily(family.build(), overwrite);
+  }
+
+  private void insertFilterIfPossible(
+      Collection<AttributeDescriptor<?>> allAttributes,
+      StorageType type,
+      String filter,
+      String familyName,
+      AttributeFamilyDescriptor.Builder family) throws IllegalArgumentException {
+
+    boolean allProtected = allAttributes.stream()
+        .map(a -> !a.isPublic())
+        .reduce(true, (a, b) -> a && b);
+
+    if (type == StorageType.PRIMARY) {
+      if (!allProtected) {
+        throw new IllegalArgumentException(
+            "Primary storage for non-protected attributes "
+                + allAttributes + " cannot have filters");
+      } else {
+        log.info(
+            "Allowing filter {} in PRIMARY family {} for protected targets {}",
+            filter, familyName, allAttributes);
+      }
+    }
+
+    family.setFilter(newInstance(filter, StorageFilter.class));
+  }
+
+  private void loadFamilyAccessors(
+      String familyName,
+      EntityDescriptor entDesc,
+      URI storageURI,
+      Map<String, Object> cfg,
+      StorageDescriptor storageDesc,
+      AccessType access,
+      AttributeFamilyDescriptor.Builder family) {
+
+    DataAccessor accessor = storageDesc.getAccessor(entDesc, storageURI, cfg);
+
+    if (!isReadonly && !access.isReadonly()) {
+      family.setWriter(accessor.getWriter(context)
+          .orElseThrow(() -> new IllegalArgumentException(
+              "Storage " + storageDesc + " has no valid writer for family "
+                  + familyName + ", plesase specify the family as read-only.")));
+    }
+    if (access.canRandomRead()) {
+      family.setRandomAccess(accessor.getRandomAccessReader(context)
+          .orElseThrow(() -> new IllegalArgumentException(
+              "Storage " + storageDesc + " has no valid random access storage for family "
+                  + familyName)));
+    }
+    if (access.canReadCommitLog()) {
+      family.setCommitLog(accessor.getCommitLogReader(context).orElseThrow(
+          () -> new IllegalArgumentException(
+              "Storage " + storageDesc + " has no valid commit-log storage for family "
+                  + familyName)));
+    }
+    if (access.canCreatePartitionedView()) {
+      family.setPartitionedView(accessor.getPartitionedView(context)
+          .orElseThrow(() -> new IllegalArgumentException(
+              "Storage " + storageDesc + " has no valid partitioned view for family "
+                  + familyName)));
+    }
+    if (access.canCreatePartitionedCachedView()) {
+      family.setCachedView(accessor.getCachedView(context)
+          .orElseThrow(() -> new IllegalArgumentException(
+              "Storage " + storageDesc + " has no cached partitioned view for family "
+                  + familyName)));
+    }
+    if (access.canReadBatchSnapshot() || access.canReadBatchUpdates()) {
+      family.setBatchObservable(accessor.getBatchLogObservable(context)
+          .orElseThrow(() -> new IllegalArgumentException(
+              "Storage " + storageDesc + " has no batch log observable for family "
+                  + familyName)));
+    }
   }
 
   private void insertFamily(AttributeFamilyDescriptor family, boolean overwrite) {
@@ -1118,7 +1160,7 @@ public class ConfigRepository implements Repository, Serializable {
     // create parent settings for families
     List<String> attrList = attrs
         .stream()
-        .map(a -> a.getName())
+        .map(AttributeDescriptor::getName)
         .collect(Collectors.toList());
 
     // remove primary family of the original attribute, it will be just proxy
@@ -1170,23 +1212,7 @@ public class ConfigRepository implements Repository, Serializable {
       insertFamily(builder.build(), true);
     }
     if (!readOnly) {
-      {
-        Preconditions.checkArgument(
-            !via.isEmpty(),
-            "Missing required settings for replication `via` settings");
-        // create family for writes and replication
-        Map<String, Object> cfg = new HashMap<>(cfgMapTemplate);
-        // this can be overridden
-        cfg.put("access", "commit-log");
-        cfg.putAll(via);
-        cfg.put("attributes", attrList
-            .stream()
-            .map(a -> toReplicationWriteName(
-                name,
-                resolveProxyTarget(entity, a, false).getName()))
-            .collect(Collectors.toList()));
-        loadSingleFamily(String.format("replication_%s_write", name), true, cfg);
-      }
+      createLocalWriteCommitLog(entity, name, cfgMapTemplate, via, attrList);
       for (Map.Entry<String, Object> tgt : targets.entrySet()) {
         Map<String, Object> cfg = new HashMap<>(cfgMapTemplate);
         cfg.putAll(toMap(tgt.getKey(), tgt.getValue()));
@@ -1199,6 +1225,30 @@ public class ConfigRepository implements Repository, Serializable {
             "replication_target_%s_%s", name, tgt.getKey()), true, cfg);
       }
     }
+  }
+
+  private void createLocalWriteCommitLog(
+      EntityDescriptor entity,
+      String replicationName,
+      Map<String, Object> cfgMapTemplate,
+      Map<String, Object> via,
+      List<String> attrList) throws URISyntaxException {
+
+    Preconditions.checkArgument(
+        !via.isEmpty(),
+        "Missing required settings for replication `via` settings");
+    // create family for writes and replication
+    Map<String, Object> cfg = new HashMap<>(cfgMapTemplate);
+    // this can be overridden
+    cfg.put("access", "commit-log");
+    cfg.putAll(via);
+    cfg.put("attributes", attrList
+        .stream()
+        .map(a -> toReplicationWriteName(
+            replicationName,
+            resolveProxyTarget(entity, a, false).getName()))
+        .collect(Collectors.toList()));
+    loadSingleFamily(String.format("replication_%s_write", replicationName), true, cfg);
   }
 
   @SuppressWarnings("unchecked")
@@ -1236,112 +1286,139 @@ public class ConfigRepository implements Repository, Serializable {
         String.format("replication_%s_replicated", name));
 
     findFamily(String.format("replication_%s_source", name))
-        .ifPresent(s -> {
+        .ifPresent(s -> createRemoteReadTransform(
+            name, attrs, entity, s, replicated));
 
-      // incoming data
-      String transform = CamelCase.apply(String.format("_%s_read", name), false);
-      String replPrefix = CamelCase.apply(String.format("_%s_replicated$", name), false);
-
-      Map<AttributeDescriptor<?>, AttributeDescriptor<?>> sourceMapping;
-      sourceMapping = getReplMapping(entity, attrs, replPrefix, false);
-
-      this.transformations.put(
-          transform,
-          TransformationDescriptor.newBuilder()
-              .addAttributes(s.getAttributes())
-              .setEntity(entity)
-              .setFilter(replicated.getFilter())
-              .setTransformation(
-                  renameTransform(
-                      source -> Objects.requireNonNull(
-                      sourceMapping.get(source),
-                      () -> String.format(
-                          "Source mapping doesn't contain %s: %s",
-                          source, sourceMapping)),
-                      (input, desc) -> {
-                        String raw = strippingReplPrefix(input);
-                        // each incoming attribute is proxy
-                        AttributeProxyDescriptorImpl<?> proxyDesc;
-                        proxyDesc = ((AttributeDescriptorBase<?>) desc).toProxy();
-                        return replPrefix + strippingReplPrefix(
-                            proxyDesc.getWriteTransform().fromProxy(raw));
-                      }))
-              .build());
-    });
-
-    {
-      // local writes
-      String transform = CamelCase.apply(String.format("_%s_replicated", name), false);
-      String replPrefix = transform + "$";
-      Map<AttributeDescriptor<?>, AttributeDescriptor<?>> sourceMapping;
-      sourceMapping = getReplMapping(
-          entity, write.getAttributes(), replPrefix, false);
-
-      this.transformations.put(
-          transform,
-          TransformationDescriptor.newBuilder()
-              .addAttributes(write.getAttributes())
-              .setEntity(entity)
-              .setFilter(replicated.getFilter())
-              .setTransformation(
-                  renameTransform(
-                      source -> Objects.requireNonNull(
-                      sourceMapping.get(source),
-                      () -> String.format(
-                          "Source mapping doesn't contain %s: %s",
-                          source, sourceMapping)),
-                      (a, desc) -> renameReplicated(replPrefix, a)))
-              .build());
-    }
+    createLocalWriteTransform(name, entity, write, replicated);
 
     for (String tgt : targets) {
-      AttributeFamilyDescriptor target = findFamilyRequired(
-          String.format("replication_target_%s_%s", name, tgt));
-
-      String transform = CamelCase.apply(String.format("_%s_%s", name, tgt));
-      String replPrefix = transform + "$";
-      Map<AttributeDescriptor<?>, AttributeDescriptor<?>> sourceMapping = new HashMap<>();
-      Map<AttributeDescriptor<?>, AttributeDescriptor<?>> sourceToOrig = new HashMap<>();
-
-      // store targets using original non-proxied name
-      attrs
-          .stream()
-          .map(a -> findAttributeRequired(entity, a.getName()))
-          .map(a -> ((AttributeDescriptorBase<?>) a).toProxy())
-          .forEach(a -> {
-            String source = toReplicationWriteName(
-                name,
-                strippingReplPrefix(a.getReadTarget().getName()));
-            AttributeDescriptorBase<?> sourceAttr;
-            sourceAttr = findAttributeRequired(entity, source);
-            String renamed = replPrefix + a.getName();
-            sourceMapping.put(sourceAttr, findAttributeRequired(entity, renamed));
-            sourceToOrig.put(sourceAttr, a);
-          });
-
-      this.transformations.put(
-          transform,
-          TransformationDescriptor.newBuilder()
-              .addAttributes(write.getAttributes())
-              .setEntity(entity)
-              .setFilter(target.getFilter())
-              .setTransformation(
-                  renameTransform(source -> Objects.requireNonNull(
-                      sourceMapping.get(source),
-                      () -> String.format(
-                          "Source mapping doesn't contain %s: %s",
-                          source, sourceMapping)),
-                      (input, desc) -> {
-                        String raw = strippingReplPrefix(input);
-                        AttributeProxyDescriptorImpl<?> proxyDesc;
-                        proxyDesc = ((AttributeDescriptorBase<?>) sourceToOrig
-                            .get(desc)).toProxy();
-                        return strippingReplPrefix(
-                            proxyDesc.getReadTransform().toProxy(raw));
-                      }))
-              .build());
+      createTargetTransform(name, tgt, attrs, entity, write);
     }
 
+  }
+
+  private void createRemoteReadTransform(
+      String replicationName,
+      List<AttributeDescriptor<?>> attrs,
+      EntityDescriptor entity,
+      AttributeFamilyDescriptor source,
+      AttributeFamilyDescriptor replicated) {
+
+    // incoming data
+    String transform = CamelCase.apply(
+        String.format("_%s_read", replicationName), false);
+    String replPrefix = CamelCase.apply(
+        String.format("_%s_replicated$", replicationName), false);
+
+    Map<AttributeDescriptor<?>, AttributeDescriptor<?>> sourceMapping;
+    sourceMapping = getReplMapping(entity, attrs, replPrefix, false);
+
+    this.transformations.put(
+        transform,
+        TransformationDescriptor.newBuilder()
+            .addAttributes(source.getAttributes())
+            .setEntity(entity)
+            .setFilter(replicated.getFilter())
+            .setTransformation(
+                renameTransform(
+                    s -> Objects.requireNonNull(
+                        sourceMapping.get(s),
+                        () -> String.format(
+                            "Source mapping doesn't contain %s: %s",
+                            s, sourceMapping)),
+                    (input, desc) -> {
+                      String raw = strippingReplPrefix(input);
+                      // each incoming attribute is proxy
+                      AttributeProxyDescriptorImpl<?> proxyDesc;
+                      proxyDesc = ((AttributeDescriptorBase<?>) desc).toProxy();
+                      return replPrefix + strippingReplPrefix(
+                          proxyDesc.getWriteTransform().fromProxy(raw));
+                    }))
+            .build());
+  }
+
+  private void createTargetTransform(
+      String replicationName,
+      String target,
+      List<AttributeDescriptor<?>> attrs,
+      EntityDescriptor entity,
+      AttributeFamilyDescriptor write) {
+
+    AttributeFamilyDescriptor targetFamily = findFamilyRequired(
+        String.format("replication_target_%s_%s", replicationName, target));
+
+    String transform = CamelCase.apply(String.format("_%s_%s", replicationName, target));
+    String replPrefix = transform + "$";
+    Map<AttributeDescriptor<?>, AttributeDescriptor<?>> sourceMapping = new HashMap<>();
+    Map<AttributeDescriptor<?>, AttributeDescriptor<?>> sourceToOrig = new HashMap<>();
+
+    // store targets using original non-proxied name
+    attrs
+        .stream()
+        .map(a -> findAttributeRequired(entity, a.getName()))
+        .map(a -> ((AttributeDescriptorBase<?>) a).toProxy())
+        .forEach(a -> {
+          String source = toReplicationWriteName(
+              replicationName,
+              strippingReplPrefix(a.getReadTarget().getName()));
+          AttributeDescriptorBase<?> sourceAttr;
+          sourceAttr = findAttributeRequired(entity, source);
+          String renamed = replPrefix + a.getName();
+          sourceMapping.put(sourceAttr, findAttributeRequired(entity, renamed));
+          sourceToOrig.put(sourceAttr, a);
+        });
+
+    this.transformations.put(
+        transform,
+        TransformationDescriptor.newBuilder()
+            .addAttributes(write.getAttributes())
+            .setEntity(entity)
+            .setFilter(targetFamily.getFilter())
+            .setTransformation(
+                renameTransform(source -> Objects.requireNonNull(
+                    sourceMapping.get(source),
+                    () -> String.format(
+                        "Source mapping doesn't contain %s: %s",
+                        source, sourceMapping)),
+                    (input, desc) -> {
+                      String raw = strippingReplPrefix(input);
+                      AttributeProxyDescriptorImpl<?> proxyDesc;
+                      proxyDesc = ((AttributeDescriptorBase<?>) sourceToOrig
+                          .get(desc)).toProxy();
+                      return strippingReplPrefix(
+                          proxyDesc.getReadTransform().toProxy(raw));
+                    }))
+            .build());
+  }
+
+  private void createLocalWriteTransform(
+      String replicationName,
+      EntityDescriptor entity,
+      AttributeFamilyDescriptor write,
+      AttributeFamilyDescriptor replicated) {
+
+    // local writes
+    String transform = CamelCase.apply(String.format("_%s_replicated", replicationName), false);
+    String replPrefix = transform + "$";
+    Map<AttributeDescriptor<?>, AttributeDescriptor<?>> sourceMapping;
+    sourceMapping = getReplMapping(
+        entity, write.getAttributes(), replPrefix, false);
+
+    this.transformations.put(
+        transform,
+        TransformationDescriptor.newBuilder()
+            .addAttributes(write.getAttributes())
+            .setEntity(entity)
+            .setFilter(replicated.getFilter())
+            .setTransformation(
+                renameTransform(
+                    source -> Objects.requireNonNull(
+                        sourceMapping.get(source),
+                        () -> String.format(
+                            "Source mapping doesn't contain %s: %s",
+                            source, sourceMapping)),
+                    (a, desc) -> renameReplicated(replPrefix, a)))
+            .build());
   }
 
   @SuppressWarnings("unchecked")
@@ -1434,8 +1511,8 @@ public class ConfigRepository implements Repository, Serializable {
           AttributeDescriptor<?> desc = descTransform.apply(
               input.getAttributeDescriptor());
 
-          collector.collect(input.isDelete()
-              ? input.isDeleteWildcard()
+          if (input.isDelete()) {
+            collector.collect(input.isDeleteWildcard()
                   ? StreamElement.deleteWildcard(
                       input.getEntityDescriptor(),
                       desc,
@@ -1451,16 +1528,19 @@ public class ConfigRepository implements Repository, Serializable {
                       input.getKey(),
                       nameTransform.apply(
                           input.getAttribute(), input.getAttributeDescriptor()),
-                      input.getStamp())
-              : StreamElement.update(
-                  input.getEntityDescriptor(),
-                  desc,
-                  input.getUuid(),
-                  input.getKey(),
-                  nameTransform.apply(
-                      input.getAttribute(), input.getAttributeDescriptor()),
-                  input.getStamp(),
-                  input.getValue()));
+                      input.getStamp()));
+          } else {
+            collector.collect(
+                StreamElement.update(
+                    input.getEntityDescriptor(),
+                    desc,
+                    input.getUuid(),
+                    input.getKey(),
+                    nameTransform.apply(
+                        input.getAttribute(), input.getAttributeDescriptor()),
+                    input.getStamp(),
+                    input.getValue()));
+          }
           return 1;
         } catch (Exception ex) {
           log.warn("Failed to apply rename transform on {}", input, ex);
@@ -1649,31 +1729,32 @@ public class ConfigRepository implements Repository, Serializable {
                 Pair::getSecond,
                 Collectors.mapping(Pair::getFirst, Collectors.toList())));
 
-    dependencyOrdered.forEach(attr -> {
-      readWriteToAttr.entrySet().stream().filter(e -> e.getValue().contains(attr)).flatMap(e -> {
-        List<AttributeProxyDescriptorImpl<?>> v = e.getValue();
-        // cartesian product of read x write families
-        return getFamiliesForAttribute(attr.getReadTarget())
-            .stream()
-            .flatMap(read -> {
-              return getFamiliesForAttribute(attr.getWriteTarget())
-                  .stream()
-                  .flatMap(write -> {
-                    Pair<AttributeFamilyDescriptor, AttributeFamilyDescriptor> k = e.getKey();
-                    return v
-                        .stream()
-                        .map(a -> AttributeFamilyProxyDescriptor.of(
-                                findEntity(a.getEntity())
-                                    .orElseThrow(() -> new IllegalStateException(
-                                        "Entity " + a.getEntity() + " should be present")),
-                                v, read, write));
-                  });
-            });
-      })
+    for (AttributeProxyDescriptorImpl<?> attr : dependencyOrdered) {
       // prevent ConcurrentModificationException
-      .collect(Collectors.toList())
-      .forEach(family -> insertFamily(family, true));
-    });
+      List<AttributeFamilyDescriptor> createdFamilies = new ArrayList<>();
+
+      readWriteToAttr.entrySet().stream().filter(e -> e.getValue().contains(attr)).forEach(e -> {
+        List<AttributeProxyDescriptorImpl<?>> proxyList = e.getValue();
+        // cartesian product of read x write families
+        for (AttributeFamilyDescriptor read
+            : getFamiliesForAttribute(attr.getReadTarget())) {
+          for (AttributeFamilyDescriptor write
+              : getFamiliesForAttribute(attr.getWriteTarget())) {
+
+            for (AttributeProxyDescriptorImpl<?> a : proxyList) {
+              createdFamilies.add(
+                  AttributeFamilyProxyDescriptor.of(
+                      findEntity(a.getEntity())
+                          .orElseThrow(() -> new IllegalStateException(
+                              "Entity " + a.getEntity() + " should be present")),
+                      proxyList, read, write));
+            }
+          }
+        }
+      });
+      createdFamilies.forEach(family -> insertFamily(family, true));
+    }
+
   }
 
   private LinkedHashSet<AttributeProxyDescriptorImpl<?>> buildProxyOrdering(
@@ -1687,8 +1768,7 @@ public class ConfigRepository implements Repository, Serializable {
 
     while (dependencyOrdered.size() != proxies.size()) {
       boolean modified = proxies.stream()
-          .filter(p -> {
-            return (
+          .filter(p -> (
                 !((AttributeDescriptorBase<?>) p.getReadTarget()).isProxy()
                 || dependencyOrdered.contains(p.getReadTarget())
                 // the dependency can be self-resolved in case of
@@ -1697,8 +1777,7 @@ public class ConfigRepository implements Repository, Serializable {
                 && (
                     !((AttributeDescriptorBase<?>) p.getWriteTarget()).isProxy()
                     || dependencyOrdered.contains(p.getWriteTarget())
-                    || p.getWriteTarget().equals(p));
-          })
+                    || p.getWriteTarget().equals(p)))
           .map(dependencyOrdered::add)
           .anyMatch(a -> a);
       if (!modified) {

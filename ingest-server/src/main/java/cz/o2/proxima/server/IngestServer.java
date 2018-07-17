@@ -38,7 +38,6 @@ import cz.o2.proxima.storage.StorageFilter;
 import cz.o2.proxima.storage.StorageType;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.storage.commitlog.AbstractRetryableLogObserver;
-import cz.o2.proxima.storage.commitlog.BulkLogObserver;
 import cz.o2.proxima.storage.commitlog.CommitLogReader;
 import cz.o2.proxima.storage.commitlog.Offset;
 import cz.o2.proxima.storage.commitlog.RetryableBulkObserver;
@@ -881,13 +880,7 @@ public class IngestServer {
       @Override
       public boolean onNextInternal(
           StreamElement ingest,
-          BulkLogObserver.OffsetCommitter committer) {
-
-        return writeInternal(ingest, committer);
-      }
-
-      private boolean writeInternal(
-          StreamElement ingest, BulkLogObserver.OffsetCommitter committer) {
+          OffsetCommitter committer) {
 
         final boolean allowed = allowedAttributes.contains(ingest.getAttributeDescriptor());
         log.debug(

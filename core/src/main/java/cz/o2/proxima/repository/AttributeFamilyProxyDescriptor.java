@@ -48,7 +48,6 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -76,7 +75,7 @@ class AttributeFamilyProxyDescriptor extends AttributeFamilyDescriptor {
       this.attrs = attrs;
       proxyNameToDesc = attrs
           .stream()
-          .collect(Collectors.toMap(a -> a.getName(), a -> a));
+          .collect(Collectors.toMap(AttributeDescriptor::getName, Function.identity()));
       readNameToDesc = attrs
           .stream()
           .map(a -> Pair.of(a.getReadTarget().getName(), a))
@@ -92,13 +91,8 @@ class AttributeFamilyProxyDescriptor extends AttributeFamilyDescriptor {
             "Fallbacking to lookup of proxy attribute with name {}. "
                 + "This can happen when switching to and from replicated modes.",
             name);
-        // FIXME
-        try {
-          return Arrays.asList(lookupProxy(name));
-        } catch (Exception ex) {
-          log.error("Failed to lookup name {}, returning empty list. Fix code!", name, ex);
-          return Collections.emptyList();
-        }
+
+        return Arrays.asList(lookupProxy(name));
       }
       return read;
     }
@@ -399,11 +393,9 @@ class AttributeFamilyProxyDescriptor extends AttributeFamilyDescriptor {
 
         reader.scanWildcardAll(
             key, offset, limit,
-            kv -> {
-              lookup.lookupRead(kv.getAttrDescriptor().getName())
+            kv -> lookup.lookupRead(kv.getAttrDescriptor().getName())
                   .stream()
-                  .forEach(attr -> consumer.accept(transformToProxy(kv, attr)));
-            });
+                  .forEach(attr -> consumer.accept(transformToProxy(kv, attr))));
       }
 
       @Override
