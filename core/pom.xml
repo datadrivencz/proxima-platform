@@ -38,7 +38,7 @@
         <artifactId>maven-shade-plugin</artifactId>
         <version>2.4.3</version>
         <configuration>
-          <shadeTestJar>true</shadeTestJar>
+          <shadeTestJar>false</shadeTestJar>
           <artifactSet>
             <excludes>
               <exclude>org.slf4j:slf4j-api:jar:</exclude>
