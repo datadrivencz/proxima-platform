@@ -83,7 +83,7 @@
               <exclude>io.grpc:*</exclude>
             </excludes>
           </artifactSet>
-          <shadeTestJar>true</shadeTestJar>
+          <shadeTestJar>false</shadeTestJar>
           <relocations>
             <relocation>
               <pattern>cz.o2.proxima.storage.pubsub.proto.</pattern>

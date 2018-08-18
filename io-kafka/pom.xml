@@ -60,7 +60,7 @@
               <exclude>cz.o2.proxima:core</exclude>
             </excludes>
           </artifactSet>
-          <shadeTestJar>true</shadeTestJar>
+          <shadeTestJar>false</shadeTestJar>
           <relocations>
             <relocation>
               <pattern>org.apache.kafka.</pattern>
