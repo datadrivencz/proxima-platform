@@ -72,8 +72,7 @@ public class GroovyEnvTest {
   @Before
   public void setUp() {
     Console console = Console.create(cfg, repo);
-    direct = console.getDirect().orElseThrow(
-        () -> new IllegalStateException("Missing direct operator"));
+    direct = console.getDirectDataOperator();
     conf = new Configuration(Configuration.VERSION_2_3_23);
     conf.setDefaultEncoding("utf-8");
     conf.setClassForTemplateLoading(getClass(), "/");

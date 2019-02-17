@@ -16,12 +16,21 @@
 package cz.o2.proxima.tools.groovy;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
 import com.google.protobuf.AbstractMessage;
 import com.google.protobuf.AbstractMessage.Builder;
-import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.TextFormat;
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigFactory;
+import cz.o2.proxima.direct.commitlog.CommitLogReader;
+import cz.o2.proxima.direct.commitlog.Position;
+import cz.o2.proxima.direct.core.DirectAttributeFamilyDescriptor;
+import cz.o2.proxima.direct.core.DirectDataOperator;
+import cz.o2.proxima.direct.core.OnlineAttributeWriter;
+import cz.o2.proxima.direct.euphoria.source.BatchSource;
+import cz.o2.proxima.direct.euphoria.source.BoundedStreamSource;
+import cz.o2.proxima.direct.euphoria.source.UnboundedStreamSource;
 import cz.o2.proxima.functional.TriFunction;
 import cz.o2.proxima.proto.service.RetrieveServiceGrpc;
 import cz.o2.proxima.proto.service.RetrieveServiceGrpc.RetrieveServiceBlockingStub;
@@ -29,19 +38,13 @@ import cz.o2.proxima.proto.service.Rpc;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.repository.Repository;
-import cz.o2.proxima.direct.core.OnlineAttributeWriter;
+import cz.o2.proxima.scheme.ValueSerializer;
 import cz.o2.proxima.scheme.ValueSerializerFactory;
 import cz.o2.proxima.storage.StreamElement;
-import cz.o2.proxima.direct.commitlog.CommitLogReader;
-import cz.o2.proxima.direct.commitlog.Position;
-import cz.o2.proxima.direct.core.DirectAttributeFamilyDescriptor;
-import cz.o2.proxima.direct.core.DirectDataOperator;
-import cz.o2.proxima.direct.euphoria.source.BatchSource;
-import cz.o2.proxima.direct.euphoria.source.BoundedStreamSource;
-import cz.o2.proxima.direct.euphoria.source.UnboundedStreamSource;
 import cz.o2.proxima.tools.io.ConsoleRandomReader;
 import cz.o2.proxima.tools.io.TypedStreamElement;
 import cz.o2.proxima.util.Classpath;
+import cz.o2.proxima.util.Optionals;
 import cz.seznam.euphoria.core.client.dataset.Dataset;
 import cz.seznam.euphoria.core.client.dataset.windowing.GlobalWindowing;
 import cz.seznam.euphoria.core.client.flow.Flow;
@@ -65,6 +68,11 @@ import groovy.lang.GroovyClassLoader;
 import groovy.lang.GroovyObject;
 import io.grpc.Channel;
 import io.grpc.ManagedChannelBuilder;
+import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
+import org.codehaus.groovy.tools.shell.Groovysh;
+import org.codehaus.groovy.tools.shell.IO;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -83,10 +91,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
-import lombok.Getter;
-import lombok.extern.slf4j.Slf4j;
-import org.codehaus.groovy.tools.shell.Groovysh;
-import org.codehaus.groovy.tools.shell.IO;
 
 /**
  * This is the groovysh based console.
@@ -283,7 +287,7 @@ public class Console {
     if (direct.isPresent()) {
       return Arrays.stream(descriptors)
           .map(desc ->
-              direct.get().getFamiliesForAttribute(desc.desc())
+              getDirectDataOperator().getFamiliesForAttribute(desc.desc())
                   .stream()
                   .filter(af -> af.getDesc().getAccess().canReadCommitLog())
                   // sort primary families on top
@@ -369,7 +373,7 @@ public class Console {
           ds = reduceUpdatesToSnapshot(attrDesc, fromStamp, toStamp);
         } else {
           Dataset<StreamElement> raw = flow.get().createInput(BatchSource.of(
-              family.getBatchObservable().get(),
+              Optionals.get(family.getBatchObservable()),
               family.getDesc(),
               fromStamp,
               toStamp));
@@ -406,7 +410,7 @@ public class Console {
           .filter(af -> af.getDesc().getAccess().isStateCommitLog())
           .sorted((l, r) -> Integer.compare(
               l.getDesc().getType().ordinal(), r.getDesc().getType().ordinal()))
-          .map(af -> af.getCommitLogReader().get())
+          .map(af -> Optionals.get(af.getCommitLogReader()))
           .findFirst()
           .orElseThrow(() -> new IllegalStateException(
               "Cannot create batch snapshot, missing random access family "
@@ -472,7 +476,7 @@ public class Console {
             .distinct()
             .map(family ->
                 flow.get().createInput(BatchSource.of(
-                    family.getBatchObservable().get(),
+                    Optionals.get(family.getBatchObservable()),
                     family.getAttributes(),
                     startStamp, endStamp)))
             .reduce((left, right) -> Union.of(left, right).output())
@@ -528,65 +532,52 @@ public class Console {
   public void put(
       EntityDescriptor entityDesc,
       AttributeDescriptor attrDesc,
-      String key, String attribute, String textFormat)
-      throws NoSuchMethodException, IllegalAccessException, InvocationTargetException,
-          ClassNotFoundException, InvalidProtocolBufferException, InterruptedException,
-          TextFormat.ParseException {
+      String key, String attribute, long stamp, String value
+  ) {
+    Gson gson = new Gson();
+    String classname = Optionals.get(repo.getValueSerializerFactory(
+        attrDesc.getSchemeUri().getScheme()))
+          .getClassName(attrDesc.getSchemeUri());
+    Class<?> clazz = Classpath.findClass(classname,Object.class);
+    Class<?> x = gson.fromJson(value,clazz.getClass());
 
-    put(entityDesc, attrDesc, key, attribute,
-        System.currentTimeMillis(), textFormat);
+
+    throw new RuntimeException("tadaa" + x.toString());
   }
-
-  public void put(
+  public <T> void put(
       EntityDescriptor entityDesc,
-      AttributeDescriptor attrDesc,
-      String key, String attribute, long stamp, String textFormat)
-      throws NoSuchMethodException, IllegalAccessException, InvocationTargetException,
-          ClassNotFoundException, InvalidProtocolBufferException, InterruptedException,
-          TextFormat.ParseException {
+      AttributeDescriptor<T> attrDesc,
+      String key, String attribute, long stamp, T value
+  ) throws InterruptedException {
+    ValueSerializerFactory serializerFactory = repo.getValueSerializerFactory(
+        attrDesc.getSchemeUri().getScheme())
+        .orElseThrow(() -> new IllegalStateException(
+            "Unable to get ValueSerializerFactory for attribute " + attrDesc.getName()
+                + " with scheme " + attrDesc.getSchemeUri().toString() + ".")
+        );
 
-    if (!direct.isPresent()) {
-      throw new IllegalStateException(
-          "Can write with direct operator only. Add runtime dependecncy");
-    }
-    if (attrDesc.getSchemeUri().getScheme().equals("proto")) {
-      ValueSerializerFactory factory = repo.getValueSerializerFactory(
-          attrDesc.getSchemeUri().getScheme())
-          .orElseThrow(() -> new IllegalStateException(
-              "Unable to get ValueSerializerFactory for attribute " + attrDesc.getName()
-                  + " with scheme " + attrDesc.getSchemeUri().toString() + ".")
-          );
+    ValueSerializer<T> serializer = serializerFactory
+        .getValueSerializer(attrDesc.getSchemeUri());
 
-      String protoClass = factory.getClassName(attrDesc.getSchemeUri());
-      Class<AbstractMessage> cls = Classpath.findClass(protoClass, AbstractMessage.class);
-      byte[] payload = null;
-      if (textFormat != null) {
-        Method newBuilder = cls.getDeclaredMethod("newBuilder");
-        Builder builder = (Builder) newBuilder.invoke(null);
-        TextFormat.merge(textFormat, builder);
-        payload = builder.build().toByteArray();
-      }
-      OnlineAttributeWriter writer = direct.get().getWriter(attrDesc)
-          .orElseThrow(() -> new IllegalArgumentException(
-              "Missing writer for " + attrDesc));
-      CountDownLatch latch = new CountDownLatch(1);
-      AtomicReference<Throwable> exc = new AtomicReference<>();
-      writer.write(StreamElement.update(
-          entityDesc, attrDesc, UUID.randomUUID().toString(),
-          key, attribute, stamp, payload), (success, ex) -> {
+    OnlineAttributeWriter writer = getDirectDataOperator().getWriter(attrDesc)
+        .orElseThrow(() -> new IllegalArgumentException(
+            "Missing online writer for " + attrDesc));
+
+    CountDownLatch latch = new CountDownLatch(1);
+    AtomicReference<Throwable> exc = new AtomicReference<>();
+    byte[] payload = serializer.serialize(value);
+    writer.write(StreamElement.update(
+        entityDesc, attrDesc, UUID.randomUUID().toString(), key, attribute,
+        stamp, payload), ((success, error) -> {
             if (!success) {
-              exc.set(ex);
+              exc.set(error);
             }
             latch.countDown();
-          });
-      latch.await();
-      if (exc.get() != null) {
-        throw new RuntimeException(exc.get());
-      }
-    } else {
-      throw new IllegalArgumentException(
-          "Don't know how to make builder for "
-          + attrDesc.getSchemeUri());
+        })
+    );
+    latch.await();
+    if (exc.get() != null) {
+      throw new RuntimeException(exc.get());
     }
 
   }
@@ -602,11 +593,7 @@ public class Console {
       EntityDescriptor entityDesc, AttributeDescriptor<?> attrDesc,
       String key, String attribute, long stamp) throws InterruptedException {
 
-    if (!direct.isPresent()) {
-      throw new IllegalStateException(
-          "Can write with direct operator only. Add runtime dependecncy");
-    }
-    OnlineAttributeWriter writer = direct.get().getWriter(attrDesc)
+    OnlineAttributeWriter writer = getDirectDataOperator().getWriter(attrDesc)
         .orElseThrow(() -> new IllegalArgumentException(
             "Missing writer for " + attrDesc));
     CountDownLatch latch = new CountDownLatch(1);
@@ -742,4 +729,10 @@ public class Console {
     return (repository, cfg, eventTime) -> Console.createLocalExecutor(eventTime);
   }
 
+  DirectDataOperator getDirectDataOperator() {
+    return direct.orElseThrow( () ->
+      new IllegalStateException(
+        "Unable to get Direct data operator. Add runtime dependency.")
+    );
+  }
 }

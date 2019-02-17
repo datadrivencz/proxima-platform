@@ -26,6 +26,8 @@ import java.io.FileOutputStream;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.DefaultParser;
 import org.apache.commons.cli.Option;
@@ -36,6 +38,7 @@ import org.apache.commons.io.IOUtils;
 /**
  * A compiler of conf files to groovy object.
  */
+@Slf4j
 public class Compiler {
 
   private final Configuration conf = new Configuration(Configuration.VERSION_2_3_23);
@@ -56,7 +59,11 @@ public class Compiler {
     if (!parsed.hasOption("o")) {
       throw new IllegalStateException("Missing config option 'o' for output");
     }
-    output = parsed.getOptionValue("o");
+    output = parsed.getOptionValue("o").trim();
+    if (output.length() == 0) {
+      throw new IllegalArgumentException("Empty option 'o' value for output.");
+    }
+    log.debug("Configured output file: {}", output);
     configs = parsed.getArgList();
 
     conf.setDefaultEncoding(StandardCharsets.UTF_8.name());
@@ -67,7 +74,14 @@ public class Compiler {
 
   public void run() throws Exception {
     Config config = configs.stream()
-        .map(f -> ConfigFactory.parseFile(new File(f)))
+        .map(f -> {
+          File c = new File(f);
+          if (!c.exists()) {
+            throw new IllegalArgumentException(
+                "Unable to find config file " + f + ". Check your configuration.");
+          }
+          return ConfigFactory.parseFile(c);
+        })
         .reduce(
             ConfigFactory.empty(),
             (l, r) -> l.withFallback(r))

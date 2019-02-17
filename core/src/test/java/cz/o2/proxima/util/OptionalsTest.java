@@ -15,27 +15,25 @@
  */
 package cz.o2.proxima.util;
 
+import org.junit.Test;
+
 import java.util.Optional;
 
+import static org.junit.Assert.assertEquals;
+
 /**
- * Utility class for manipulation with {@link Optional}
+ * Tests for utility class {@link Optionals}
  */
-public class Optionals {
-  /**
-   * Get value from Optional or throw IllegalArgumentException
-   *
-   * @param optional Optional object
-   * @param <T>      Generic type Optional
-   * @return T value from Optional
-   * @throws IllegalArgumentException in case of empty value
-   */
-  public static <T> T get(Optional<T> optional) {
-    return optional.orElseThrow(() ->
-        new IllegalArgumentException("Provided optional is empty."));
+public class OptionalsTest {
+
+  @Test
+  public void testGet() {
+    String foo = "bar";
+    assertEquals(foo, Optionals.get(Optional.of(foo)));
   }
 
-  private Optionals() {
-    // nop
+  @Test(expected = IllegalArgumentException.class)
+  public void testGetFromEmpty() {
+    Optionals.get(Optional.empty());
   }
-
 }

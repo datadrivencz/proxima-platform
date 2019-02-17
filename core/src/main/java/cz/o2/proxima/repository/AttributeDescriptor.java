@@ -54,7 +54,6 @@ public interface AttributeDescriptor<T> extends Serializable {
     @Setter
     private boolean replica = false;
 
-    @SuppressWarnings("unchecked")
     public <T> AttributeDescriptorImpl<T> build() {
       Objects.requireNonNull(name, "Please specify name");
       Objects.requireNonNull(entity, "Please specify entity");
@@ -66,8 +65,7 @@ public interface AttributeDescriptor<T> extends Serializable {
       return new AttributeDescriptorImpl<>(
           name, entity,
           schemeUri,
-          factory.map(f -> (ValueSerializer<T>)f.getValueSerializer(schemeUri))
-              .orElse(null),
+          factory.map(f -> f.<T>getValueSerializer(schemeUri)).orElse(null),
           replica);
     }
   }
