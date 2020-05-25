@@ -18,26 +18,28 @@ package cz.o2.proxima.time;
 import cz.o2.proxima.storage.StreamElement;
 import java.io.Serializable;
 
-/** Estimates watermark according to incoming stream elements. */
-public interface WatermarkEstimator extends WatermarkSupplier, Serializable {
+/** Policy defines behaviour how watermark should behave when streaming source is idle */
+public interface WatermarkIdlePolicy extends Serializable {
 
   /**
-   * Returns monotonically increasing estimated watermark.
+   * Returns monotonically increasing watermark for idle source.
    *
-   * @return the watermark estimate.
+   * @return the watermark.
    */
-  long getWatermark();
+  long getIdleWatermark();
 
   /**
-   * Updates the watermark estimate according to the given stream element.
+   * Updates policy state when a new element is received from streaming source.
    *
    * @param element a stream element.
    */
-  default void update(StreamElement element) {};
+  default void update(StreamElement element) {}
 
-  /** Signals that streaming source is idle. */
-  default void idle() {}
-
-  /** Set min watermark */
-  default void setMinWatermark(long minWatermark) {}
+  /**
+   * Signals that a source is idle.
+   *
+   * @param currentWatermark the most recent watermark estimated by watermark estimator {@link
+   *     WatermarkEstimator}.
+   */
+  default void idle(long currentWatermark) {}
 }

@@ -28,12 +28,12 @@ import cz.o2.proxima.direct.core.AttributeWriterBase;
 import cz.o2.proxima.direct.core.DataAccessor;
 import cz.o2.proxima.direct.core.DirectDataOperator;
 import cz.o2.proxima.direct.core.Partition;
-import cz.o2.proxima.direct.storage.InMemStorage.WatermarkEstimator;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.repository.Repository;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.storage.commitlog.Position;
+import cz.o2.proxima.time.WatermarkEstimator;
 import java.io.Serializable;
 import java.net.URI;
 import java.util.ArrayList;
@@ -449,11 +449,11 @@ public class InMemStorageTest implements Serializable {
 
               @Override
               public long getWatermark() {
-                return WatermarkEstimator.MAX_TIMESTAMP;
+                return Long.MAX_VALUE - InMemStorage.getBoundedOutOfOrderness();
               }
 
               @Override
-              public void accumulate(StreamElement element) {}
+              public void update(StreamElement element) {}
             });
     DataAccessor accessor = storage.createAccessor(direct, entity, uri, Collections.emptyMap());
     CommitLogReader reader =
