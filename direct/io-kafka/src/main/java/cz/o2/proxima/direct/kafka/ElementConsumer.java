@@ -50,7 +50,7 @@ interface ElementConsumer<K, V> {
 
   /**
    * Retrieve map of offsets that should be committed right away. The offset map has to be
-   * atomically cloned and swapped with empty map
+   * atomically cloned and swapped with empty map.
    *
    * @return map of actually committed offsets
    */

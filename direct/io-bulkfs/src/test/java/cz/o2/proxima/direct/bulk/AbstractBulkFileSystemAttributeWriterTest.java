@@ -549,12 +549,9 @@ public class AbstractBulkFileSystemAttributeWriterTest {
                       latch.countDown();
                     }));
     long watermark = now + 4 * params.getRollPeriod() + 1 + params.getAllowedLateness();
-    while (true) {
+    do {
       writer.bulk().updateWatermark(watermark);
-      if (latch.await(50, TimeUnit.MILLISECONDS)) {
-        break;
-      }
-    }
+    } while (!latch.await(50, TimeUnit.MILLISECONDS));
     assertEquals("Written: " + written.keySet(), 3, written.size());
     validate(written.get(now + params.getRollPeriod()), elements[0], elements[1]);
     validate(written.get(now + params.getRollPeriod() + 1), elements[2], elements[3]);

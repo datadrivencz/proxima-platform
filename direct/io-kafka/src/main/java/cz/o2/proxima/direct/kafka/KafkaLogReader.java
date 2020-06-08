@@ -38,6 +38,7 @@ import cz.o2.proxima.time.WatermarkEstimator;
 import cz.o2.proxima.time.WatermarkEstimatorFactory;
 import cz.o2.proxima.time.WatermarkIdlePolicyFactory;
 import cz.o2.proxima.time.Watermarks;
+import java.awt.*;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -66,6 +67,7 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.errors.RebalanceInProgressException;
 
 /** A {@link CommitLogReader} implementation for Kafka. */
 @Slf4j
@@ -543,7 +545,11 @@ public class KafkaLogReader extends AbstractStorage implements CommitLogReader {
     Map<TopicPartition, OffsetAndMetadata> commitMapClone;
     commitMapClone = consumer.prepareOffsetsForCommit();
     if (!commitMapClone.isEmpty()) {
-      kafka.commitSync(commitMapClone);
+      try {
+        kafka.commitSync(commitMapClone);
+      } catch (RebalanceInProgressException ex) {
+        log.info("RebalanceInProgressException while commitSync of {}. Retrying.", commitMapClone);
+      }
     }
   }
 
