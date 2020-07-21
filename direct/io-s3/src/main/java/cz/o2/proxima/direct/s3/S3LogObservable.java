@@ -19,6 +19,7 @@ import cz.o2.proxima.direct.batch.BatchLogObservable;
 import cz.o2.proxima.direct.blob.BlobLogObservable;
 import cz.o2.proxima.direct.core.Context;
 import cz.o2.proxima.direct.s3.S3BlobPath.S3Blob;
+import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.util.ExceptionUtils;
 import lombok.extern.slf4j.Slf4j;
 
@@ -43,5 +44,12 @@ public class S3LogObservable extends BlobLogObservable<S3Blob, S3BlobPath> {
   @Override
   protected S3BlobPath createPath(S3Blob blob) {
     return new S3BlobPath(context, fs, blob);
+  }
+
+  @Override
+  public Factory asFactory(RepositoryFactory repositoryFactory) {
+    final S3Accessor accessor = (S3Accessor) getAccessor();
+    final Context context = getContext();
+    return () -> new S3LogObservable(accessor, context);
   }
 }

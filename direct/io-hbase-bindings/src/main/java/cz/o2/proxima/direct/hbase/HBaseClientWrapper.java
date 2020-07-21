@@ -97,7 +97,7 @@ class HBaseClientWrapper implements AutoCloseable, Serializable {
     }
   }
 
-  private static <W extends Writable> W deserialize(byte[] bytes, W obj) {
+  static <W extends Writable> W deserialize(byte[] bytes, W obj) {
     try (ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
         DataInputStream dis = new DataInputStream(bais)) {
       obj.readFields(dis);

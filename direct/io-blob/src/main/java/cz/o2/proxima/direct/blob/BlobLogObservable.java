@@ -24,7 +24,6 @@ import cz.o2.proxima.direct.bulk.Path;
 import cz.o2.proxima.direct.bulk.Reader;
 import cz.o2.proxima.direct.core.Context;
 import cz.o2.proxima.direct.core.Partition;
-import cz.o2.proxima.functional.Factory;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.util.Pair;
@@ -116,9 +115,12 @@ public abstract class BlobLogObservable<BlobT extends BlobBase, BlobPathT extend
   private final NamingConvention namingConvention;
   private final long partitionMinSize;
   private final int partitionMaxNumBlobs;
-  private final Factory<Executor> executorFactory;
+  @Getter private final cz.o2.proxima.functional.Factory<Executor> executorFactory;
+  @Getter private final BlobStorageAccessor accessor;
+  @Getter private final Context context;
   @Nullable private transient Executor executor = null;
 
+  @SuppressWarnings({"unchecked", "rawtypes"})
   public BlobLogObservable(BlobStorageAccessor accessor, Context context) {
     this.entity = accessor.getEntityDescriptor();
     this.fs = accessor.getTargetFileSystem();
@@ -126,7 +128,9 @@ public abstract class BlobLogObservable<BlobT extends BlobBase, BlobPathT extend
     this.namingConvention = accessor.getNamingConvention();
     this.partitionMinSize = accessor.getPartitionMinSize();
     this.partitionMaxNumBlobs = accessor.getPartitionMaxNumBlobs();
-    this.executorFactory = context::getExecutorService;
+    this.executorFactory = (cz.o2.proxima.functional.Factory) context.getExecutorFactory();
+    this.context = context;
+    this.accessor = accessor;
   }
 
   @SuppressWarnings("unchecked")

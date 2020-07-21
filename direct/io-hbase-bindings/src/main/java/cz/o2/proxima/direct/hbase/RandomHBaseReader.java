@@ -25,6 +25,7 @@ import cz.o2.proxima.direct.randomaccess.RawOffset;
 import cz.o2.proxima.functional.Consumer;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
+import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.util.Pair;
 import java.io.IOException;
 import java.net.URI;
@@ -54,6 +55,7 @@ public class RandomHBaseReader extends HBaseClientWrapper implements RandomAcces
 
   private final EntityDescriptor entity;
   private final int keyCaching;
+  private final Map<String, Object> cfg;
 
   public RandomHBaseReader(
       URI uri, Configuration conf, Map<String, Object> cfg, EntityDescriptor entity) {
@@ -65,6 +67,7 @@ public class RandomHBaseReader extends HBaseClientWrapper implements RandomAcces
             Optional.ofNullable(cfg.get(KEYS_SCANNER_CACHING))
                 .orElse(KEYS_SCANNER_CACHING_DEFAULT)
                 .toString());
+    this.cfg = cfg;
   }
 
   @Override
@@ -191,6 +194,16 @@ public class RandomHBaseReader extends HBaseClientWrapper implements RandomAcces
   @Override
   public EntityDescriptor getEntityDescriptor() {
     return entity;
+  }
+
+  @Override
+  public Factory asFactory(RepositoryFactory repositoryFactory) {
+    final URI uri = getUri();
+    byte[] serializedConf = this.serializedConf;
+    final Map<String, Object> cfg = this.cfg;
+    final EntityDescriptor entity = getEntityDescriptor();
+    return () ->
+        new RandomHBaseReader(uri, deserialize(serializedConf, new Configuration()), cfg, entity);
   }
 
   @Override

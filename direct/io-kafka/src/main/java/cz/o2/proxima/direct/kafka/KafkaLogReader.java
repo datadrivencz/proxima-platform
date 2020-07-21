@@ -30,6 +30,7 @@ import cz.o2.proxima.direct.kafka.Consumers.BulkConsumer;
 import cz.o2.proxima.direct.kafka.Consumers.OnlineConsumer;
 import cz.o2.proxima.direct.time.MinimalPartitionWatermarkEstimator;
 import cz.o2.proxima.functional.BiConsumer;
+import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.AbstractStorage;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.storage.commitlog.Position;
@@ -72,7 +73,7 @@ import org.apache.kafka.common.TopicPartition;
 public class KafkaLogReader extends AbstractStorage implements CommitLogReader {
 
   @Getter final KafkaAccessor accessor;
-  private final Context context;
+  @Getter private final Context context;
   private final long consumerPollInterval;
   private final long maxBytesPerSec;
   private final String topic;
@@ -686,6 +687,13 @@ public class KafkaLogReader extends AbstractStorage implements CommitLogReader {
   @Override
   public boolean hasExternalizableOffsets() {
     return true;
+  }
+
+  @Override
+  public Factory asFactory(RepositoryFactory repositoryFactory) {
+    final KafkaAccessor accessor = this.accessor;
+    final Context context = this.context;
+    return () -> new KafkaLogReader(accessor, context);
   }
 
   private static Collection<Offset> createDefaultOffsets(Collection<Partition> partitions) {

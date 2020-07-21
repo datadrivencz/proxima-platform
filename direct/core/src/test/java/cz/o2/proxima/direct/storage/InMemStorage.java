@@ -87,7 +87,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import javax.annotation.Nullable;
 import lombok.Getter;
-import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 
 /** InMemStorage for testing purposes. */
@@ -572,11 +571,15 @@ public class InMemStorage implements DataAccessorFactory {
   private final class Reader extends AbstractStorage
       implements RandomAccessReader, BatchLogObservable {
 
-    @Setter private cz.o2.proxima.functional.Factory<Executor> executorFactory;
+    private final cz.o2.proxima.functional.Factory<Executor> executorFactory;
     private transient Executor executor;
 
-    private Reader(EntityDescriptor entityDesc, URI uri) {
+    private Reader(
+        EntityDescriptor entityDesc,
+        URI uri,
+        cz.o2.proxima.functional.Factory<Executor> executorFactory) {
       super(entityDesc, uri);
+      this.executorFactory = executorFactory;
     }
 
     @Override
@@ -715,7 +718,11 @@ public class InMemStorage implements DataAccessorFactory {
     public ReaderFactory asFactory(RepositoryFactory repositoryFactory) {
       final EntityDescriptor entity = getEntityDescriptor();
       final URI uri = getUri();
-      return () -> new Reader(entity, uri);
+      final cz.o2.proxima.functional.Factory<Executor> executorFactory = this.executorFactory;
+      return () -> {
+        Reader reader = new Reader(entity, uri, executorFactory);
+        return reader;
+      };
     }
 
     @Override
@@ -885,10 +892,19 @@ public class InMemStorage implements DataAccessorFactory {
     log.info("Creating accessor {} for URI {}", getClass(), uri);
     holder.observers.computeIfAbsent(
         uri, k -> Collections.synchronizedNavigableMap(new TreeMap<>()));
-    final Writer writer = new Writer(entity, uri);
-    final InMemCommitLogReader commitLogReader = new InMemCommitLogReader(entity, uri);
-    final Reader reader = new Reader(entity, uri);
-    final CachedView cachedView = new LocalCachedPartitionedView(entity, commitLogReader, writer);
+    RepositoryFactory repositoryFactory = op.getRepository().asFactory();
+    final OnlineAttributeWriter.Factory writerFactory =
+        new Writer(entity, uri).asFactory(repositoryFactory);
+    final CommitLogReader.Factory commitLogReaderFactory =
+        new InMemCommitLogReader(entity, uri).asFactory(repositoryFactory);
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    final ReaderFactory readerFactory =
+        new Reader(entity, uri, (Factory) op.getContext().getExecutorFactory())
+            .asFactory(repositoryFactory);
+    final CachedView.Factory cachedViewFactory =
+        new LocalCachedPartitionedView(
+                entity, commitLogReaderFactory.create(), writerFactory.create())
+            .asFactory(repositoryFactory);
 
     return new DataAccessor() {
 
@@ -897,38 +913,34 @@ public class InMemStorage implements DataAccessorFactory {
       @Override
       public Optional<AttributeWriterBase> getWriter(Context context) {
         Objects.requireNonNull(context);
-        return Optional.of(writer);
+        return Optional.of(writerFactory.create());
       }
 
       @Override
       public Optional<CommitLogReader> getCommitLogReader(Context context) {
         Objects.requireNonNull(context);
-        return Optional.of(commitLogReader);
+        return Optional.of(commitLogReaderFactory.create());
       }
 
       @Override
       public Optional<RandomAccessReader> getRandomAccessReader(Context context) {
         Objects.requireNonNull(context);
-        return Optional.of(reader);
+        return Optional.of(readerFactory.create());
       }
 
       @Override
       public Optional<CachedView> getCachedView(Context context) {
         Objects.requireNonNull(context);
-        return Optional.of(cachedView);
+        return Optional.of(cachedViewFactory.create());
       }
 
       @Override
       public Optional<BatchLogObservable> getBatchLogObservable(Context context) {
         Objects.requireNonNull(context);
-        reader.setExecutorFactory(asExecutorFactory(context));
-        return Optional.of(reader);
+        Reader createdReader = readerFactory.create();
+        return Optional.of(createdReader);
       }
     };
-  }
-
-  private static Factory<Executor> asExecutorFactory(Context context) {
-    return context::getExecutorService;
   }
 
   @SuppressWarnings("unchecked")

@@ -21,6 +21,7 @@ import cz.o2.proxima.direct.bulk.Path;
 import cz.o2.proxima.direct.core.AttributeWriterBase;
 import cz.o2.proxima.direct.core.Context;
 import cz.o2.proxima.repository.EntityDescriptor;
+import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.util.ExceptionUtils;
 import java.io.ByteArrayInputStream;
@@ -153,6 +154,12 @@ public class TestBlobStorageAccessor extends BlobStorageAccessor {
 
     @Override
     protected void deleteBlobIfExists(TestBlob blob) {}
+
+    @Override
+    public Factory asFactory(RepositoryFactory repositoryFactory) {
+      final Context context = getContext();
+      return () -> new BlobWriter(context);
+    }
   }
 
   class BlobReader extends BlobLogObservable<TestBlob, TestBlobPath> {
@@ -171,6 +178,12 @@ public class TestBlobStorageAccessor extends BlobStorageAccessor {
     @Override
     protected BlobPath<TestBlob> createPath(TestBlob blob) {
       return new TestBlobPath(fs, blob);
+    }
+
+    @Override
+    public Factory asFactory(RepositoryFactory repositoryFactory) {
+      final Context context = getContext();
+      return () -> new BlobReader(context);
     }
   }
 

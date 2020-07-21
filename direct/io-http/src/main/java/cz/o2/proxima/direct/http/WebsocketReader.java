@@ -27,6 +27,7 @@ import cz.o2.proxima.direct.core.Partition;
 import cz.o2.proxima.functional.UnaryFunction;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
+import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.AbstractStorage;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.storage.commitlog.Position;
@@ -65,6 +66,7 @@ public class WebsocketReader extends AbstractStorage implements CommitLogReader 
   private final AttributeDescriptor<?> attr;
   private final UnaryFunction<String, String> keyExtractor;
   private final String hello;
+  private final Map<String, Object> cfg;
 
   public WebsocketReader(EntityDescriptor entityDescriptor, URI uri, Map<String, Object> cfg) {
 
@@ -99,6 +101,7 @@ public class WebsocketReader extends AbstractStorage implements CommitLogReader 
         Optional.ofNullable(cfg.get("hello"))
             .map(Object::toString)
             .orElseThrow(() -> new IllegalArgumentException("Missing 'hello' message"));
+    this.cfg = cfg;
   }
 
   @Override
@@ -214,6 +217,14 @@ public class WebsocketReader extends AbstractStorage implements CommitLogReader 
   public ObserveHandle observeBulkOffsets(Collection<Offset> offsets, LogObserver observer) {
 
     return observeBulk(null, Position.NEWEST, observer);
+  }
+
+  @Override
+  public Factory asFactory(RepositoryFactory repositoryFactory) {
+    final EntityDescriptor entity = getEntityDescriptor();
+    final URI uri = getUri();
+    final Map<String, Object> cfg = this.cfg;
+    return () -> new WebsocketReader(entity, uri, cfg);
   }
 
   private OnNextContext nullContext() {

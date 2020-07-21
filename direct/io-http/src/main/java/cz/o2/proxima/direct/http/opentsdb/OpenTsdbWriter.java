@@ -19,6 +19,7 @@ import cz.o2.proxima.annotations.Experimental;
 import cz.o2.proxima.direct.http.ConnFactory;
 import cz.o2.proxima.direct.http.HttpWriter;
 import cz.o2.proxima.repository.EntityDescriptor;
+import cz.o2.proxima.repository.RepositoryFactory;
 import java.net.URI;
 import java.util.Map;
 
@@ -27,14 +28,19 @@ import java.util.Map;
 public class OpenTsdbWriter extends HttpWriter {
 
   public OpenTsdbWriter(EntityDescriptor entityDesc, URI uri, Map<String, Object> cfg) {
-
     super(entityDesc, uri, cfg);
   }
 
   @Override
-  protected ConnFactory getConnFactory(Map<String, Object> cfg)
-      throws InstantiationException, IllegalAccessException {
-
+  protected ConnFactory getConnFactory(Map<String, Object> cfg) {
     return new OpenTsdbConnectionFactory();
+  }
+
+  @Override
+  public Factory asFactory(RepositoryFactory repositoryFactory) {
+    final EntityDescriptor entity = getEntityDescriptor();
+    final URI uri = getUri();
+    final Map<String, Object> cfg = getCfg();
+    return () -> new OpenTsdbWriter(entity, uri, cfg);
   }
 }

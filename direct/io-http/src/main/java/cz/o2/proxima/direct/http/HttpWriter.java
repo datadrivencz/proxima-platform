@@ -21,6 +21,7 @@ import cz.o2.proxima.direct.core.Context;
 import cz.o2.proxima.direct.core.DataAccessor;
 import cz.o2.proxima.direct.core.OnlineAttributeWriter;
 import cz.o2.proxima.repository.EntityDescriptor;
+import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.AbstractStorage;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.util.Classpath;
@@ -28,11 +29,13 @@ import java.net.HttpURLConnection;
 import java.net.URI;
 import java.util.Map;
 import java.util.Optional;
+import lombok.Getter;
 
 /** Writer via HTTP(S) requests. */
 public class HttpWriter extends AbstractStorage implements OnlineAttributeWriter, DataAccessor {
 
-  final ConnFactory connFactory;
+  private final ConnFactory connFactory;
+  @Getter private final Map<String, Object> cfg;
 
   public HttpWriter(EntityDescriptor entityDesc, URI uri, Map<String, Object> cfg) {
 
@@ -42,6 +45,7 @@ public class HttpWriter extends AbstractStorage implements OnlineAttributeWriter
     } catch (InstantiationException | IllegalAccessException ex) {
       throw new RuntimeException(ex);
     }
+    this.cfg = cfg;
   }
 
   @Override
@@ -69,6 +73,14 @@ public class HttpWriter extends AbstractStorage implements OnlineAttributeWriter
         conn.disconnect();
       }
     }
+  }
+
+  @Override
+  public Factory asFactory(RepositoryFactory repositoryFactory) {
+    final EntityDescriptor entity = getEntityDescriptor();
+    final URI uri = getUri();
+    final Map<String, Object> cfg = this.cfg;
+    return () -> new HttpWriter(entity, uri, cfg);
   }
 
   protected ConnFactory getConnFactory(Map<String, Object> cfg)

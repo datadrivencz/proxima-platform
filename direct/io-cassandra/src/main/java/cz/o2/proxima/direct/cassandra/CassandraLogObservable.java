@@ -23,6 +23,7 @@ import cz.o2.proxima.direct.batch.BatchLogObserver;
 import cz.o2.proxima.direct.core.Partition;
 import cz.o2.proxima.functional.Factory;
 import cz.o2.proxima.repository.AttributeDescriptor;
+import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.StreamElement;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -37,10 +38,11 @@ class CassandraLogObservable implements BatchLogObservable {
 
   private final CassandraDBAccessor accessor;
   private final int parallelism;
-  private final Factory<Executor> executorFactory;
+  private final cz.o2.proxima.functional.Factory<Executor> executorFactory;
   @Nullable private transient Executor executor;
 
-  CassandraLogObservable(CassandraDBAccessor accessor, Factory<Executor> executorFactory) {
+  CassandraLogObservable(
+      CassandraDBAccessor accessor, cz.o2.proxima.functional.Factory<Executor> executorFactory) {
     this.accessor = accessor;
     this.parallelism = accessor.getBatchParallelism();
     this.executorFactory = executorFactory;
@@ -129,6 +131,13 @@ class CassandraLogObservable implements BatchLogObservable {
                 observer.onError(err);
               }
             });
+  }
+
+  @Override
+  public Factory asFactory(RepositoryFactory repositoryFactory) {
+    final CassandraDBAccessor accessor = this.accessor;
+    final cz.o2.proxima.functional.Factory<Executor> executorFactory = this.executorFactory;
+    return () -> new CassandraLogObservable(accessor, executorFactory);
   }
 
   private Executor executor() {

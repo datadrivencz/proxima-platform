@@ -34,6 +34,7 @@ import cz.o2.proxima.functional.UnaryPredicate;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.repository.Repository;
+import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.server.metrics.Metrics;
 import cz.o2.proxima.storage.PassthroughFilter;
 import cz.o2.proxima.storage.StreamElement;
@@ -249,6 +250,11 @@ public class ReplicationControllerTest {
       }
 
       @Override
+      public Factory asFactory(RepositoryFactory repositoryFactory) {
+        return () -> fakeOnlineWriter(written);
+      }
+
+      @Override
       public URI getUri() {
         return URI.create("fake-online:///");
       }
@@ -273,6 +279,11 @@ public class ReplicationControllerTest {
           buffered.clear();
           statusCallback.commit(true, null);
         }
+      }
+
+      @Override
+      public Factory asFactory(RepositoryFactory repositoryFactory) {
+        return () -> fakeBulkWriter(written, commitWatermarkPredicate);
       }
 
       @Override

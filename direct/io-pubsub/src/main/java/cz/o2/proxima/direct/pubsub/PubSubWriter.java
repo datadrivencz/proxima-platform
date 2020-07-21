@@ -30,6 +30,7 @@ import cz.o2.proxima.direct.core.CommitCallback;
 import cz.o2.proxima.direct.core.Context;
 import cz.o2.proxima.direct.core.OnlineAttributeWriter;
 import cz.o2.proxima.direct.pubsub.proto.PubSub;
+import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.util.ExceptionUtils;
 import java.io.IOException;
@@ -146,6 +147,13 @@ class PubSubWriter extends AbstractOnlineAttributeWriter implements OnlineAttrib
       log.warn("Failed to publish {} to pubsub", data, err);
       statusCallback.commit(false, err);
     }
+  }
+
+  @Override
+  public OnlineAttributeWriter.Factory asFactory(RepositoryFactory repositoryFactory) {
+    final PubSubAccessor accessor = this.accessor;
+    final Context context = this.context;
+    return () -> new PubSubWriter(accessor, context);
   }
 
   @Override

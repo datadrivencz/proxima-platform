@@ -26,6 +26,7 @@ import cz.o2.proxima.direct.randomaccess.RandomAccessReader;
 import cz.o2.proxima.direct.randomaccess.RandomOffset;
 import cz.o2.proxima.functional.Consumer;
 import cz.o2.proxima.repository.AttributeDescriptor;
+import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.AbstractStorage;
 import cz.o2.proxima.util.Pair;
 import java.nio.ByteBuffer;
@@ -171,6 +172,12 @@ class CassandraRandomReader extends AbstractStorage implements RandomAccessReade
     } catch (Exception ex) {
       throw new RuntimeException(ex);
     }
+  }
+
+  @Override
+  public Factory asFactory(RepositoryFactory repositoryFactory) {
+    final CassandraDBAccessor accessor = this.accessor;
+    return () -> new CassandraRandomReader(accessor);
   }
 
   @Override

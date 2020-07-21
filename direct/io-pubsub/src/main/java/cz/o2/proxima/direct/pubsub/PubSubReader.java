@@ -50,6 +50,7 @@ import cz.o2.proxima.direct.pubsub.proto.PubSub;
 import cz.o2.proxima.functional.UnaryFunction;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
+import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.AbstractStorage;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.storage.commitlog.Position;
@@ -151,10 +152,11 @@ class PubSubReader extends AbstractStorage implements CommitLogReader {
   }
 
   @FunctionalInterface
-  private static interface PubSubConsumer extends Serializable {
+  private interface PubSubConsumer extends Serializable {
     boolean consume(StreamElement elem, WatermarkSupplier watermark, AckReplyConsumer ack);
   }
 
+  private final PubSubAccessor accessor;
   private final Map<String, Object> cfg;
   private final Context context;
   private final String project;
@@ -168,6 +170,7 @@ class PubSubReader extends AbstractStorage implements CommitLogReader {
 
   PubSubReader(PubSubAccessor accessor, Context context) {
     super(accessor.getEntityDescriptor(), accessor.getUri());
+    this.accessor = accessor;
     this.cfg = accessor.getCfg();
     this.context = context;
     this.project = accessor.getProject();
@@ -688,6 +691,13 @@ class PubSubReader extends AbstractStorage implements CommitLogReader {
   public boolean hasExternalizableOffsets() {
     // all offsets represent the same read position
     return false;
+  }
+
+  @Override
+  public Factory asFactory(RepositoryFactory repositoryFactory) {
+    final PubSubAccessor accessor = this.accessor;
+    final Context contet = this.context;
+    return () -> new PubSubReader(accessor, context);
   }
 
   private String findConsumerFromPartitions(String name, Collection<Partition> partitions) {

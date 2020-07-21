@@ -26,6 +26,7 @@ import cz.o2.proxima.direct.core.BulkAttributeWriter;
 import cz.o2.proxima.direct.core.CommitCallback;
 import cz.o2.proxima.direct.core.Context;
 import cz.o2.proxima.repository.EntityDescriptor;
+import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.StreamElement;
 import java.io.File;
 import java.io.IOException;
@@ -88,23 +89,7 @@ public abstract class BulkBlobWriter<BlobT extends BlobBase, AccessorT extends B
     if (!initialized) {
       tmpDir = accessor.getTmpDir();
       FileSystem localFs = FileSystem.local(tmpDir, accessor.getNamingConvention());
-      wrap =
-          new AbstractBulkFileSystemAttributeWriter(
-              getEntityDescriptor(),
-              accessor.getUri(),
-              localFs,
-              accessor.getNamingConvention(),
-              accessor.getFileFormat(),
-              context,
-              accessor.getRollPeriod(),
-              accessor.getAllowedLateness()) {
-
-            @Override
-            protected void flush(Bulk bulk) {
-              BulkBlobWriter.this.flush(bulk.getPath(), bulk.getMaxTs());
-            }
-          };
-
+      wrap = new BlobFileSystemAttributeWriter(localFs);
       if (!tmpDir.exists()) {
         tmpDir.mkdirs();
       } else if (tmpDir.isDirectory()) {
@@ -181,5 +166,36 @@ public abstract class BulkBlobWriter<BlobT extends BlobBase, AccessorT extends B
   @VisibleForTesting
   String toBlobName(long ts) {
     return accessor.getNamingConvention().nameOf(ts);
+  }
+
+  private class BlobFileSystemAttributeWriter extends AbstractBulkFileSystemAttributeWriter {
+
+    public BlobFileSystemAttributeWriter(FileSystem localFs) {
+      super(
+          BulkBlobWriter.this.getEntityDescriptor(),
+          BulkBlobWriter.this.accessor.getUri(),
+          localFs,
+          BulkBlobWriter.this.accessor.getNamingConvention(),
+          BulkBlobWriter.this.accessor.getFileFormat(),
+          BulkBlobWriter.this.context,
+          BulkBlobWriter.this.accessor.getRollPeriod(),
+          BulkBlobWriter.this.accessor.getAllowedLateness());
+    }
+
+    @Override
+    protected void flush(Bulk bulk) {
+      BulkBlobWriter.this.flush(bulk.getPath(), bulk.getMaxTs());
+    }
+
+    @Override
+    public BulkAttributeWriter.Factory asFactory(RepositoryFactory repositoryFactory) {
+      final FileSystem fs = getFs();
+      final BulkAttributeWriter.Factory factory = BulkBlobWriter.this.asFactory(repositoryFactory);
+      return () -> {
+        @SuppressWarnings("rawtypes")
+        BulkBlobWriter newWriter = (BulkBlobWriter) factory.create();
+        return newWriter.new BlobFileSystemAttributeWriter(fs);
+      };
+    }
   }
 }

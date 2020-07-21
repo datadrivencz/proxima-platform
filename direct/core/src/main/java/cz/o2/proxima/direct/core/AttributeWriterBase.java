@@ -83,5 +83,5 @@ public interface AttributeWriterBase extends AutoCloseable {
    * @param repositoryFactory factory for repository (if needed).
    * @return the {@link Factory} representing this reader
    */
-  <T extends AttributeWriterBase> Factory<T> asFactory(RepositoryFactory repositoryFactory);
+  Factory<? extends AttributeWriterBase> asFactory(RepositoryFactory repositoryFactory);
 }

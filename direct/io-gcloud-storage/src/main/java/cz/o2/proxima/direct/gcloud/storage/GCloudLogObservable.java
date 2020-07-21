@@ -23,6 +23,7 @@ import cz.o2.proxima.direct.blob.BlobLogObservable;
 import cz.o2.proxima.direct.blob.BlobPath;
 import cz.o2.proxima.direct.core.Context;
 import cz.o2.proxima.direct.gcloud.storage.GCloudBlobPath.GCloudBlob;
+import cz.o2.proxima.repository.RepositoryFactory;
 import lombok.extern.slf4j.Slf4j;
 
 /** {@link BatchLogObservable} for gcloud storage. */
@@ -76,5 +77,12 @@ public class GCloudLogObservable extends BlobLogObservable<GCloudBlob, GCloudBlo
         handleGeneralException(ex, blob);
     }
     return false;
+  }
+
+  @Override
+  public Factory asFactory(RepositoryFactory repositoryFactory) {
+    final GCloudStorageAccessor accessor = (GCloudStorageAccessor) getAccessor();
+    final Context context = getContext();
+    return () -> new GCloudLogObservable(accessor, context);
   }
 }

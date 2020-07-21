@@ -23,6 +23,7 @@ import cz.o2.proxima.direct.core.Partition;
 import cz.o2.proxima.functional.Factory;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
+import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.StreamElement;
 import java.io.IOException;
 import java.net.URI;
@@ -49,11 +50,14 @@ import org.apache.hadoop.hbase.filter.QualifierFilter;
 class HBaseLogObservable extends HBaseClientWrapper implements BatchLogObservable {
 
   private final EntityDescriptor entity;
-  private final Factory<Executor> executorFactory;
+  private final cz.o2.proxima.functional.Factory<Executor> executorFactory;
   private transient Executor executor;
 
   public HBaseLogObservable(
-      URI uri, Configuration conf, EntityDescriptor entity, Factory<Executor> executorFactory) {
+      URI uri,
+      Configuration conf,
+      EntityDescriptor entity,
+      cz.o2.proxima.functional.Factory<Executor> executorFactory) {
 
     super(uri, conf);
     this.entity = entity;
@@ -100,6 +104,17 @@ class HBaseLogObservable extends HBaseClientWrapper implements BatchLogObservabl
                 }
               }
             });
+  }
+
+  @Override
+  public Factory asFactory(RepositoryFactory repositoryFactory) {
+    final URI uri = getUri();
+    final EntityDescriptor entity = this.entity;
+    final cz.o2.proxima.functional.Factory<Executor> executorFactory = this.executorFactory;
+    final byte[] serializedConf = this.serializedConf;
+    return () ->
+        new HBaseLogObservable(
+            uri, deserialize(serializedConf, new Configuration()), entity, executorFactory);
   }
 
   private void flushPartitions(
