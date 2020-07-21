@@ -22,6 +22,7 @@ import cz.o2.proxima.functional.Consumer;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.AttributeFamilyDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
+import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.util.Pair;
 import java.io.IOException;
 import java.io.Serializable;
@@ -226,7 +227,12 @@ public class MultiAccessBuilder implements Serializable {
       }
 
       @Override
-      public void close() throws IOException {
+      public Factory asFactory(RepositoryFactory repositoryFactory) {
+        return () -> build();
+      }
+
+      @Override
+      public void close() {
         attrMap.values().forEach(this::closeQuietly);
       }
 

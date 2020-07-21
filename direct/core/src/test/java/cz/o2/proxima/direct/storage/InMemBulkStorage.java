@@ -20,15 +20,17 @@ import cz.o2.proxima.direct.batch.BatchLogObservable;
 import cz.o2.proxima.direct.batch.BatchLogObserver;
 import cz.o2.proxima.direct.core.AbstractBulkAttributeWriter;
 import cz.o2.proxima.direct.core.AttributeWriterBase;
+import cz.o2.proxima.direct.core.BulkAttributeWriter;
+import cz.o2.proxima.direct.core.BulkAttributeWriter.Factory;
 import cz.o2.proxima.direct.core.CommitCallback;
 import cz.o2.proxima.direct.core.Context;
 import cz.o2.proxima.direct.core.DataAccessor;
 import cz.o2.proxima.direct.core.DataAccessorFactory;
 import cz.o2.proxima.direct.core.DirectDataOperator;
 import cz.o2.proxima.direct.core.Partition;
-import cz.o2.proxima.functional.Factory;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
+import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.AbstractStorage;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.util.Pair;
@@ -83,6 +85,14 @@ public class InMemBulkStorage implements DataAccessorFactory {
       }
     }
 
+    @SuppressWarnings("unchecked")
+    @Override
+    public BulkAttributeWriter.Factory asFactory(RepositoryFactory repositoryFactory) {
+      final EntityDescriptor entity = getEntityDescriptor();
+      final URI uri = getUri();
+      return () -> new Writer(entity, uri);
+    }
+
     void commit() {
       Optional.ofNullable(toCommit).ifPresent(c -> c.commit(true, null));
       writtenSinceLastCommit = 0;
@@ -102,11 +112,13 @@ public class InMemBulkStorage implements DataAccessorFactory {
 
   private static class BatchObservable extends AbstractStorage implements BatchLogObservable {
 
-    private final Factory<ExecutorService> executorFactory;
+    private final cz.o2.proxima.functional.Factory<ExecutorService> executorFactory;
     private transient ExecutorService executor;
 
     private BatchObservable(
-        EntityDescriptor entityDesc, URI uri, Factory<ExecutorService> executorFactory) {
+        EntityDescriptor entityDesc,
+        URI uri,
+        cz.o2.proxima.functional.Factory<ExecutorService> executorFactory) {
 
       super(entityDesc, uri);
       this.executorFactory = executorFactory;
@@ -162,6 +174,15 @@ public class InMemBulkStorage implements DataAccessorFactory {
                   observer.onError(err);
                 }
               });
+    }
+
+    @Override
+    public Factory asFactory(RepositoryFactory repositoryFactory) {
+      final EntityDescriptor entity = getEntityDescriptor();
+      final URI uri = getUri();
+      final cz.o2.proxima.functional.Factory<ExecutorService> executorFactory =
+          this.executorFactory;
+      return () -> new BatchObservable(entity, uri, executorFactory);
     }
 
     private Executor executor() {

@@ -15,8 +15,12 @@
  */
 package cz.o2.proxima.direct.core;
 
+import cz.o2.proxima.annotations.Internal;
 import cz.o2.proxima.annotations.Stable;
+import cz.o2.proxima.direct.core.AttributeWriterBase.Factory;
+import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.StreamElement;
+import java.io.Serializable;
 
 /**
  * Writer for attribute values. This is online version, where each element is committed one after
@@ -38,6 +42,14 @@ import cz.o2.proxima.storage.StreamElement;
 @Stable
 public interface OnlineAttributeWriter extends AttributeWriterBase {
 
+  /** {@link Serializable} factory for {@link OnlineAttributeWriter}. */
+  @Internal
+  @FunctionalInterface
+  interface Factory extends AttributeWriterBase.Factory<OnlineAttributeWriter> {
+    @Override
+    OnlineAttributeWriter create();
+  }
+
   @Override
   default Type getType() {
     return Type.ONLINE;
@@ -55,4 +67,8 @@ public interface OnlineAttributeWriter extends AttributeWriterBase {
    * @param statusCallback callback used to commit data processing
    */
   void write(StreamElement data, CommitCallback statusCallback);
+
+  @SuppressWarnings("unchecked")
+  @Override
+  Factory asFactory(RepositoryFactory repositoryFactory);
 }

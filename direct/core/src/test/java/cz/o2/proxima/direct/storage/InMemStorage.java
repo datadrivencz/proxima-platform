@@ -36,6 +36,7 @@ import cz.o2.proxima.direct.core.Context;
 import cz.o2.proxima.direct.core.DataAccessor;
 import cz.o2.proxima.direct.core.DataAccessorFactory;
 import cz.o2.proxima.direct.core.DirectDataOperator;
+import cz.o2.proxima.direct.core.OnlineAttributeWriter;
 import cz.o2.proxima.direct.core.Partition;
 import cz.o2.proxima.direct.randomaccess.KeyValue;
 import cz.o2.proxima.direct.randomaccess.RandomAccessReader;
@@ -49,6 +50,7 @@ import cz.o2.proxima.functional.Consumer;
 import cz.o2.proxima.functional.Factory;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
+import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.AbstractStorage;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.storage.commitlog.Position;
@@ -196,6 +198,14 @@ public class InMemStorage implements DataAccessorFactory {
             log.debug("Passed element {} to {}", data, o);
           });
       statusCallback.commit(true, null);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Override
+    public OnlineAttributeWriter.Factory asFactory(RepositoryFactory repositoryFactory) {
+      final EntityDescriptor entity = getEntityDescriptor();
+      final URI uri = getUri();
+      return () -> new Writer(entity, uri);
     }
 
     @Override
@@ -545,12 +555,24 @@ public class InMemStorage implements DataAccessorFactory {
     public boolean hasExternalizableOffsets() {
       return true;
     }
+
+    @Override
+    public Factory asFactory(RepositoryFactory repositoryFactory) {
+      final EntityDescriptor entity = getEntityDescriptor();
+      final URI uri = getUri();
+      return () -> new InMemCommitLogReader(entity, uri);
+    }
+  }
+
+  interface ReaderFactory extends RandomAccessReader.Factory, BatchLogObservable.Factory {
+    @Override
+    Reader create();
   }
 
   private final class Reader extends AbstractStorage
       implements RandomAccessReader, BatchLogObservable {
 
-    @Setter private Factory<Executor> executorFactory;
+    @Setter private cz.o2.proxima.functional.Factory<Executor> executorFactory;
     private transient Executor executor;
 
     private Reader(EntityDescriptor entityDesc, URI uri) {
@@ -687,6 +709,13 @@ public class InMemStorage implements DataAccessorFactory {
           }
         }
       }
+    }
+
+    @Override
+    public ReaderFactory asFactory(RepositoryFactory repositoryFactory) {
+      final EntityDescriptor entity = getEntityDescriptor();
+      final URI uri = getUri();
+      return () -> new Reader(entity, uri);
     }
 
     @Override

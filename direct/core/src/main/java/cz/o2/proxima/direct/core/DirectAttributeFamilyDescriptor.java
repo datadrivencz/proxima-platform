@@ -21,6 +21,8 @@ import cz.o2.proxima.direct.randomaccess.RandomAccessReader;
 import cz.o2.proxima.direct.view.CachedView;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.AttributeFamilyDescriptor;
+import cz.o2.proxima.repository.Repository;
+import cz.o2.proxima.repository.RepositoryFactory;
 import java.io.Serializable;
 import java.util.List;
 import java.util.Objects;
@@ -35,18 +37,20 @@ public class DirectAttributeFamilyDescriptor implements Serializable {
 
   @Getter private final AttributeFamilyDescriptor desc;
 
-  /** Writer associated with this attribute family. */
-  @Nullable private final AttributeWriterBase writer;
+  private final @Nullable AbstractAttributeWriter.Factory<?> writerFactory;
+  private final @Nullable CommitLogReader.Factory commitLogReaderFactory;
+  private final @Nullable BatchLogObservable.Factory batchObservableFactory;
+  private final @Nullable RandomAccessReader.Factory randomAccessReaderFactory;
+  private final @Nullable CachedView.Factory cachedViewFactory;
 
-  @Nullable private final CommitLogReader commitLogReader;
-
-  @Nullable private final BatchLogObservable batchObservable;
-
-  @Nullable private final RandomAccessReader randomAccessReader;
-
-  @Nullable private final CachedView cachedView;
+  @Nullable private transient AttributeWriterBase writer;
+  @Nullable private transient CommitLogReader commitLogReader;
+  @Nullable private transient BatchLogObservable batchObservable;
+  @Nullable private transient RandomAccessReader randomAccessReader;
+  @Nullable private transient CachedView cachedView;
 
   DirectAttributeFamilyDescriptor(
+      Repository repository,
       AttributeFamilyDescriptor desc,
       Optional<AttributeWriterBase> writer,
       Optional<CommitLogReader> commitLogReader,
@@ -54,18 +58,23 @@ public class DirectAttributeFamilyDescriptor implements Serializable {
       Optional<RandomAccessReader> randomAccessReader,
       Optional<CachedView> cachedView) {
 
+    RepositoryFactory repositoryFactory = repository.asFactory();
     this.desc = desc;
-    this.writer = writer.orElse(null);
-    this.commitLogReader = commitLogReader.orElse(null);
-    this.batchObservable = batchLogObservable.orElse(null);
-    this.randomAccessReader = randomAccessReader.orElse(null);
-    this.cachedView = cachedView.orElse(null);
+    this.writerFactory = writer.map(w -> w.asFactory(repositoryFactory)).orElse(null);
+    this.commitLogReaderFactory =
+        commitLogReader.map(r -> r.asFactory(repositoryFactory)).orElse(null);
+    this.batchObservableFactory =
+        batchLogObservable.map(r -> r.asFactory(repositoryFactory)).orElse(null);
+    this.randomAccessReaderFactory =
+        randomAccessReader.map(r -> r.asFactory(repositoryFactory)).orElse(null);
+    this.cachedViewFactory = cachedView.map(v -> v.asFactory(repositoryFactory)).orElse(null);
   }
 
   DirectAttributeFamilyDescriptor(
-      AttributeFamilyDescriptor desc, Context context, DataAccessor accessor) {
+      Repository repo, AttributeFamilyDescriptor desc, Context context, DataAccessor accessor) {
 
     this(
+        repo,
         desc,
         accessor.getWriter(context),
         accessor.getCommitLogReader(context),
@@ -105,9 +114,16 @@ public class DirectAttributeFamilyDescriptor implements Serializable {
   public Optional<AttributeWriterBase> getWriter() {
     if (!desc.getAccess().isReadonly()) {
       return Optional.of(
-          Objects.requireNonNull(writer, () -> "Family " + desc.getName() + " has no writer"));
+          Objects.requireNonNull(writer(), () -> "Family " + desc.getName() + " has no writer"));
     }
     return Optional.empty();
+  }
+
+  private AttributeWriterBase writer() {
+    if (writer == null) {
+      writer = writerFactory.create();
+    }
+    return writer;
   }
 
   /**
@@ -120,10 +136,17 @@ public class DirectAttributeFamilyDescriptor implements Serializable {
     if (desc.getAccess().canReadCommitLog()) {
       return Optional.of(
           Objects.requireNonNull(
-              commitLogReader,
+              commitLogReader(),
               () -> "Family " + desc.getName() + " doesn't have commit-log reader"));
     }
     return Optional.empty();
+  }
+
+  private CommitLogReader commitLogReader() {
+    if (commitLogReader == null) {
+      commitLogReader = commitLogReaderFactory.create();
+    }
+    return commitLogReader;
   }
 
   /**
@@ -136,10 +159,17 @@ public class DirectAttributeFamilyDescriptor implements Serializable {
 
       return Optional.of(
           Objects.requireNonNull(
-              batchObservable,
+              batchObservable(),
               () -> "Family " + desc.getName() + " doesn't have batch observable"));
     }
     return Optional.empty();
+  }
+
+  private BatchLogObservable batchObservable() {
+    if (batchObservable == null) {
+      batchObservable = batchObservableFactory.create();
+    }
+    return batchObservable;
   }
 
   /**
@@ -151,10 +181,17 @@ public class DirectAttributeFamilyDescriptor implements Serializable {
     if (desc.getAccess().canRandomRead()) {
       return Optional.of(
           Objects.requireNonNull(
-              randomAccessReader,
+              randomAccessReader(),
               () -> "Family " + desc.getName() + " doesn't have random access reader"));
     }
     return Optional.empty();
+  }
+
+  private RandomAccessReader randomAccessReader() {
+    if (randomAccessReader == null) {
+      randomAccessReader = randomAccessReaderFactory.create();
+    }
+    return randomAccessReader;
   }
 
   /**
@@ -166,9 +203,16 @@ public class DirectAttributeFamilyDescriptor implements Serializable {
     if (desc.getAccess().canCreateCachedView()) {
       return Optional.of(
           Objects.requireNonNull(
-              cachedView, () -> "Family " + desc.getName() + " cannot create cached view"));
+              cachedView(), () -> "Family " + desc.getName() + " cannot create cached view"));
     }
     return Optional.empty();
+  }
+
+  private CachedView cachedView() {
+    if (cachedView == null) {
+      cachedView = cachedViewFactory.create();
+    }
+    return cachedView;
   }
 
   /**

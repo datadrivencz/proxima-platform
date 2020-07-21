@@ -18,9 +18,11 @@ package cz.o2.proxima.direct.randomaccess;
 import cz.o2.proxima.annotations.Stable;
 import cz.o2.proxima.direct.core.ContextProvider;
 import cz.o2.proxima.direct.core.DirectDataOperator;
+import cz.o2.proxima.direct.view.CachedView.Factory;
 import cz.o2.proxima.functional.Consumer;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
+import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.util.Pair;
 import java.io.Closeable;
 import java.io.Serializable;
@@ -34,7 +36,13 @@ import javax.annotation.Nullable;
  * through by a mask (key, attributePrefix) for attributes that are wildcard attributes.
  */
 @Stable
-public interface RandomAccessReader extends Closeable, Serializable {
+public interface RandomAccessReader extends Closeable {
+
+  /** {@link Serializable} factory for {@link RandomAccessReader}. */
+  @FunctionalInterface
+  interface Factory extends Serializable {
+    RandomAccessReader create();
+  }
 
   /**
    * Create a new builder that is able to construct {@link RandomAccessReader} from multiple readers
@@ -43,7 +51,7 @@ public interface RandomAccessReader extends Closeable, Serializable {
    * @param context direct translation context provider (e.g. {@link DirectDataOperator})
    * @return new builder for multi random access reader
    */
-  public static MultiAccessBuilder newBuilder(ContextProvider context) {
+  static MultiAccessBuilder newBuilder(ContextProvider context) {
     return new MultiAccessBuilder(context.getContext());
   }
 
@@ -262,4 +270,12 @@ public interface RandomAccessReader extends Closeable, Serializable {
    * @return entity associated with this reader
    */
   EntityDescriptor getEntityDescriptor();
+
+  /**
+   * Convert instance of this reader to {@link Factory} suitable for serialization.
+   *
+   * @param repositoryFactory factory for repository (if needed).
+   * @return the {@link Factory} representing this reader
+   */
+  Factory asFactory(RepositoryFactory repositoryFactory);
 }
