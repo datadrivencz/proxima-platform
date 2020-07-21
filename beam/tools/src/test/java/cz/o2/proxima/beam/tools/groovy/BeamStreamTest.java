@@ -31,6 +31,7 @@ import cz.o2.proxima.direct.core.CommitCallback;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.repository.Repository;
+import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.storage.commitlog.Position;
 import cz.o2.proxima.tools.groovy.JavaTypedClosure;
@@ -520,7 +521,8 @@ public class BeamStreamTest extends StreamTest {
     Collector<Pair<Long, StreamElement>> collected = new Collector<>();
 
     SerializableScopedValue<Integer, AttributeWriterBase> writer =
-        new SerializableScopedValue<>(collectingBulkWriter(collected));
+        new SerializableScopedValue<>(
+            collectingBulkWriter(collected).asFactory(repo.asFactory())::create);
 
     BeamStream.BulkWriterFactory writerFactory =
         BeamStream.BulkWriterFactory.wrap(
@@ -561,6 +563,11 @@ public class BeamStreamTest extends StreamTest {
       @Override
       public void updateWatermark(long watermark) {
         collected.add(Pair.of(watermark, null));
+      }
+
+      @Override
+      public Factory asFactory(RepositoryFactory repositoryFactory) {
+        return () -> collectingBulkWriter(collected);
       }
 
       @Override
