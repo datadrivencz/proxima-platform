@@ -159,12 +159,13 @@ public class DirectBatchUnboundedSource
   }
 
   private final RepositoryFactory repositoryFactory;
-  private final BatchLogObservable reader;
+  private final BatchLogObservable.Factory readerFactory;
   private final List<AttributeDescriptor<?>> attributes;
   private final List<Partition> partitions;
   private final long startStamp;
   private final long endStamp;
   private final ConfigReader configReader;
+  private @Nullable transient BatchLogObservable reader;
 
   private DirectBatchUnboundedSource(
       RepositoryFactory repositoryFactory,
@@ -175,12 +176,13 @@ public class DirectBatchUnboundedSource
       long endStamp) {
 
     this.repositoryFactory = repositoryFactory;
-    this.reader = reader;
+    this.readerFactory = reader.asFactory(repositoryFactory);
     this.attributes = Collections.unmodifiableList(attributes);
     this.partitions = Collections.emptyList();
     this.startStamp = startStamp;
     this.endStamp = endStamp;
     this.configReader = configReader;
+    this.reader = reader;
   }
 
   private DirectBatchUnboundedSource(
@@ -190,7 +192,7 @@ public class DirectBatchUnboundedSource
       long endStamp) {
 
     this.repositoryFactory = parent.repositoryFactory;
-    this.reader = parent.reader;
+    this.readerFactory = parent.readerFactory;
     this.attributes = parent.attributes;
     this.startStamp = startStamp;
     this.endStamp = endStamp;
@@ -211,7 +213,7 @@ public class DirectBatchUnboundedSource
 
     if (partitions.isEmpty()) {
       // round robin
-      List<Partition> parts = reader.getPartitions(startStamp, endStamp);
+      List<Partition> parts = reader().getPartitions(startStamp, endStamp);
       List<List<Partition>> splits = new ArrayList<>();
       int current = 0;
       for (Partition p : parts) {
@@ -237,7 +239,14 @@ public class DirectBatchUnboundedSource
         Collections.synchronizedList(
             new ArrayList<>(checkpointMark == null ? partitions : checkpointMark.partitions));
     return new StreamElementUnboundedReader(
-        DirectBatchUnboundedSource.this, reader, attributes, checkpointMark, toProcess);
+        DirectBatchUnboundedSource.this, reader(), attributes, checkpointMark, toProcess);
+  }
+
+  private BatchLogObservable reader() {
+    if (reader == null) {
+      reader = readerFactory.create();
+    }
+    return reader;
   }
 
   @Override
