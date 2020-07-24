@@ -696,7 +696,7 @@ class PubSubReader extends AbstractStorage implements CommitLogReader {
   @Override
   public Factory asFactory(RepositoryFactory repositoryFactory) {
     final PubSubAccessor accessor = this.accessor;
-    final Context contet = this.context;
+    final Context context = this.context;
     return () -> new PubSubReader(accessor, context);
   }
 

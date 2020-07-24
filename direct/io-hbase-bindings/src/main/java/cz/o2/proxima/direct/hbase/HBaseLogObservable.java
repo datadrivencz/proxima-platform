@@ -51,7 +51,7 @@ class HBaseLogObservable extends HBaseClientWrapper implements BatchLogObservabl
 
   private final EntityDescriptor entity;
   private final cz.o2.proxima.functional.Factory<Executor> executorFactory;
-  private transient Executor executor;
+  private final Executor executor;
 
   public HBaseLogObservable(
       URI uri,
@@ -62,6 +62,7 @@ class HBaseLogObservable extends HBaseClientWrapper implements BatchLogObservabl
     super(uri, conf);
     this.entity = entity;
     this.executorFactory = executorFactory;
+    this.executor = executorFactory.apply();
   }
 
   @Override
@@ -90,20 +91,19 @@ class HBaseLogObservable extends HBaseClientWrapper implements BatchLogObservabl
       List<AttributeDescriptor<?>> attributes,
       BatchLogObserver observer) {
 
-    executor()
-        .execute(
-            () -> {
-              ensureClient();
-              try {
-                flushPartitions(partitions, attributes, observer);
-              } catch (Throwable ex) {
-                log.warn("Failed to observe partitions {}", partitions, ex);
-                if (observer.onError(ex)) {
-                  log.info("Restaring processing by request");
-                  observe(partitions, attributes, observer);
-                }
-              }
-            });
+    executor.execute(
+        () -> {
+          ensureClient();
+          try {
+            flushPartitions(partitions, attributes, observer);
+          } catch (Throwable ex) {
+            log.warn("Failed to observe partitions {}", partitions, ex);
+            if (observer.onError(ex)) {
+              log.info("Restaring processing by request");
+              observe(partitions, attributes, observer);
+            }
+          }
+        });
   }
 
   @Override
@@ -146,13 +146,6 @@ class HBaseLogObservable extends HBaseClientWrapper implements BatchLogObservabl
       }
     }
     observer.onCompleted();
-  }
-
-  private Executor executor() {
-    if (executor == null) {
-      executor = executorFactory.apply();
-    }
-    return executor;
   }
 
   private boolean consume(

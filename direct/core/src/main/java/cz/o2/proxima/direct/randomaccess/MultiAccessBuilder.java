@@ -228,7 +228,7 @@ public class MultiAccessBuilder implements Serializable {
 
       @Override
       public Factory asFactory(RepositoryFactory repositoryFactory) {
-        return () -> build();
+        return MultiAccessBuilder.this::build;
       }
 
       @Override

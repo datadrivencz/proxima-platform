@@ -37,7 +37,7 @@ public class DirectAttributeFamilyDescriptor implements Serializable {
 
   @Getter private final AttributeFamilyDescriptor desc;
 
-  private final @Nullable AbstractAttributeWriter.Factory<?> writerFactory;
+  private final @Nullable AttributeWriterBase.Factory<?> writerFactory;
   private final @Nullable CommitLogReader.Factory commitLogReaderFactory;
   private final @Nullable BatchLogObservable.Factory batchObservableFactory;
   private final @Nullable RandomAccessReader.Factory randomAccessReaderFactory;

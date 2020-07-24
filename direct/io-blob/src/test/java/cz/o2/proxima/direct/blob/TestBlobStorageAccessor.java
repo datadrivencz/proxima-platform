@@ -29,6 +29,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.Serializable;
 import java.net.URI;
 import java.util.Collections;
 import java.util.List;
@@ -83,6 +84,11 @@ public class TestBlobStorageAccessor extends BlobStorageAccessor {
 
     @Override
     public void delete() {}
+  }
+
+  @FunctionalInterface
+  interface Runnable extends Serializable {
+    void run();
   }
 
   class TestBlobFileSystem implements FileSystem {
@@ -146,8 +152,6 @@ public class TestBlobStorageAccessor extends BlobStorageAccessor {
 
   class BlobWriter extends BulkBlobWriter<TestBlob, TestBlobStorageAccessor> {
 
-    private static final long serialVersionUID = 1L;
-
     public BlobWriter(Context context) {
       super(TestBlobStorageAccessor.this, context);
     }
@@ -158,13 +162,12 @@ public class TestBlobStorageAccessor extends BlobStorageAccessor {
     @Override
     public Factory asFactory(RepositoryFactory repositoryFactory) {
       final Context context = getContext();
-      return () -> new BlobWriter(context);
+      final TestBlobStorageAccessor accessor = TestBlobStorageAccessor.this;
+      return () -> accessor.new BlobWriter(context);
     }
   }
 
   class BlobReader extends BlobLogObservable<TestBlob, TestBlobPath> {
-
-    private static final long serialVersionUID = 1L;
 
     public BlobReader(Context context) {
       super(TestBlobStorageAccessor.this, context);
@@ -183,7 +186,8 @@ public class TestBlobStorageAccessor extends BlobStorageAccessor {
     @Override
     public Factory asFactory(RepositoryFactory repositoryFactory) {
       final Context context = getContext();
-      return () -> new BlobReader(context);
+      final TestBlobStorageAccessor accessor = TestBlobStorageAccessor.this;
+      return () -> accessor.new BlobReader(context);
     }
   }
 

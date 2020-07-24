@@ -38,11 +38,12 @@ public class HadoopBatchLogObservable implements BatchLogObservable {
 
   private final HadoopDataAccessor accessor;
   private final Context context;
-  private transient Executor executor;
+  private final Executor executor;
 
   public HadoopBatchLogObservable(HadoopDataAccessor accessor, Context context) {
     this.accessor = accessor;
     this.context = context;
+    this.executor = context.getExecutorService();
   }
 
   @Override
@@ -75,10 +76,6 @@ public class HadoopBatchLogObservable implements BatchLogObservable {
       List<Partition> partitions,
       List<AttributeDescriptor<?>> attributes,
       BatchLogObserver observer) {
-
-    if (executor == null) {
-      executor = context.getExecutorService();
-    }
 
     executor.execute(
         () -> {
