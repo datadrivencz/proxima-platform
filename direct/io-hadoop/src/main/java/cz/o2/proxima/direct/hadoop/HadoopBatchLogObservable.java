@@ -30,13 +30,14 @@ import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 /** Observable of data stored in {@code SequenceFiles} in HDFS. */
 @Slf4j
 public class HadoopBatchLogObservable implements BatchLogObservable {
 
-  private final HadoopDataAccessor accessor;
+  @Getter private final HadoopDataAccessor accessor;
   private final Context context;
   private final Executor executor;
 

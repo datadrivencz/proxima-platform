@@ -172,14 +172,7 @@ public abstract class BulkBlobWriter<BlobT extends BlobBase, AccessorT extends B
 
     @Override
     public BulkAttributeWriter.Factory asFactory(RepositoryFactory repositoryFactory) {
-      final FileSystem fs = getFs();
-      final BulkAttributeWriter.Factory factory = BulkBlobWriter.this.asFactory(repositoryFactory);
-      return () -> {
-        @SuppressWarnings("unchecked")
-        BulkBlobWriter<BlobT, AccessorT> newWriter =
-            (BulkBlobWriter<BlobT, AccessorT>) factory.create();
-        return newWriter.new BlobFileSystemAttributeWriter(fs);
-      };
+      throw new UnsupportedOperationException("This should not be called directly");
     }
   }
 }

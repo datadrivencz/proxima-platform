@@ -37,6 +37,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -72,7 +73,7 @@ public class WebsocketReader extends AbstractStorage implements CommitLogReader 
 
     super(entityDescriptor, uri);
     @SuppressWarnings("unchecked")
-    List<String> attributes = (List<String>) cfg.get("attributes");
+    List<String> attributes = (List<String>) Objects.requireNonNull(cfg.get("attributes"));
     if (attributes.size() > 1) {
       throw new IllegalArgumentException(
           "Can read only single attribute from websocket, got " + attributes);
