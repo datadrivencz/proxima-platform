@@ -31,7 +31,6 @@ import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.storage.commitlog.Position;
 import cz.o2.proxima.time.WatermarkIdlePolicy;
 import cz.o2.proxima.time.Watermarks;
-import cz.seznam.profile.utils.Instances;
 import java.io.Serializable;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;

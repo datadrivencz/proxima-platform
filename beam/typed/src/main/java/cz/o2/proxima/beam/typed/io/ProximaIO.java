@@ -15,32 +15,24 @@
  */
 package cz.o2.proxima.beam.typed.io;
 
-import com.google.common.annotations.VisibleForTesting;
-import cz.o2.proxima.beam.typed.TypedElement;
-import cz.o2.proxima.beam.typed.TypedElementCoder;
 import cz.o2.proxima.direct.core.DirectDataOperator;
-import cz.o2.proxima.repository.AttributeDescriptor;
-import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.StreamElement;
-import java.util.Objects;
-import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.beam.sdk.coders.KvCoder;
-import org.apache.beam.sdk.coders.StringUtf8Coder;
-import org.apache.beam.sdk.metrics.Metrics;
 import org.apache.beam.sdk.state.*;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
-import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PDone;
-import org.joda.time.Duration;
 
 /** IO connector for Proxima platform. */
 @Slf4j
 public class ProximaIO {
+
+  private ProximaIO() {
+    // No-op.
+  }
 
   /**
    * Transformation that writes {@link StreamElement stream elements} into proxima using {@link
@@ -58,80 +50,6 @@ public class ProximaIO {
     public PDone expand(PCollection<StreamElement> input) {
       input.apply("Write", ParDo.of(new WriteFn(repositoryFactory)));
       return PDone.in(input.getPipeline());
-    }
-
-    public TypedWrite into(AttributeDescriptor<TypedElement<?>> attribute) {
-      return new TypedWrite(repositoryFactory, attribute);
-    }
-  }
-
-  public static class TypedWrite
-      extends PTransform<PCollection<KV<String, TypedElement<?>>>, PDone> {
-
-    private final RepositoryFactory repositoryFactory;
-    private final AttributeDescriptor<TypedElement<?>> attributeDescriptor;
-
-    TypedWrite(
-        RepositoryFactory repositoryFactory,
-        AttributeDescriptor<TypedElement<?>> attributeDescriptor) {
-      this.repositoryFactory = repositoryFactory;
-      this.attributeDescriptor = attributeDescriptor;
-    }
-
-    @Override
-    public PDone expand(PCollection<KV<String, TypedElement<?>>> input) {
-      input
-          .apply(
-              "NormalizeTimestamp",
-              ParDo.of(new NormalizeTimestampFn(TypedElementCoder.of(attributeDescriptor))))
-          .apply(
-              "ToStreamElement",
-              ParDo.of(new ToStreamElementFn(repositoryFactory, attributeDescriptor)))
-          .apply("Write", ParDo.of(new WriteFn(repositoryFactory)));
-      return PDone.in(input.getPipeline());
-    }
-  }
-
-  @VisibleForTesting
-  public static class NormalizeTimestampFn
-      extends DoFn<KV<String, TypedElement<?>>, KV<String, TypedElement<?>>> {
-
-    @VisibleForTesting
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    public NormalizeTimestampFn(TypedElementCoder<?> typedElementAttributeDescriptor) {
-      this.elementsBagState =
-          StateSpecs.bag(
-              KvCoder.of(
-                  StringUtf8Coder.of(), (TypedElementCoder) typedElementAttributeDescriptor));
-    }
-
-    @StateId("elementsBagState")
-    private final StateSpec<BagState<KV<String, TypedElement<?>>>> elementsBagState;
-
-    @TimerId("bagStateElementTimer")
-    private final TimerSpec bagStateElementTimer = TimerSpecs.timer(TimeDomain.EVENT_TIME);
-
-    @ProcessElement
-    public void processElement(
-        @Element KV<String, TypedElement<?>> element,
-        @StateId("elementsBagState") BagState<KV<String, TypedElement<?>>> elementsBagState,
-        @TimerId("bagStateElementTimer") Timer bagStateElementTimer) {
-
-      if (elementsBagState.isEmpty().read()) {
-        bagStateElementTimer.offset(Duration.millis(1)).setRelative();
-      }
-      elementsBagState.add(element);
-    }
-
-    @OnTimer("bagStateElementTimer")
-    public void onTimer(
-        OnTimerContext ctx,
-        @StateId("elementsBagState") BagState<KV<String, TypedElement<?>>> elementsBagState) {
-      Iterable<KV<String, TypedElement<?>>> currentElements = elementsBagState.read();
-      for (KV<String, TypedElement<?>> el : currentElements) {
-        ctx.outputWithTimestamp(el, ctx.fireTimestamp());
-      }
-      elementsBagState.clear();
     }
   }
 
@@ -172,43 +90,6 @@ public class ProximaIO {
       if (direct != null) {
         direct.close();
       }
-    }
-  }
-
-  private static class ToStreamElementFn extends DoFn<KV<String, TypedElement<?>>, StreamElement> {
-
-    private final RepositoryFactory repositoryFactory;
-    private final AttributeDescriptor<TypedElement<?>> attributeDescriptor;
-
-    private transient EntityDescriptor entityDescriptor;
-
-    private ToStreamElementFn(
-        RepositoryFactory repositoryFactory,
-        AttributeDescriptor<TypedElement<?>> attributeDescriptor) {
-      this.repositoryFactory = repositoryFactory;
-      this.attributeDescriptor = attributeDescriptor;
-    }
-
-    @Setup
-    public void setUp() {
-      entityDescriptor = repositoryFactory.apply().getEntity(attributeDescriptor.getName());
-    }
-
-    @ProcessElement
-    public void processElement(ProcessContext ctx) {
-      final KV<String, TypedElement<?>> element = ctx.element();
-      Metrics.counter(
-              "proxima-write", entityDescriptor.getName() + "." + attributeDescriptor.getName())
-          .inc();
-      ctx.output(
-          StreamElement.upsert(
-              entityDescriptor,
-              attributeDescriptor,
-              UUID.randomUUID().toString(),
-              Objects.requireNonNull(element.getKey()),
-              attributeDescriptor.getName(),
-              ctx.timestamp().getMillis(),
-              attributeDescriptor.getValueSerializer().serialize(element.getValue())));
     }
   }
 
