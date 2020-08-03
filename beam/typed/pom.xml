@@ -58,6 +58,18 @@
 
     <dependency>
       <groupId>${apache.beam.groupId}</groupId>
+      <artifactId>beam-sdks-java-extensions-sql</artifactId>
+      <version>${apache.beam.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>${apache.beam.groupId}</groupId>
+      <artifactId>beam-sdks-java-extensions-protobuf</artifactId>
+      <version>${apache.beam.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>${apache.beam.groupId}</groupId>
       <artifactId>beam-sdks-java-core</artifactId>
     </dependency>
 
