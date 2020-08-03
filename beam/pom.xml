@@ -166,6 +166,7 @@
     <module>core-testing</module>
     <module>io-pubsub</module>
     <module>tools</module>
+    <module>typed</module>
   </modules>
 
 </project>
