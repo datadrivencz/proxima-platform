@@ -18,9 +18,9 @@ package cz.o2.proxima.beam.typed;
 import com.google.common.collect.Iterables;
 import com.typesafe.config.ConfigFactory;
 import cz.o2.proxima.repository.AttributeDescriptor;
+import cz.o2.proxima.repository.ConfigRepository;
 import cz.o2.proxima.repository.Repository;
 import cz.o2.proxima.util.ExceptionUtils;
-import cz.seznam.profile.model.ProfileModel;
 import java.net.URI;
 import java.util.Collections;
 import org.apache.beam.sdk.coders.CannotProvideCoderException;
@@ -84,10 +84,9 @@ public class TypedElementCoderProviderTest {
 
   @Test
   public void testAllRepositoryRegistered() {
-    ProfileModel model = ProfileModel.ofTest(ConfigFactory.load().resolve());
-    TypedElementCoderProvider coderProvider = TypedElementCoderProvider.of(model.getRepo());
-    model
-        .getRepo()
+    Repository repository = ConfigRepository.ofTest(ConfigFactory.load("test-reference.conf"));
+    TypedElementCoderProvider coderProvider = TypedElementCoderProvider.of(repository);
+    repository
         .getAllEntities()
         .flatMap(e -> e.getAllAttributes().stream())
         .forEach(
