@@ -94,6 +94,11 @@ public class Runner {
     final TypedElementCoderProvider coderProvider = TypedElementCoderProvider.of(repository);
     pipeline.getCoderRegistry().registerCoderProvider(coderProvider);
 
+    final TypedElementSchemaProvider schemaProvider = new TypedElementSchemaProvider(repository);
+    schemaProvider
+        .getDescriptors()
+        .forEach(desc -> pipeline.getSchemaRegistry().registerSchemaProvider(desc, schemaProvider));
+
     log.info("Running new pipeline with materializers {}", materializers);
     final List<PCollection<StreamElement>> materialized =
         materializers
