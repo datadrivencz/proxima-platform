@@ -18,6 +18,7 @@ package cz.o2.proxima.beam.typed;
 import static cz.o2.proxima.beam.typed.InputModeParams.BOOTSTRAP_TIMESTAMP_BARRIER;
 
 import cz.o2.proxima.beam.core.BeamDataOperator;
+import cz.o2.proxima.beam.transforms.StreamElementFilter;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.Repository;
 import cz.o2.proxima.storage.StreamElement;
@@ -31,10 +32,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
 import org.apache.beam.sdk.Pipeline;
-import org.apache.beam.sdk.metrics.Metrics;
-import org.apache.beam.sdk.transforms.Filter;
 import org.apache.beam.sdk.transforms.Flatten;
-import org.apache.beam.sdk.transforms.SerializableFunction;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollectionList;
 import org.apache.beam.sdk.values.PCollectionTuple;
@@ -171,10 +169,10 @@ public class Context {
                       operator
                           .getBatchUpdates(
                               pipeline, Long.MIN_VALUE, timestamp, true, attributeDescriptors)
-                          .apply(Filter.by(new UntilTimestamp(timestamp))),
+                          .apply(StreamElementFilter.untilTimestamp(timestamp)),
                       operator
                           .getStream(pipeline, Position.OLDEST, false, true, attributeDescriptors)
-                          .apply(Filter.by(new FromTimestamp(timestamp)))))
+                          .apply(StreamElementFilter.fromTimestamp(timestamp))))
               .apply(Flatten.pCollections());
         default:
           throw new UnsupportedOperationException(
@@ -217,46 +215,6 @@ public class Context {
       return output
           .setTypeDescriptor(TypedElement.typeDescriptor(attributeDescriptor))
           .apply(TypedElements.toStreamElement(repository));
-    }
-  }
-
-  /** Filter predicates that accepts elements with timestamp lower than given timestamp. */
-  private static class UntilTimestamp implements SerializableFunction<StreamElement, Boolean> {
-
-    private final long timestamp;
-
-    UntilTimestamp(long timestamp) {
-      this.timestamp = timestamp;
-    }
-
-    @Override
-    public Boolean apply(StreamElement input) {
-      if (input.getStamp() < timestamp) {
-        return true;
-      }
-      Metrics.counter("filter-timestamp", "until").inc();
-      return false;
-    }
-  }
-
-  /**
-   * Filter predicates that accepts elements with timestamp greater or equal the given timestamp.
-   */
-  private static class FromTimestamp implements SerializableFunction<StreamElement, Boolean> {
-
-    private final long timestamp;
-
-    FromTimestamp(long timestamp) {
-      this.timestamp = timestamp;
-    }
-
-    @Override
-    public Boolean apply(StreamElement input) {
-      if (input.getStamp() >= timestamp) {
-        return true;
-      }
-      Metrics.counter("filter-timestamp", "from").inc();
-      return false;
     }
   }
 

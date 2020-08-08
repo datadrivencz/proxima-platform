@@ -17,8 +17,8 @@ package cz.o2.proxima.beam.typed;
 
 import com.google.common.annotations.VisibleForTesting;
 import cz.o2.proxima.beam.core.io.StreamElementCoder;
+import cz.o2.proxima.beam.transforms.BufferUntilCheckpoint;
 import cz.o2.proxima.beam.typed.io.ProximaIO;
-import cz.o2.proxima.beam.typed.transform.BufferUntilCheckpoint;
 import cz.o2.proxima.repository.Repository;
 import cz.o2.proxima.storage.StreamElement;
 import java.util.ArrayList;
