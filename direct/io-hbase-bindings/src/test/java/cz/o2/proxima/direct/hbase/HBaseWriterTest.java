@@ -259,8 +259,8 @@ public class HBaseWriterTest {
 
   @Test
   public void testAsFactorySerializable() throws IOException, ClassNotFoundException {
-    byte[] bytes = TestUtils.serializeObject(writer.asFactory(repo.asFactory()));
-    Factory factory = TestUtils.deserializeObject(bytes);
-    assertEquals(writer.getUri(), ((HBaseWriter) factory.create()).getUri());
+    byte[] bytes = TestUtils.serializeObject(writer.asFactory());
+    Factory<?> factory = TestUtils.deserializeObject(bytes);
+    assertEquals(writer.getUri(), ((HBaseWriter) factory.apply(repo)).getUri());
   }
 }

@@ -18,7 +18,6 @@ package cz.o2.proxima.direct.kafka;
 import cz.o2.proxima.direct.core.AbstractOnlineAttributeWriter;
 import cz.o2.proxima.direct.core.CommitCallback;
 import cz.o2.proxima.direct.core.OnlineAttributeWriter;
-import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.storage.commitlog.Partitioner;
 import cz.o2.proxima.util.Pair;
@@ -81,9 +80,9 @@ public class KafkaWriter extends AbstractOnlineAttributeWriter {
   }
 
   @Override
-  public OnlineAttributeWriter.Factory asFactory(RepositoryFactory repositoryFactory) {
+  public OnlineAttributeWriter.Factory<?> asFactory() {
     final KafkaAccessor accessor = this.accessor;
-    return () -> new KafkaWriter(accessor);
+    return repo -> new KafkaWriter(accessor);
   }
 
   @SuppressWarnings("unchecked")

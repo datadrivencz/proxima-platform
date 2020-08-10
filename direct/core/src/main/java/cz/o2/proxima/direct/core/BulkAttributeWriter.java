@@ -18,7 +18,6 @@ package cz.o2.proxima.direct.core;
 import cz.o2.proxima.annotations.Internal;
 import cz.o2.proxima.annotations.Stable;
 import cz.o2.proxima.direct.core.AttributeWriterBase.Factory;
-import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.StreamElement;
 import java.io.Serializable;
 
@@ -45,10 +44,7 @@ public interface BulkAttributeWriter extends AttributeWriterBase {
   /** {@link Serializable} factory for {@link BulkAttributeWriter}. */
   @Internal
   @FunctionalInterface
-  interface Factory extends AttributeWriterBase.Factory<BulkAttributeWriter> {
-    @Override
-    BulkAttributeWriter create();
-  }
+  interface Factory<T extends BulkAttributeWriter> extends AttributeWriterBase.Factory<T> {}
 
   @Override
   default Type getType() {
@@ -74,5 +70,5 @@ public interface BulkAttributeWriter extends AttributeWriterBase {
 
   @SuppressWarnings("unchecked")
   @Override
-  Factory asFactory(RepositoryFactory repositoryFactory);
+  Factory<?> asFactory();
 }

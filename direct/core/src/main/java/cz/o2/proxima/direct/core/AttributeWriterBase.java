@@ -17,8 +17,8 @@ package cz.o2.proxima.direct.core;
 
 import cz.o2.proxima.annotations.Stable;
 import cz.o2.proxima.direct.commitlog.CommitLogReader.Factory;
-import cz.o2.proxima.repository.RepositoryFactory;
-import java.io.Serializable;
+import cz.o2.proxima.functional.UnaryFunction;
+import cz.o2.proxima.repository.Repository;
 import java.net.URI;
 import javax.annotation.concurrent.NotThreadSafe;
 
@@ -27,9 +27,13 @@ import javax.annotation.concurrent.NotThreadSafe;
 @NotThreadSafe
 public interface AttributeWriterBase extends AutoCloseable {
 
-  interface Factory<W extends AttributeWriterBase> extends Serializable {
-    W create();
-  }
+  /**
+   * Base interface for factories in implementing classes.
+   *
+   * @param <W> type parameter
+   */
+  @FunctionalInterface
+  interface Factory<W extends AttributeWriterBase> extends UnaryFunction<Repository, W> {}
 
   enum Type {
     ONLINE,
@@ -80,8 +84,7 @@ public interface AttributeWriterBase extends AutoCloseable {
   /**
    * Convert instance of this writer to {@link Factory} suitable for serialization.
    *
-   * @param repositoryFactory factory for repository (if needed).
    * @return the {@link Factory} representing this reader
    */
-  Factory<? extends AttributeWriterBase> asFactory(RepositoryFactory repositoryFactory);
+  Factory<? extends AttributeWriterBase> asFactory();
 }

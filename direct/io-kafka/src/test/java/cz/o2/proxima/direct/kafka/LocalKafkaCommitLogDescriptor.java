@@ -31,7 +31,6 @@ import cz.o2.proxima.direct.core.OnlineAttributeWriter;
 import cz.o2.proxima.direct.core.OnlineAttributeWriter.Factory;
 import cz.o2.proxima.direct.core.Partition;
 import cz.o2.proxima.repository.EntityDescriptor;
-import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.storage.commitlog.Position;
 import cz.o2.proxima.util.Classpath;
@@ -695,10 +694,10 @@ public class LocalKafkaCommitLogDescriptor implements DataAccessorFactory {
     }
 
     @Override
-    public Factory asFactory(RepositoryFactory repositoryFactory) {
+    public Factory<?> asFactory() {
       final KafkaAccessor accessor = getAccessor();
       final Context context = getContext();
-      return () -> new LocalKafkaLogReader(accessor, context);
+      return repo -> new LocalKafkaLogReader(accessor, context);
     }
   }
 
@@ -742,11 +741,11 @@ public class LocalKafkaCommitLogDescriptor implements DataAccessorFactory {
     }
 
     @Override
-    public OnlineAttributeWriter.Factory asFactory(RepositoryFactory repositoryFactory) {
+    public OnlineAttributeWriter.Factory<?> asFactory() {
       final LocalKafkaCommitLogDescriptor.Accessor accessor = getAccessor();
       final int numPartitions = this.numPartitions;
       final int descriptorId = this.descriptorId;
-      return () -> new LocalKafkaWriter(accessor, numPartitions, descriptorId);
+      return repo -> new LocalKafkaWriter(accessor, numPartitions, descriptorId);
     }
   }
 

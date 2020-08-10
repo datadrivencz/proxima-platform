@@ -21,7 +21,6 @@ import cz.o2.proxima.direct.core.Context;
 import cz.o2.proxima.direct.core.DataAccessor;
 import cz.o2.proxima.direct.core.OnlineAttributeWriter;
 import cz.o2.proxima.repository.EntityDescriptor;
-import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.AbstractStorage;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.util.Classpath;
@@ -33,6 +32,8 @@ import lombok.Getter;
 
 /** Writer via HTTP(S) requests. */
 public class HttpWriter extends AbstractStorage implements OnlineAttributeWriter, DataAccessor {
+
+  private static final long serialVersionUID = 1L;
 
   private final ConnFactory connFactory;
   @Getter private final Map<String, Object> cfg;
@@ -76,11 +77,11 @@ public class HttpWriter extends AbstractStorage implements OnlineAttributeWriter
   }
 
   @Override
-  public Factory asFactory(RepositoryFactory repositoryFactory) {
+  public Factory<?> asFactory() {
     final EntityDescriptor entity = getEntityDescriptor();
     final URI uri = getUri();
     final Map<String, Object> cfg = this.cfg;
-    return () -> new HttpWriter(entity, uri, cfg);
+    return repo -> new HttpWriter(entity, uri, cfg);
   }
 
   protected ConnFactory getConnFactory(Map<String, Object> cfg)

@@ -30,7 +30,6 @@ import cz.o2.proxima.direct.kafka.Consumers.BulkConsumer;
 import cz.o2.proxima.direct.kafka.Consumers.OnlineConsumer;
 import cz.o2.proxima.direct.time.MinimalPartitionWatermarkEstimator;
 import cz.o2.proxima.functional.BiConsumer;
-import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.AbstractStorage;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.storage.commitlog.Position;
@@ -690,10 +689,10 @@ public class KafkaLogReader extends AbstractStorage implements CommitLogReader {
   }
 
   @Override
-  public Factory asFactory(RepositoryFactory repositoryFactory) {
+  public Factory asFactory() {
     final KafkaAccessor accessor = this.accessor;
     final Context context = this.context;
-    return () -> new KafkaLogReader(accessor, context);
+    return repo -> new KafkaLogReader(accessor, context);
   }
 
   private static Collection<Offset> createDefaultOffsets(Collection<Partition> partitions) {

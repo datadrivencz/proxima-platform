@@ -20,7 +20,6 @@ import cz.o2.proxima.direct.blob.BulkBlobWriter;
 import cz.o2.proxima.direct.core.BulkAttributeWriter;
 import cz.o2.proxima.direct.core.Context;
 import cz.o2.proxima.direct.s3.S3BlobPath.S3Blob;
-import cz.o2.proxima.repository.RepositoryFactory;
 import lombok.extern.slf4j.Slf4j;
 
 /** {@link BulkAttributeWriter} for gcloud storage. */
@@ -41,9 +40,9 @@ public class BulkS3Writer extends BulkBlobWriter<S3Blob, S3Accessor> {
   }
 
   @Override
-  public Factory asFactory(RepositoryFactory repositoryFactory) {
+  public Factory<?> asFactory() {
     final S3Accessor accessor = getAccessor();
     final Context context = getContext();
-    return () -> new BulkS3Writer(accessor, context);
+    return repo -> new BulkS3Writer(accessor, context);
   }
 }

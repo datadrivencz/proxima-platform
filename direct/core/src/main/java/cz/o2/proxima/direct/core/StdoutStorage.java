@@ -17,7 +17,6 @@ package cz.o2.proxima.direct.core;
 
 import cz.o2.proxima.annotations.Stable;
 import cz.o2.proxima.repository.EntityDescriptor;
-import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.StreamElement;
 import java.net.URI;
 import java.util.Map;
@@ -57,8 +56,8 @@ public class StdoutStorage implements DataAccessorFactory {
             }
 
             @Override
-            public OnlineAttributeWriter.Factory asFactory(RepositoryFactory repositoryFactory) {
-              return () -> StdoutDataAccessor.this.getWriter(context).get().online();
+            public OnlineAttributeWriter.Factory<?> asFactory() {
+              return repo -> StdoutDataAccessor.this.getWriter(context).get().online();
             }
           });
     }

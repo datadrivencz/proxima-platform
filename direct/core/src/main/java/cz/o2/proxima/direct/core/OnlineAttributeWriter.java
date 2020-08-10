@@ -18,7 +18,6 @@ package cz.o2.proxima.direct.core;
 import cz.o2.proxima.annotations.Internal;
 import cz.o2.proxima.annotations.Stable;
 import cz.o2.proxima.direct.core.AttributeWriterBase.Factory;
-import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.StreamElement;
 import java.io.Serializable;
 
@@ -45,10 +44,7 @@ public interface OnlineAttributeWriter extends AttributeWriterBase {
   /** {@link Serializable} factory for {@link OnlineAttributeWriter}. */
   @Internal
   @FunctionalInterface
-  interface Factory extends AttributeWriterBase.Factory<OnlineAttributeWriter> {
-    @Override
-    OnlineAttributeWriter create();
-  }
+  interface Factory<T extends OnlineAttributeWriter> extends AttributeWriterBase.Factory<T> {}
 
   @Override
   default Type getType() {
@@ -70,5 +66,5 @@ public interface OnlineAttributeWriter extends AttributeWriterBase {
 
   @SuppressWarnings("unchecked")
   @Override
-  Factory asFactory(RepositoryFactory repositoryFactory);
+  Factory<? extends OnlineAttributeWriter> asFactory();
 }

@@ -33,14 +33,15 @@ import lombok.Getter;
 /** Attribute descriptor with associated accessors. */
 public class DirectAttributeFamilyDescriptor implements Serializable {
 
-  private static final long serialVersionUID = 1L;
+  private static final long serialVersionUID = 2L;
 
   @Getter private final AttributeFamilyDescriptor desc;
 
+  private final RepositoryFactory repositoryFactory;
   private final @Nullable AttributeWriterBase.Factory<?> writerFactory;
-  private final @Nullable CommitLogReader.Factory commitLogReaderFactory;
-  private final @Nullable BatchLogObservable.Factory batchObservableFactory;
-  private final @Nullable RandomAccessReader.Factory randomAccessReaderFactory;
+  private final @Nullable CommitLogReader.Factory<?> commitLogReaderFactory;
+  private final @Nullable BatchLogObservable.Factory<?> batchObservableFactory;
+  private final @Nullable RandomAccessReader.Factory<?> randomAccessReaderFactory;
   private final @Nullable CachedView.Factory cachedViewFactory;
 
   @Nullable private transient AttributeWriterBase writer;
@@ -48,6 +49,7 @@ public class DirectAttributeFamilyDescriptor implements Serializable {
   @Nullable private transient BatchLogObservable batchObservable;
   @Nullable private transient RandomAccessReader randomAccessReader;
   @Nullable private transient CachedView cachedView;
+  private transient @Nullable Repository repo;
 
   DirectAttributeFamilyDescriptor(
       Repository repository,
@@ -58,16 +60,15 @@ public class DirectAttributeFamilyDescriptor implements Serializable {
       Optional<RandomAccessReader> randomAccessReader,
       Optional<CachedView> cachedView) {
 
-    RepositoryFactory repositoryFactory = repository.asFactory();
+    this.repositoryFactory = repository.asFactory();
     this.desc = desc;
-    this.writerFactory = writer.map(w -> w.asFactory(repositoryFactory)).orElse(null);
-    this.commitLogReaderFactory =
-        commitLogReader.map(r -> r.asFactory(repositoryFactory)).orElse(null);
+    this.writerFactory = writer.map(AttributeWriterBase::asFactory).orElse(null);
+    this.commitLogReaderFactory = commitLogReader.map(CommitLogReader::asFactory).orElse(null);
     this.batchObservableFactory =
-        batchLogObservable.map(r -> r.asFactory(repositoryFactory)).orElse(null);
+        batchLogObservable.map(BatchLogObservable::asFactory).orElse(null);
     this.randomAccessReaderFactory =
-        randomAccessReader.map(r -> r.asFactory(repositoryFactory)).orElse(null);
-    this.cachedViewFactory = cachedView.map(v -> v.asFactory(repositoryFactory)).orElse(null);
+        randomAccessReader.map(RandomAccessReader::asFactory).orElse(null);
+    this.cachedViewFactory = cachedView.map(CachedView::asFactory).orElse(null);
   }
 
   DirectAttributeFamilyDescriptor(
@@ -121,7 +122,7 @@ public class DirectAttributeFamilyDescriptor implements Serializable {
 
   private AttributeWriterBase writer() {
     if (writer == null) {
-      writer = writerFactory.create();
+      writer = writerFactory.apply(repo());
     }
     return writer;
   }
@@ -144,7 +145,7 @@ public class DirectAttributeFamilyDescriptor implements Serializable {
 
   private CommitLogReader commitLogReader() {
     if (commitLogReader == null) {
-      commitLogReader = commitLogReaderFactory.create();
+      commitLogReader = commitLogReaderFactory.apply(repo());
     }
     return commitLogReader;
   }
@@ -167,7 +168,7 @@ public class DirectAttributeFamilyDescriptor implements Serializable {
 
   private BatchLogObservable batchObservable() {
     if (batchObservable == null) {
-      batchObservable = batchObservableFactory.create();
+      batchObservable = batchObservableFactory.apply(repo());
     }
     return batchObservable;
   }
@@ -189,7 +190,7 @@ public class DirectAttributeFamilyDescriptor implements Serializable {
 
   private RandomAccessReader randomAccessReader() {
     if (randomAccessReader == null) {
-      randomAccessReader = randomAccessReaderFactory.create();
+      randomAccessReader = randomAccessReaderFactory.apply(repo());
     }
     return randomAccessReader;
   }
@@ -210,7 +211,7 @@ public class DirectAttributeFamilyDescriptor implements Serializable {
 
   private CachedView cachedView() {
     if (cachedView == null) {
-      cachedView = cachedViewFactory.create();
+      cachedView = cachedViewFactory.apply(repo());
     }
     return cachedView;
   }
@@ -224,5 +225,12 @@ public class DirectAttributeFamilyDescriptor implements Serializable {
    */
   public Optional<String> getSource() {
     return desc.getSource();
+  }
+
+  private Repository repo() {
+    if (this.repo == null) {
+      this.repo = repositoryFactory.apply();
+    }
+    return this.repo;
   }
 }

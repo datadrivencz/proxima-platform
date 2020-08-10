@@ -57,17 +57,17 @@ public class S3AccessorTest {
   public void testWriterAsFactorySerializable() throws IOException, ClassNotFoundException {
     S3Accessor accessor = new S3Accessor(entity, URI.create("s3://bucket"), cfg());
     BulkS3Writer writer = new BulkS3Writer(accessor, direct.getContext());
-    byte[] bytes = TestUtils.serializeObject(writer.asFactory(repo.asFactory()));
+    byte[] bytes = TestUtils.serializeObject(writer.asFactory());
     AttributeWriterBase.Factory<?> factory = TestUtils.deserializeObject(bytes);
-    assertEquals(writer.getUri(), factory.create().getUri());
+    assertEquals(writer.getUri(), factory.apply(repo).getUri());
   }
 
   @Test
   public void testObservableAsFactorySerializable() throws IOException, ClassNotFoundException {
     S3Accessor accessor = new S3Accessor(entity, URI.create("s3://bucket"), cfg());
     S3LogObservable reader = new S3LogObservable(accessor, direct.getContext());
-    byte[] bytes = TestUtils.serializeObject(reader.asFactory(repo.asFactory()));
-    BatchLogObservable.Factory factory = TestUtils.deserializeObject(bytes);
-    assertEquals(accessor.getUri(), ((S3LogObservable) factory.create()).getAccessor().getUri());
+    byte[] bytes = TestUtils.serializeObject(reader.asFactory());
+    BatchLogObservable.Factory<?> factory = TestUtils.deserializeObject(bytes);
+    assertEquals(accessor.getUri(), ((S3LogObservable) factory.apply(repo)).getAccessor().getUri());
   }
 }

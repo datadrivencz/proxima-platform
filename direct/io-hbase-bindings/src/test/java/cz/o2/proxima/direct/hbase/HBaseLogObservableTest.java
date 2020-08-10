@@ -226,9 +226,9 @@ public class HBaseLogObservableTest {
 
   @Test
   public void testAsFactorySerializable() throws IOException, ClassNotFoundException {
-    byte[] bytes = TestUtils.serializeObject(reader.asFactory(repo.asFactory()));
-    Factory factory = TestUtils.deserializeObject(bytes);
-    assertEquals(reader.getUri(), ((HBaseLogObservable) factory.create()).getUri());
+    byte[] bytes = TestUtils.serializeObject(reader.asFactory());
+    Factory<?> factory = TestUtils.deserializeObject(bytes);
+    assertEquals(reader.getUri(), ((HBaseLogObservable) factory.apply(repo)).getUri());
   }
 
   private void write(String key, String attribute, String value, long stamp) throws IOException {

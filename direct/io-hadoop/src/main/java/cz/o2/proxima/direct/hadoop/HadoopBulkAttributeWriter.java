@@ -18,7 +18,6 @@ package cz.o2.proxima.direct.hadoop;
 import cz.o2.proxima.direct.bulk.AbstractBulkFileSystemAttributeWriter;
 import cz.o2.proxima.direct.core.BulkAttributeWriter;
 import cz.o2.proxima.direct.core.Context;
-import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.util.ExceptionUtils;
 import java.net.URI;
 import lombok.extern.slf4j.Slf4j;
@@ -59,9 +58,9 @@ public class HadoopBulkAttributeWriter extends AbstractBulkFileSystemAttributeWr
   }
 
   @Override
-  public BulkAttributeWriter.Factory asFactory(RepositoryFactory repositoryFactory) {
+  public BulkAttributeWriter.Factory<?> asFactory() {
     final HadoopDataAccessor accessor = this.accessor;
     final Context context = getContext();
-    return () -> new HadoopBulkAttributeWriter(accessor, context);
+    return repo -> new HadoopBulkAttributeWriter(accessor, context);
   }
 }

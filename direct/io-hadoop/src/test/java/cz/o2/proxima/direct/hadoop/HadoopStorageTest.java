@@ -264,9 +264,9 @@ public class HadoopStorageTest {
     HadoopDataAccessor accessor =
         new HadoopDataAccessor(entity, URI.create("hdfs://namenode"), Collections.emptyMap());
     HadoopBulkAttributeWriter writer = new HadoopBulkAttributeWriter(accessor, direct.getContext());
-    byte[] bytes = TestUtils.serializeObject(writer.asFactory(repository.asFactory()));
+    byte[] bytes = TestUtils.serializeObject(writer.asFactory());
     AttributeWriterBase.Factory<?> factory = TestUtils.deserializeObject(bytes);
-    assertEquals(writer.getUri(), factory.create().getUri());
+    assertEquals(writer.getUri(), factory.apply(repository).getUri());
   }
 
   @Test
@@ -274,10 +274,11 @@ public class HadoopStorageTest {
     HadoopDataAccessor accessor =
         new HadoopDataAccessor(entity, URI.create("hdfs://namenode"), Collections.emptyMap());
     HadoopBatchLogObservable reader = new HadoopBatchLogObservable(accessor, direct.getContext());
-    byte[] bytes = TestUtils.serializeObject(reader.asFactory(repository.asFactory()));
-    BatchLogObservable.Factory factory = TestUtils.deserializeObject(bytes);
+    byte[] bytes = TestUtils.serializeObject(reader.asFactory());
+    BatchLogObservable.Factory<?> factory = TestUtils.deserializeObject(bytes);
     assertEquals(
-        accessor.getUri(), ((HadoopBatchLogObservable) factory.create()).getAccessor().getUri());
+        accessor.getUri(),
+        ((HadoopBatchLogObservable) factory.apply(repository)).getAccessor().getUri());
   }
 
   Map<String, Object> cfg(Object... kvs) {

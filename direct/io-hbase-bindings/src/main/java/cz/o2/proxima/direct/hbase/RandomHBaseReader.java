@@ -25,7 +25,6 @@ import cz.o2.proxima.direct.randomaccess.RawOffset;
 import cz.o2.proxima.functional.Consumer;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
-import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.util.Pair;
 import java.io.IOException;
 import java.net.URI;
@@ -197,12 +196,12 @@ public class RandomHBaseReader extends HBaseClientWrapper implements RandomAcces
   }
 
   @Override
-  public Factory asFactory(RepositoryFactory repositoryFactory) {
+  public Factory<?> asFactory() {
     final URI uri = getUri();
     byte[] serializedConf = this.serializedConf;
     final Map<String, Object> cfg = this.cfg;
     final EntityDescriptor entity = getEntityDescriptor();
-    return () ->
+    return repo ->
         new RandomHBaseReader(uri, deserialize(serializedConf, new Configuration()), cfg, entity);
   }
 

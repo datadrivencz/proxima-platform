@@ -30,7 +30,6 @@ import cz.o2.proxima.direct.core.DirectDataOperator;
 import cz.o2.proxima.direct.core.Partition;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
-import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.AbstractStorage;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.util.Pair;
@@ -87,10 +86,10 @@ public class InMemBulkStorage implements DataAccessorFactory {
 
     @SuppressWarnings("unchecked")
     @Override
-    public BulkAttributeWriter.Factory asFactory(RepositoryFactory repositoryFactory) {
+    public BulkAttributeWriter.Factory<?> asFactory() {
       final EntityDescriptor entity = getEntityDescriptor();
       final URI uri = getUri();
-      return () -> new Writer(entity, uri);
+      return repo -> new Writer(entity, uri);
     }
 
     void commit() {
@@ -177,12 +176,12 @@ public class InMemBulkStorage implements DataAccessorFactory {
     }
 
     @Override
-    public Factory asFactory(RepositoryFactory repositoryFactory) {
+    public Factory<?> asFactory() {
       final EntityDescriptor entity = getEntityDescriptor();
       final URI uri = getUri();
       final cz.o2.proxima.functional.Factory<ExecutorService> executorFactory =
           this.executorFactory;
-      return () -> new BatchObservable(entity, uri, executorFactory);
+      return repo -> new BatchObservable(entity, uri, executorFactory);
     }
 
     private Executor executor() {

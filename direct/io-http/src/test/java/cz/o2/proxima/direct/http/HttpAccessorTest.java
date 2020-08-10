@@ -41,9 +41,9 @@ public class HttpAccessorTest {
     HttpAccessor accessor =
         new HttpAccessor(entity, URI.create("https://host"), Collections.emptyMap());
     HttpWriter writer = new HttpWriter(entity, accessor.getUri(), accessor.cfg);
-    byte[] bytes = TestUtils.serializeObject(writer.asFactory(repo.asFactory()));
+    byte[] bytes = TestUtils.serializeObject(writer.asFactory());
     AttributeWriterBase.Factory<?> factory = TestUtils.deserializeObject(bytes);
-    assertEquals(writer.getUri(), factory.create().getUri());
+    assertEquals(writer.getUri(), factory.apply(repo).getUri());
   }
 
   @Test
@@ -57,8 +57,8 @@ public class HttpAccessorTest {
                 .put("hello", "")
                 .build());
     WebsocketReader reader = new WebsocketReader(entity, accessor.getUri(), accessor.cfg);
-    byte[] bytes = TestUtils.serializeObject(reader.asFactory(repo.asFactory()));
-    CommitLogReader.Factory factory = TestUtils.deserializeObject(bytes);
-    assertEquals(reader.getUri(), ((WebsocketReader) factory.create()).getUri());
+    byte[] bytes = TestUtils.serializeObject(reader.asFactory());
+    CommitLogReader.Factory<?> factory = TestUtils.deserializeObject(bytes);
+    assertEquals(reader.getUri(), ((WebsocketReader) factory.apply(repo)).getUri());
   }
 }

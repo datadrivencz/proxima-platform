@@ -19,7 +19,6 @@ import cz.o2.proxima.annotations.Experimental;
 import cz.o2.proxima.direct.http.ConnFactory;
 import cz.o2.proxima.direct.http.HttpWriter;
 import cz.o2.proxima.repository.EntityDescriptor;
-import cz.o2.proxima.repository.RepositoryFactory;
 import java.net.URI;
 import java.util.Map;
 
@@ -37,10 +36,10 @@ public class OpenTsdbWriter extends HttpWriter {
   }
 
   @Override
-  public Factory asFactory(RepositoryFactory repositoryFactory) {
+  public Factory<?> asFactory() {
     final EntityDescriptor entity = getEntityDescriptor();
     final URI uri = getUri();
     final Map<String, Object> cfg = getCfg();
-    return () -> new OpenTsdbWriter(entity, uri, cfg);
+    return repo -> new OpenTsdbWriter(entity, uri, cfg);
   }
 }

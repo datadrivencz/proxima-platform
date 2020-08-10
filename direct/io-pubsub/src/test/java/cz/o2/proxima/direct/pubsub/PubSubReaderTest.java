@@ -499,8 +499,8 @@ public class PubSubReaderTest {
 
   @Test
   public void testAsFactorySerializable() throws IOException, ClassNotFoundException {
-    byte[] bytes = TestUtils.serializeObject(reader.asFactory(repo.asFactory()));
-    CommitLogReader.Factory factory = TestUtils.deserializeObject(bytes);
-    assertEquals(reader.getUri(), factory.create().getUri());
+    byte[] bytes = TestUtils.serializeObject(reader.asFactory());
+    CommitLogReader.Factory<?> factory = TestUtils.deserializeObject(bytes);
+    assertEquals(reader.getUri(), factory.apply(repo).getUri());
   }
 }

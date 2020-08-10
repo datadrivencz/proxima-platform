@@ -26,7 +26,6 @@ import cz.o2.proxima.direct.commitlog.Offset;
 import cz.o2.proxima.direct.core.Context;
 import cz.o2.proxima.direct.core.Partition;
 import cz.o2.proxima.functional.BiConsumer;
-import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.storage.commitlog.Position;
 import java.net.URI;
@@ -199,10 +198,10 @@ public class ListCommitLog implements CommitLogReader {
   }
 
   @Override
-  public Factory asFactory(RepositoryFactory repositoryFactory) {
+  public Factory asFactory() {
     final List<StreamElement> data = this.data;
     final Context context = this.context;
-    return () -> new ListCommitLog(data, context);
+    return repo -> new ListCommitLog(data, context);
   }
 
   private void pushTo(BiConsumer<StreamElement, Integer> consumer, Runnable finish) {

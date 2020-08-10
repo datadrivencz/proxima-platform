@@ -81,11 +81,11 @@ public class GCloudLogObservableTest {
 
   @Test
   public void testAsFactorySerializable() throws IOException, ClassNotFoundException {
-    byte[] bytes = TestUtils.serializeObject(observable.asFactory(repo.asFactory()));
-    Factory factory = TestUtils.deserializeObject(bytes);
+    byte[] bytes = TestUtils.serializeObject(observable.asFactory());
+    Factory<?> factory = TestUtils.deserializeObject(bytes);
     assertEquals(
         observable.getAccessor().getUri(),
-        ((GCloudLogObservable) factory.create()).getAccessor().getUri());
+        ((GCloudLogObservable) factory.apply(repo)).getAccessor().getUri());
   }
 
   private GoogleJsonResponseException jsonResponse(int code) {

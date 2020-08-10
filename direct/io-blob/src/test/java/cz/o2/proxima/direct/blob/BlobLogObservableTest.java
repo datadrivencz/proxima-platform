@@ -171,10 +171,10 @@ public class BlobLogObservableTest {
   @Test
   public void testAsFactorySerializable() throws IOException, ClassNotFoundException {
     BlobReader reader = accessor.new BlobReader(context);
-    byte[] bytes = TestUtils.serializeObject(reader.asFactory(repo.asFactory()));
-    Factory factory = TestUtils.deserializeObject(bytes);
+    byte[] bytes = TestUtils.serializeObject(reader.asFactory());
+    Factory<?> factory = TestUtils.deserializeObject(bytes);
     assertEquals(
-        reader.getAccessor().getUri(), ((BlobReader) factory.create()).getAccessor().getUri());
+        reader.getAccessor().getUri(), ((BlobReader) factory.apply(repo)).getAccessor().getUri());
   }
 
   private void writePartitions(List<Long> stamps) throws InterruptedException {

@@ -211,8 +211,8 @@ public class PubSubWriterTest {
 
   @Test
   public void testAsFactorySerializable() throws IOException, ClassNotFoundException {
-    byte[] bytes = TestUtils.serializeObject(writer.asFactory(repo.asFactory()));
+    byte[] bytes = TestUtils.serializeObject(writer.asFactory());
     AttributeWriterBase.Factory<?> factory = TestUtils.deserializeObject(bytes);
-    assertEquals(accessor.getUri(), factory.create().getUri());
+    assertEquals(accessor.getUri(), factory.apply(repo).getUri());
   }
 }

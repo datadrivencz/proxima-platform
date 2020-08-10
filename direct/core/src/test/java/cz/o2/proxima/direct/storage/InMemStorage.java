@@ -50,6 +50,7 @@ import cz.o2.proxima.functional.Consumer;
 import cz.o2.proxima.functional.Factory;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
+import cz.o2.proxima.repository.Repository;
 import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.AbstractStorage;
 import cz.o2.proxima.storage.StreamElement;
@@ -201,10 +202,10 @@ public class InMemStorage implements DataAccessorFactory {
 
     @SuppressWarnings("unchecked")
     @Override
-    public OnlineAttributeWriter.Factory asFactory(RepositoryFactory repositoryFactory) {
+    public OnlineAttributeWriter.Factory<?> asFactory() {
       final EntityDescriptor entity = getEntityDescriptor();
       final URI uri = getUri();
-      return () -> new Writer(entity, uri);
+      return repo -> new Writer(entity, uri);
     }
 
     @Override
@@ -556,17 +557,15 @@ public class InMemStorage implements DataAccessorFactory {
     }
 
     @Override
-    public Factory asFactory(RepositoryFactory repositoryFactory) {
+    public Factory asFactory() {
       final EntityDescriptor entity = getEntityDescriptor();
       final URI uri = getUri();
-      return () -> new InMemCommitLogReader(entity, uri);
+      return repo -> new InMemCommitLogReader(entity, uri);
     }
   }
 
-  interface ReaderFactory extends RandomAccessReader.Factory, BatchLogObservable.Factory {
-    @Override
-    Reader create();
-  }
+  interface ReaderFactory
+      extends RandomAccessReader.Factory<Reader>, BatchLogObservable.Factory<Reader> {}
 
   private final class Reader extends AbstractStorage
       implements RandomAccessReader, BatchLogObservable {
@@ -715,11 +714,11 @@ public class InMemStorage implements DataAccessorFactory {
     }
 
     @Override
-    public ReaderFactory asFactory(RepositoryFactory repositoryFactory) {
+    public ReaderFactory asFactory() {
       final EntityDescriptor entity = getEntityDescriptor();
       final URI uri = getUri();
       final cz.o2.proxima.functional.Factory<Executor> executorFactory = this.executorFactory;
-      return () -> {
+      return repo -> {
         Reader reader = new Reader(entity, uri, executorFactory);
         return reader;
       };
@@ -892,53 +891,61 @@ public class InMemStorage implements DataAccessorFactory {
     log.info("Creating accessor {} for URI {}", getClass(), uri);
     holder.observers.computeIfAbsent(
         uri, k -> Collections.synchronizedNavigableMap(new TreeMap<>()));
-    RepositoryFactory repositoryFactory = op.getRepository().asFactory();
-    final OnlineAttributeWriter.Factory writerFactory =
-        new Writer(entity, uri).asFactory(repositoryFactory);
-    final CommitLogReader.Factory commitLogReaderFactory =
-        new InMemCommitLogReader(entity, uri).asFactory(repositoryFactory);
+    final Repository repo = op.getRepository();
+    final RepositoryFactory repositoryFactory = repo.asFactory();
+    final OnlineAttributeWriter.Factory<?> writerFactory = new Writer(entity, uri).asFactory();
+    final CommitLogReader.Factory<?> commitLogReaderFactory =
+        new InMemCommitLogReader(entity, uri).asFactory();
     @SuppressWarnings({"unchecked", "rawtypes"})
     final ReaderFactory readerFactory =
-        new Reader(entity, uri, (Factory) op.getContext().getExecutorFactory())
-            .asFactory(repositoryFactory);
+        new Reader(entity, uri, (Factory) op.getContext().getExecutorFactory()).asFactory();
     final CachedView.Factory cachedViewFactory =
         new LocalCachedPartitionedView(
-                entity, commitLogReaderFactory.create(), writerFactory.create())
-            .asFactory(repositoryFactory);
+                entity, commitLogReaderFactory.apply(repo), writerFactory.apply(repo))
+            .asFactory();
 
     return new DataAccessor() {
 
       private static final long serialVersionUID = 1L;
 
+      private transient @Nullable Repository repo;
+
       @Override
       public Optional<AttributeWriterBase> getWriter(Context context) {
         Objects.requireNonNull(context);
-        return Optional.of(writerFactory.create());
+        return Optional.of(writerFactory.apply(repo()));
       }
 
       @Override
       public Optional<CommitLogReader> getCommitLogReader(Context context) {
         Objects.requireNonNull(context);
-        return Optional.of(commitLogReaderFactory.create());
+        return Optional.of(commitLogReaderFactory.apply(repo()));
       }
 
       @Override
       public Optional<RandomAccessReader> getRandomAccessReader(Context context) {
         Objects.requireNonNull(context);
-        return Optional.of(readerFactory.create());
+        return Optional.of(readerFactory.apply(repo()));
       }
 
       @Override
       public Optional<CachedView> getCachedView(Context context) {
         Objects.requireNonNull(context);
-        return Optional.of(cachedViewFactory.create());
+        return Optional.of(cachedViewFactory.apply(repo()));
       }
 
       @Override
       public Optional<BatchLogObservable> getBatchLogObservable(Context context) {
         Objects.requireNonNull(context);
-        Reader createdReader = readerFactory.create();
+        Reader createdReader = readerFactory.apply(repo());
         return Optional.of(createdReader);
+      }
+
+      private Repository repo() {
+        if (this.repo == null) {
+          this.repo = repositoryFactory.apply();
+        }
+        return this.repo;
       }
     };
   }

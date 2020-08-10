@@ -532,9 +532,9 @@ public class CassandraDBAccessorTest {
         new TestDBAccessor(
             entity, URI.create("cassandra://localhost/"), getCfg(TestCqlFactory.class, 2));
     CassandraRandomReader reader = accessor.newRandomReader();
-    byte[] bytes = TestUtils.serializeObject(reader.asFactory(repo.asFactory()));
-    RandomAccessReader.Factory factory = TestUtils.deserializeObject(bytes);
-    assertEquals(reader.getUri(), ((CassandraRandomReader) factory.create()).getUri());
+    byte[] bytes = TestUtils.serializeObject(reader.asFactory());
+    RandomAccessReader.Factory<?> factory = TestUtils.deserializeObject(bytes);
+    assertEquals(reader.getUri(), ((CassandraRandomReader) factory.apply(repo)).getUri());
   }
 
   @Test
@@ -543,9 +543,9 @@ public class CassandraDBAccessorTest {
         new TestDBAccessor(
             entity, URI.create("cassandra://localhost/"), getCfg(TestCqlFactory.class, 2));
     CassandraWriter writer = accessor.newWriter();
-    byte[] bytes = TestUtils.serializeObject(writer.asFactory(repo.asFactory()));
+    byte[] bytes = TestUtils.serializeObject(writer.asFactory());
     AttributeWriterBase.Factory<?> factory = TestUtils.deserializeObject(bytes);
-    assertEquals(writer.getUri(), ((CassandraWriter) factory.create()).getUri());
+    assertEquals(writer.getUri(), ((CassandraWriter) factory.apply(repo)).getUri());
   }
 
   @Test
@@ -555,9 +555,9 @@ public class CassandraDBAccessorTest {
             entity, URI.create("cassandra://localhost/"), getCfg(TestCqlFactory.class, 2));
     CassandraLogObservable reader =
         accessor.newLogObservable(repo.getOrCreateOperator(DirectDataOperator.class).getContext());
-    byte[] bytes = TestUtils.serializeObject(reader.asFactory(repo.asFactory()));
-    BatchLogObservable.Factory factory = TestUtils.deserializeObject(bytes);
-    assertEquals(reader.getUri(), ((CassandraLogObservable) factory.create()).getUri());
+    byte[] bytes = TestUtils.serializeObject(reader.asFactory());
+    BatchLogObservable.Factory<?> factory = TestUtils.deserializeObject(bytes);
+    assertEquals(reader.getUri(), ((CassandraLogObservable) factory.apply(repo)).getUri());
   }
 
   private Map<String, Object> getCfg(Class<?> cls, Class<? extends StringConverter> converter) {

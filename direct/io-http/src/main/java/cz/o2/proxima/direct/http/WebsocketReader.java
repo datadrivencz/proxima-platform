@@ -27,7 +27,6 @@ import cz.o2.proxima.direct.core.Partition;
 import cz.o2.proxima.functional.UnaryFunction;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
-import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.AbstractStorage;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.storage.commitlog.Position;
@@ -46,6 +45,8 @@ import org.java_websocket.handshake.ServerHandshake;
 
 /** Reader of data from websocket (ws, or wss). */
 public class WebsocketReader extends AbstractStorage implements CommitLogReader {
+
+  private static final long serialVersionUID = 1L;
 
   private static final Partition PARTITION = () -> 0;
   private static final Offset OFFSET =
@@ -221,11 +222,11 @@ public class WebsocketReader extends AbstractStorage implements CommitLogReader 
   }
 
   @Override
-  public Factory asFactory(RepositoryFactory repositoryFactory) {
+  public Factory<?> asFactory() {
     final EntityDescriptor entity = getEntityDescriptor();
     final URI uri = getUri();
     final Map<String, Object> cfg = this.cfg;
-    return () -> new WebsocketReader(entity, uri, cfg);
+    return repo -> new WebsocketReader(entity, uri, cfg);
   }
 
   private OnNextContext nullContext() {

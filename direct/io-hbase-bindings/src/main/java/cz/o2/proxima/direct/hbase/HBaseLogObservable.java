@@ -23,7 +23,6 @@ import cz.o2.proxima.direct.core.Partition;
 import cz.o2.proxima.functional.Factory;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
-import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.StreamElement;
 import java.io.IOException;
 import java.net.URI;
@@ -107,12 +106,12 @@ class HBaseLogObservable extends HBaseClientWrapper implements BatchLogObservabl
   }
 
   @Override
-  public Factory asFactory(RepositoryFactory repositoryFactory) {
+  public Factory<?> asFactory() {
     final URI uri = getUri();
     final EntityDescriptor entity = this.entity;
     final cz.o2.proxima.functional.Factory<Executor> executorFactory = this.executorFactory;
     final byte[] serializedConf = this.serializedConf;
-    return () ->
+    return repo ->
         new HBaseLogObservable(
             uri, deserialize(serializedConf, new Configuration()), entity, executorFactory);
   }

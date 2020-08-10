@@ -26,7 +26,6 @@ import cz.o2.proxima.direct.core.BulkAttributeWriter;
 import cz.o2.proxima.direct.core.CommitCallback;
 import cz.o2.proxima.direct.core.Context;
 import cz.o2.proxima.repository.EntityDescriptor;
-import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.StreamElement;
 import java.io.File;
 import java.io.IOException;
@@ -171,7 +170,7 @@ public abstract class BulkBlobWriter<BlobT extends BlobBase, AccessorT extends B
     }
 
     @Override
-    public BulkAttributeWriter.Factory asFactory(RepositoryFactory repositoryFactory) {
+    public BulkAttributeWriter.Factory<?> asFactory() {
       throw new UnsupportedOperationException("This should not be called directly");
     }
   }

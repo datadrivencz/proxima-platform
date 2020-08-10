@@ -21,7 +21,6 @@ import cz.o2.proxima.direct.bulk.Reader;
 import cz.o2.proxima.direct.core.Context;
 import cz.o2.proxima.direct.core.Partition;
 import cz.o2.proxima.repository.AttributeDescriptor;
-import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.StreamElement;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -103,10 +102,10 @@ public class HadoopBatchLogObservable implements BatchLogObservable {
   }
 
   @Override
-  public Factory asFactory(RepositoryFactory repositoryFactory) {
+  public Factory<?> asFactory() {
     final HadoopDataAccessor accessor = this.accessor;
     final Context context = this.context;
-    return () -> new HadoopBatchLogObservable(accessor, context);
+    return repo -> new HadoopBatchLogObservable(accessor, context);
   }
 
   private boolean processPath(BatchLogObserver observer, HadoopPartition p, HadoopPath path) {

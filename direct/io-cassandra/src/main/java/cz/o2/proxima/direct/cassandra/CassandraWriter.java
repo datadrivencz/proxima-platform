@@ -20,7 +20,6 @@ import com.datastax.driver.core.Session;
 import cz.o2.proxima.direct.core.AbstractOnlineAttributeWriter;
 import cz.o2.proxima.direct.core.CommitCallback;
 import cz.o2.proxima.direct.core.OnlineAttributeWriter;
-import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.StreamElement;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
@@ -63,8 +62,8 @@ class CassandraWriter extends AbstractOnlineAttributeWriter implements OnlineAtt
   }
 
   @Override
-  public OnlineAttributeWriter.Factory asFactory(RepositoryFactory repositoryFactory) {
+  public OnlineAttributeWriter.Factory<?> asFactory() {
     final CassandraDBAccessor accessor = this.accessor;
-    return () -> new CassandraWriter(accessor);
+    return repo -> new CassandraWriter(accessor);
   }
 }

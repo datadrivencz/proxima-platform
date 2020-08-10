@@ -371,10 +371,10 @@ public class BulkBlobWriterTest implements Serializable {
             () -> {},
             new AtomicReference<>());
     BlobWriter writer = accessor.new BlobWriter(direct.getContext());
-    byte[] bytes = TestUtils.serializeObject(writer.asFactory(repo.asFactory()));
-    Factory factory = TestUtils.deserializeObject(bytes);
+    byte[] bytes = TestUtils.serializeObject(writer.asFactory());
+    Factory<?> factory = TestUtils.deserializeObject(bytes);
     assertEquals(
-        writer.getAccessor().getUri(), ((BlobWriter) factory.create()).getAccessor().getUri());
+        writer.getAccessor().getUri(), ((BlobWriter) factory.apply(repo)).getAccessor().getUri());
   }
 
   private void validate(List<StreamElement> written, StreamElement... elements) {

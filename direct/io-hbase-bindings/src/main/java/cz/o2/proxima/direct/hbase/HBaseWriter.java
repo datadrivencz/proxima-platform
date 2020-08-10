@@ -19,7 +19,6 @@ import static cz.o2.proxima.direct.hbase.Util.cloneArray;
 
 import cz.o2.proxima.direct.core.CommitCallback;
 import cz.o2.proxima.direct.core.OnlineAttributeWriter;
-import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.StreamElement;
 import java.io.IOException;
 import java.net.URI;
@@ -101,11 +100,11 @@ class HBaseWriter extends HBaseClientWrapper implements OnlineAttributeWriter {
   }
 
   @Override
-  public Factory asFactory(RepositoryFactory repositoryFactory) {
+  public Factory<?> asFactory() {
     final URI uri = getUri();
     final Map<String, Object> cfg = this.cfg;
     final byte[] serializedConf = this.serializedConf;
-    return () -> new HBaseWriter(uri, deserialize(serializedConf, new Configuration()), cfg);
+    return repo -> new HBaseWriter(uri, deserialize(serializedConf, new Configuration()), cfg);
   }
 
   private void deletePrefix(byte[] key, byte[] family, String prefix, long stamp)

@@ -50,7 +50,6 @@ import cz.o2.proxima.direct.pubsub.proto.PubSub;
 import cz.o2.proxima.functional.UnaryFunction;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
-import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.AbstractStorage;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.storage.commitlog.Position;
@@ -694,10 +693,10 @@ class PubSubReader extends AbstractStorage implements CommitLogReader {
   }
 
   @Override
-  public Factory asFactory(RepositoryFactory repositoryFactory) {
+  public Factory<?> asFactory() {
     final PubSubAccessor accessor = this.accessor;
     final Context context = this.context;
-    return () -> new PubSubReader(accessor, context);
+    return repo -> new PubSubReader(accessor, context);
   }
 
   private String findConsumerFromPartitions(String name, Collection<Partition> partitions) {

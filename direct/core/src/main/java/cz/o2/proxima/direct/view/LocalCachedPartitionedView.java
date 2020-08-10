@@ -31,7 +31,6 @@ import cz.o2.proxima.functional.BiConsumer;
 import cz.o2.proxima.functional.Consumer;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
-import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.storage.commitlog.Position;
 import cz.o2.proxima.util.Pair;
@@ -377,11 +376,12 @@ public class LocalCachedPartitionedView implements CachedView {
   }
 
   @Override
-  public Factory asFactory(RepositoryFactory repositoryFactory) {
-    final CommitLogReader.Factory readerFactory = reader.asFactory(repositoryFactory);
-    final OnlineAttributeWriter.Factory writerFactory = writer.asFactory(repositoryFactory);
+  public Factory asFactory() {
+    final CommitLogReader.Factory<?> readerFactory = reader.asFactory();
+    final OnlineAttributeWriter.Factory<?> writerFactory = writer.asFactory();
     final EntityDescriptor entity = this.entity;
-    return () ->
-        new LocalCachedPartitionedView(entity, readerFactory.create(), writerFactory.create());
+    return repo ->
+        new LocalCachedPartitionedView(
+            entity, readerFactory.apply(repo), writerFactory.apply(repo));
   }
 }

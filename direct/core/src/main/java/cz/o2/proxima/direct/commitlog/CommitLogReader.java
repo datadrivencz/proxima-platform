@@ -18,7 +18,8 @@ package cz.o2.proxima.direct.commitlog;
 import cz.o2.proxima.annotations.Stable;
 import cz.o2.proxima.direct.core.Partition;
 import cz.o2.proxima.direct.view.CachedView.Factory;
-import cz.o2.proxima.repository.RepositoryFactory;
+import cz.o2.proxima.functional.UnaryFunction;
+import cz.o2.proxima.repository.Repository;
 import cz.o2.proxima.storage.commitlog.Position;
 import java.io.Serializable;
 import java.net.URI;
@@ -36,9 +37,7 @@ public interface CommitLogReader {
 
   /** {@link Serializable} factory for {@link CommitLogReader}. */
   @FunctionalInterface
-  interface Factory extends Serializable {
-    CommitLogReader create();
-  }
+  interface Factory<T extends CommitLogReader> extends UnaryFunction<Repository, T> {}
 
   /**
    * Retrieve URI representing this resource.
@@ -296,8 +295,7 @@ public interface CommitLogReader {
   /**
    * Convert instance of this reader to {@link Factory} suitable for serialization.
    *
-   * @param repositoryFactory factory for repository (if needed).
    * @return the {@link Factory} representing this reader
    */
-  Factory asFactory(RepositoryFactory repositoryFactory);
+  Factory<?> asFactory();
 }

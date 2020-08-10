@@ -147,9 +147,9 @@ public class KafkaAccessorTest implements Serializable {
             URI.create("kafka-test://dummy/topic"),
             new HashMap<>());
     KafkaLogReader reader = kafkaAccessor.newReader(direct.getContext());
-    byte[] bytes = TestUtils.serializeObject(reader.asFactory(repo.asFactory()));
-    CommitLogReader.Factory factory = TestUtils.deserializeObject(bytes);
-    assertEquals(reader.getUri(), ((KafkaLogReader) factory.create()).getUri());
+    byte[] bytes = TestUtils.serializeObject(reader.asFactory());
+    CommitLogReader.Factory<?> factory = TestUtils.deserializeObject(bytes);
+    assertEquals(reader.getUri(), ((KafkaLogReader) factory.apply(repo)).getUri());
   }
 
   @Test
@@ -160,8 +160,8 @@ public class KafkaAccessorTest implements Serializable {
             URI.create("kafka-test://dummy/topic"),
             new HashMap<>());
     KafkaWriter writer = kafkaAccessor.newWriter();
-    byte[] bytes = TestUtils.serializeObject(writer.asFactory(repo.asFactory()));
+    byte[] bytes = TestUtils.serializeObject(writer.asFactory());
     AttributeWriterBase.Factory<?> factory = TestUtils.deserializeObject(bytes);
-    assertEquals(writer.getUri(), ((KafkaWriter) factory.create()).getUri());
+    assertEquals(writer.getUri(), ((KafkaWriter) factory.apply(repo)).getUri());
   }
 }

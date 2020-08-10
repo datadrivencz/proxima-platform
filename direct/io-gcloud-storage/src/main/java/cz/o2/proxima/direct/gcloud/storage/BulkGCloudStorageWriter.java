@@ -21,7 +21,6 @@ import cz.o2.proxima.direct.blob.BulkBlobWriter;
 import cz.o2.proxima.direct.core.BulkAttributeWriter;
 import cz.o2.proxima.direct.core.Context;
 import cz.o2.proxima.direct.gcloud.storage.GCloudBlobPath.GCloudBlob;
-import cz.o2.proxima.repository.RepositoryFactory;
 import lombok.extern.slf4j.Slf4j;
 
 /** {@link BulkAttributeWriter} for gcloud storage. */
@@ -45,9 +44,9 @@ public class BulkGCloudStorageWriter extends BulkBlobWriter<GCloudBlob, GCloudSt
   }
 
   @Override
-  public Factory asFactory(RepositoryFactory repositoryFactory) {
+  public Factory<?> asFactory() {
     final GCloudStorageAccessor accessor = getAccessor();
     final Context context = getContext();
-    return () -> new BulkGCloudStorageWriter(accessor, context);
+    return repo -> new BulkGCloudStorageWriter(accessor, context);
   }
 }

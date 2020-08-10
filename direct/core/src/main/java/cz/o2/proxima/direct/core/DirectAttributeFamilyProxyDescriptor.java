@@ -35,7 +35,6 @@ import cz.o2.proxima.repository.AttributeFamilyProxyDescriptor;
 import cz.o2.proxima.repository.AttributeProxyDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.repository.Repository;
-import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.storage.commitlog.Position;
 import cz.o2.proxima.transform.ProxyTransform;
@@ -407,11 +406,11 @@ public class DirectAttributeFamilyProxyDescriptor extends DirectAttributeFamilyD
     }
 
     @Override
-    public Factory asFactory(RepositoryFactory repositoryFactory) {
-      final Factory writerFactory = writer.asFactory(repositoryFactory);
+    public Factory<?> asFactory() {
+      final Factory<?> writerFactory = writer.asFactory();
       final AttrLookup lookup = this.lookup;
       final URI uri = this.uri;
-      return () -> new ProxyOnlineAttributeWriter(writerFactory.create(), lookup, uri);
+      return repo -> new ProxyOnlineAttributeWriter(writerFactory.apply(repo), lookup, uri);
     }
 
     @Override
@@ -511,10 +510,10 @@ public class DirectAttributeFamilyProxyDescriptor extends DirectAttributeFamilyD
     }
 
     @Override
-    public Factory asFactory(RepositoryFactory repositoryFactory) {
-      final Factory readerFactory = reader.asFactory(repositoryFactory);
+    public Factory<?> asFactory() {
+      final Factory<?> readerFactory = reader.asFactory();
       final AttrLookup lookup = this.lookup;
-      return () -> new ProxyCommitLogReader(readerFactory.create(), lookup);
+      return repo -> new ProxyCommitLogReader(readerFactory.apply(repo), lookup);
     }
   }
 
@@ -617,10 +616,10 @@ public class DirectAttributeFamilyProxyDescriptor extends DirectAttributeFamilyD
     }
 
     @Override
-    public Factory asFactory(RepositoryFactory repositoryFactory) {
-      final Factory readerFactory = reader.asFactory(repositoryFactory);
+    public Factory<?> asFactory() {
+      final Factory<?> readerFactory = reader.asFactory();
       final AttrLookup lookup = this.lookup;
-      return () -> new ProxyRandomAccessReader(readerFactory.create(), lookup);
+      return repo -> new ProxyRandomAccessReader(readerFactory.apply(repo), lookup);
     }
   }
 
@@ -655,10 +654,10 @@ public class DirectAttributeFamilyProxyDescriptor extends DirectAttributeFamilyD
     }
 
     @Override
-    public Factory asFactory(RepositoryFactory repositoryFactory) {
-      final Factory readerFactory = reader.asFactory(repositoryFactory);
+    public Factory<?> asFactory() {
+      final Factory<?> readerFactory = reader.asFactory();
       final AttrLookup lookup = this.lookup;
-      return () -> new ProxyBatchLogObservable(readerFactory.create(), lookup);
+      return repo -> new ProxyBatchLogObservable(readerFactory.apply(repo), lookup);
     }
   }
 }

@@ -73,8 +73,13 @@ public class RandomHBaseReaderTest {
 
   @BeforeClass
   public static void beforeClass() throws Exception {
-    util = new HBaseTestingUtility();
-    cluster = util.startMiniCluster();
+    try {
+      util = new HBaseTestingUtility();
+      cluster = util.startMiniCluster();
+    } catch (Exception ex) {
+      ex.printStackTrace(System.err);
+      throw ex;
+    }
   }
 
   @AfterClass
@@ -256,9 +261,9 @@ public class RandomHBaseReaderTest {
 
   @Test
   public void testAsFactorySerializable() throws IOException, ClassNotFoundException {
-    byte[] bytes = TestUtils.serializeObject(reader.asFactory(repo.asFactory()));
-    Factory factory = TestUtils.deserializeObject(bytes);
-    assertEquals(reader.getUri(), ((RandomHBaseReader) factory.create()).getUri());
+    byte[] bytes = TestUtils.serializeObject(reader.asFactory());
+    Factory<?> factory = TestUtils.deserializeObject(bytes);
+    assertEquals(reader.getUri(), ((RandomHBaseReader) factory.apply(repo)).getUri());
   }
 
   void write(String key, String attribute, String value, long stamp) throws IOException {

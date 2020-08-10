@@ -28,7 +28,6 @@ import cz.o2.proxima.direct.core.DirectDataOperator;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.repository.Repository;
-import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.util.ExceptionUtils;
 import java.io.File;
@@ -187,8 +186,8 @@ public class AbstractBulkFileSystemAttributeWriterTest implements Serializable {
         params.getAllowedLateness()) {
 
       @Override
-      public BulkAttributeWriter.Factory asFactory(RepositoryFactory repositoryFactory) {
-        return () -> ExceptionUtils.uncheckedFactory(() -> initWriter());
+      public BulkAttributeWriter.Factory<?> asFactory() {
+        return repo -> ExceptionUtils.uncheckedFactory(() -> initWriter());
       }
 
       @Override

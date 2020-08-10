@@ -58,9 +58,9 @@ public class GCloudStorageAccessorTest {
     GCloudStorageAccessor accessor =
         new GCloudStorageAccessor(entity, URI.create("gs://bucket"), Collections.emptyMap());
     BulkGCloudStorageWriter writer = new BulkGCloudStorageWriter(accessor, direct.getContext());
-    byte[] bytes = TestUtils.serializeObject(writer.asFactory(repo.asFactory()));
+    byte[] bytes = TestUtils.serializeObject(writer.asFactory());
     AttributeWriterBase.Factory<?> factory = TestUtils.deserializeObject(bytes);
-    assertEquals(writer.getUri(), factory.create().getUri());
+    assertEquals(writer.getUri(), factory.apply(repo).getUri());
   }
 
   @Test
@@ -68,9 +68,9 @@ public class GCloudStorageAccessorTest {
     GCloudStorageAccessor accessor =
         new GCloudStorageAccessor(entity, URI.create("gs://bucket"), Collections.emptyMap());
     GCloudLogObservable reader = new GCloudLogObservable(accessor, direct.getContext());
-    byte[] bytes = TestUtils.serializeObject(reader.asFactory(repo.asFactory()));
-    BatchLogObservable.Factory factory = TestUtils.deserializeObject(bytes);
+    byte[] bytes = TestUtils.serializeObject(reader.asFactory());
+    BatchLogObservable.Factory<?> factory = TestUtils.deserializeObject(bytes);
     assertEquals(
-        accessor.getUri(), ((GCloudLogObservable) factory.create()).getAccessor().getUri());
+        accessor.getUri(), ((GCloudLogObservable) factory.apply(repo)).getAccessor().getUri());
   }
 }
