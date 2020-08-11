@@ -27,14 +27,19 @@ import java.util.Map;
 public class OpenTsdbWriter extends HttpWriter {
 
   public OpenTsdbWriter(EntityDescriptor entityDesc, URI uri, Map<String, Object> cfg) {
-
     super(entityDesc, uri, cfg);
   }
 
   @Override
-  protected ConnFactory getConnFactory(Map<String, Object> cfg)
-      throws InstantiationException, IllegalAccessException {
-
+  protected ConnFactory getConnFactory(Map<String, Object> cfg) {
     return new OpenTsdbConnectionFactory();
+  }
+
+  @Override
+  public Factory<?> asFactory() {
+    final EntityDescriptor entity = getEntityDescriptor();
+    final URI uri = getUri();
+    final Map<String, Object> cfg = getCfg();
+    return repo -> new OpenTsdbWriter(entity, uri, cfg);
   }
 }

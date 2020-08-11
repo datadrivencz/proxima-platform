@@ -534,7 +534,7 @@ class BeamStream<T> implements Stream<T> {
                     new IllegalArgumentException(
                         String.format("Family [%s] does not have writer", targetFamilyname)));
     SerializableScopedValue<Integer, AttributeWriterBase> writer =
-        new SerializableScopedValue<>(rawWriter);
+        new SerializableScopedValue<>(rawWriter.asFactory(repoProvider::getRepo)::create);
     Set<String> allowedAttributes =
         familyDescriptor
             .getAttributes()
