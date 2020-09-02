@@ -48,12 +48,9 @@ import org.junit.Test;
 @Slf4j
 public class ConfigRepositoryTest {
 
-  private final ConfigRepository repo =
-      ConfigRepository.Builder.of(
-              ConfigFactory.load()
-                  .withFallback(ConfigFactory.load("test-reference.conf"))
-                  .resolve())
-          .build();
+  private final Config config =
+      ConfigFactory.load().withFallback(ConfigFactory.load("test-reference.conf")).resolve();
+  private final ConfigRepository repo = ConfigRepository.Builder.of(config).build();
 
   @After
   public void tearDown() {
@@ -125,13 +122,14 @@ public class ConfigRepositoryTest {
   public void testTestRepositorySerializable() throws Exception {
     Repository testRepo = Repository.ofTest(ConfigFactory.load("test-reference.conf").resolve());
     Repository clone = TestUtils.assertSerializable(testRepo);
-    assertTrue(clone == testRepo);
+    assertNotSame(clone, testRepo);
+    assertEquals(clone, testRepo);
   }
 
   @Test
   public void testRepositorySerializable() throws Exception {
     ConfigRepository clone = TestUtils.assertSerializable(repo);
-    assertTrue(clone == repo);
+    assertSame(clone, repo);
   }
 
   @Test
@@ -535,6 +533,13 @@ public class ConfigRepositoryTest {
     assertEquals(updated, newRepo);
     assertSame(newRepo.asFactory().apply(), newRepo);
     assertSame(factory.apply(), newRepo);
+  }
+
+  @Test
+  public void testAsFactoryOfTestCreatesNewRepository() {
+    Repository repo = Repository.ofTest(config);
+    Repository cloned = repo.asFactory().apply();
+    assertNotSame(repo, cloned);
   }
 
   private void checkThrows(Factory<?> factory) {

@@ -132,6 +132,22 @@ public interface RepositoryFactory extends Serializable {
     }
   }
 
+  class UncachedInstance implements RepositoryFactory {
+
+    private static final long serialVersionUID = 1L;
+
+    private final ConfigRepository.Builder builder;
+
+    public UncachedInstance(ConfigRepository.Builder builder) {
+      this.builder = builder;
+    }
+
+    @Override
+    public Repository apply() {
+      return builder.build();
+    }
+  }
+
   static RepositoryFactory compressed(Config config) {
     return new Compressed(config);
   }
@@ -142,6 +158,10 @@ public interface RepositoryFactory extends Serializable {
 
   static RepositoryFactory local(Repository repository) {
     return new LocalInstance(repository);
+  }
+
+  static RepositoryFactory uncached(ConfigRepository.Builder builder) {
+    return new UncachedInstance(builder);
   }
 
   /**

@@ -43,6 +43,7 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.ObjectStreamException;
+import java.io.Serializable;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
@@ -108,7 +109,7 @@ public final class ConfigRepository extends Repository {
   }
 
   /** Builder for the repository. */
-  public static class Builder {
+  public static class Builder implements Serializable {
 
     /**
      * Create new {@link Repository} from {@link Config}.
@@ -191,7 +192,7 @@ public final class ConfigRepository extends Repository {
       RepositoryFactory factory =
           cachingEnabled
               ? RepositoryFactory.caching(RepositoryFactory.compressed(config), repo)
-              : RepositoryFactory.local(repo);
+              : RepositoryFactory.uncached(this);
       return repo.withFactory(factory);
     }
   }
