@@ -21,6 +21,7 @@ import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.Repository;
 import cz.o2.proxima.storage.Partition;
 import java.io.Serializable;
+import java.net.URI;
 import java.util.List;
 
 /** Reader of batch data stored in batch storage. */
@@ -30,6 +31,13 @@ public interface BatchLogReader {
   /** {@link Serializable} factory for {@link BatchLogReader}. */
   @FunctionalInterface
   interface Factory<T extends BatchLogReader> extends UnaryFunction<Repository, T> {}
+
+  /**
+   * Retrieve URI representing this resource.
+   *
+   * @return URI representing this resource
+   */
+  URI getUri();
 
   /**
    * Retrieve list of partitions of this batch observer.

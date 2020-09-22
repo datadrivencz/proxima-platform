@@ -132,6 +132,7 @@ class CassandraLogReader implements BatchLogReader {
   }
 
   /** Retrieve associated URI of this {@link BatchLogReader}. */
+  @Override
   public URI getUri() {
     return accessor.getUri();
   }

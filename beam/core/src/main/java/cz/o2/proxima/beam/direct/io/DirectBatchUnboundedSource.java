@@ -29,6 +29,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.Serializable;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -72,10 +73,12 @@ public class DirectBatchUnboundedSource
 
     private static final long serialVersionUID = 1L;
 
+    private final URI uri;
     @Getter private final List<Partition> partitions;
     @Getter private final long skipFromFirst;
 
-    Checkpoint(List<Partition> partitions, long skipFromFirst) {
+    Checkpoint(URI uri, List<Partition> partitions, long skipFromFirst) {
+      this.uri = uri;
       this.partitions = Lists.newArrayList(partitions);
       this.skipFromFirst = skipFromFirst;
     }
@@ -83,6 +86,19 @@ public class DirectBatchUnboundedSource
     @Override
     public void finalizeCheckpoint() {
       // nop
+    }
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) return true;
+      if (o == null || getClass() != o.getClass()) return false;
+      Checkpoint that = (Checkpoint) o;
+      return skipFromFirst == that.skipFromFirst && Objects.equals(partitions, that.partitions);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(partitions, skipFromFirst);
     }
   }
 
@@ -348,7 +364,7 @@ public class DirectBatchUnboundedSource
 
     @Override
     public CheckpointMark getCheckpointMark() {
-      return new Checkpoint(toProcess, consumedFromCurrent);
+      return new Checkpoint(this.reader.getUri(), toProcess, consumedFromCurrent);
     }
 
     @Override

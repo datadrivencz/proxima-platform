@@ -30,6 +30,7 @@ import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.storage.Partition;
 import cz.o2.proxima.util.Pair;
 import java.io.Serializable;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -121,6 +122,7 @@ public abstract class BlobLogReader<BlobT extends BlobBase, BlobPathT extends Bl
     void run() throws Exception;
   }
 
+  @Getter private final URI uri;
   private final EntityDescriptor entity;
   private final FileSystem fs;
   private final FileFormat fileFormat;
@@ -133,6 +135,7 @@ public abstract class BlobLogReader<BlobT extends BlobBase, BlobPathT extends Bl
 
   @SuppressWarnings({"unchecked", "rawtypes"})
   public BlobLogReader(BlobStorageAccessor accessor, Context context) {
+    this.uri = accessor.getUri();
     this.entity = accessor.getEntityDescriptor();
     this.fs = accessor.getTargetFileSystem();
     this.fileFormat = accessor.getFileFormat();

@@ -93,6 +93,8 @@ public interface Partition extends Serializable {
 
     return new Partition() {
 
+      private static final long serialVersionUID = 1L;
+
       @Override
       public int getId() {
         return id;
@@ -101,6 +103,30 @@ public interface Partition extends Serializable {
       @Override
       public String toString() {
         return MoreObjects.toStringHelper(Partition.class).add("id", id).toString();
+      }
+
+      @Override
+      public int hashCode() {
+        return id;
+      }
+
+      @Override
+      public boolean equals(Object o) {
+        if (o == this) {
+          return true;
+        }
+        if (o == null) {
+          return false;
+        }
+        if (!(o instanceof Partition)) {
+          return false;
+        }
+        Partition other = (Partition) o;
+        return other.getId() == id
+            && other.isBounded() == isBounded()
+            && other.isSplittable() == isSplittable()
+            && other.getMinTimestamp() == getMinTimestamp()
+            && other.getMaxTimestamp() == getMaxTimestamp();
       }
     };
   }

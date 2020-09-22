@@ -17,6 +17,8 @@ package cz.o2.proxima.storage;
 
 import static org.junit.Assert.*;
 
+import cz.o2.proxima.util.TestUtils;
+import java.io.IOException;
 import java.util.Collections;
 import org.junit.Test;
 
@@ -32,5 +34,12 @@ public class PartitionTest {
     assertFalse(partition.isBounded());
     assertEquals(-1L, partition.size());
     assertEquals(Collections.singletonList(partition), partition.split(10));
+  }
+
+  @Test
+  public void testHashCodeEqualsAndSerializable() throws IOException, ClassNotFoundException {
+    Partition p = Partition.of(0);
+    Partition p2 = TestUtils.assertSerializable(p);
+    assertEquals(p.hashCode(), p2.hashCode());
   }
 }

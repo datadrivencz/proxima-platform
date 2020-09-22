@@ -635,6 +635,11 @@ public class DirectAttributeFamilyProxyDescriptor extends DirectAttributeFamilyD
     }
 
     @Override
+    public URI getUri() {
+      return reader.getUri();
+    }
+
+    @Override
     public List<Partition> getPartitions(long startStamp, long endStamp) {
       return reader.getPartitions(startStamp, endStamp);
     }

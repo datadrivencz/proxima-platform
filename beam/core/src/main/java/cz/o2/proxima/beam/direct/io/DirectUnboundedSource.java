@@ -25,6 +25,7 @@ import cz.o2.proxima.storage.Partition;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.storage.commitlog.Position;
 import java.io.Serializable;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -62,6 +63,7 @@ class DirectUnboundedSource
 
     private static final long serialVersionUID = 1L;
 
+    private final URI uri;
     @Getter @Nullable private final Offset offset;
     @Getter private final long limit;
     @Nullable private final transient OffsetCommitter committer;
@@ -69,6 +71,7 @@ class DirectUnboundedSource
     @Nullable private final transient BeamCommitLogReader reader;
 
     Checkpoint(BeamCommitLogReader reader) {
+      this.uri = reader.getUri();
       this.offset = reader.getCurrentOffset();
       this.limit = reader.getLimit();
       this.committer = reader.hasExternalizableOffsets() ? null : reader.getLastReadCommitter();
@@ -95,11 +98,27 @@ class DirectUnboundedSource
     @Override
     public String toString() {
       return MoreObjects.toStringHelper(this)
+          .add("uri", uri)
           .add("offset", offset)
           .add("limit", limit)
           .add("committer", committer)
           .add("nackCommitter", nackCommitter)
           .toString();
+    }
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) return true;
+      if (o == null || getClass() != o.getClass()) return false;
+      Checkpoint that = (Checkpoint) o;
+      return Objects.equals(uri, that.uri)
+          && limit == that.limit
+          && Objects.equals(offset, that.offset);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(uri, offset, limit);
     }
   }
 

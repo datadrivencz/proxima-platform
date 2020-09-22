@@ -15,6 +15,7 @@
  */
 package cz.o2.proxima.beam.direct.io;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.MoreObjects;
 import com.google.common.base.Preconditions;
 import cz.o2.proxima.direct.commitlog.CommitLogReader;
@@ -216,7 +217,8 @@ class BeamCommitLogReader {
   private Instant currentProcessingTime = Instant.now();
   private Instant lastReadWatermark = BoundedWindow.TIMESTAMP_MIN_VALUE;
 
-  private BeamCommitLogReader(
+  @VisibleForTesting
+  BeamCommitLogReader(
       @Nullable String name,
       CommitLogReader reader,
       Position position,
@@ -244,7 +246,7 @@ class BeamCommitLogReader {
         offset == null || !stopAtCurrent, "Offset can be used only for streaming reader");
   }
 
-  private URI getUri() {
+  public URI getUri() {
     return reader.getUri();
   }
 

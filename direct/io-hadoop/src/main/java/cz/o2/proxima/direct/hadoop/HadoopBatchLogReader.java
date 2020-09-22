@@ -24,6 +24,7 @@ import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.storage.Partition;
 import cz.o2.proxima.storage.StreamElement;
 import java.io.IOException;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Iterator;
@@ -46,6 +47,11 @@ public class HadoopBatchLogReader implements BatchLogReader {
     this.accessor = accessor;
     this.context = context;
     this.executor = context.getExecutorService();
+  }
+
+  @Override
+  public URI getUri() {
+    return accessor.getUri();
   }
 
   @Override

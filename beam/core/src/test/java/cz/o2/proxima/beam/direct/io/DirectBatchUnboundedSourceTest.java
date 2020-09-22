@@ -31,6 +31,7 @@ import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.repository.Repository;
 import cz.o2.proxima.storage.Partition;
 import cz.o2.proxima.storage.StreamElement;
+import cz.o2.proxima.util.TestUtils;
 import java.io.IOException;
 import java.net.URI;
 import java.util.ArrayList;
@@ -68,10 +69,21 @@ public class DirectBatchUnboundedSourceTest {
     partitions.add(Partition.of(1));
     partitions.add(Partition.of(2));
     final DirectBatchUnboundedSource.Checkpoint checkpoint =
-        new DirectBatchUnboundedSource.Checkpoint(partitions, 1234L);
+        new DirectBatchUnboundedSource.Checkpoint(URI.create("inmem:///"), partitions, 1234L);
     final DirectBatchUnboundedSource.Checkpoint cloned = CoderUtils.clone(coder, checkpoint);
     assertEquals(partitions.toString(), cloned.getPartitions().toString());
     assertEquals(1234L, cloned.getSkipFromFirst());
+  }
+
+  @Test
+  public void testCheckpointSerializableAndEquals() throws IOException, ClassNotFoundException {
+    final List<Partition> partitions = new ArrayList<>();
+    partitions.add(Partition.of(0));
+    partitions.add(Partition.of(1));
+    partitions.add(Partition.of(2));
+    final DirectBatchUnboundedSource.Checkpoint checkpoint =
+        new DirectBatchUnboundedSource.Checkpoint(URI.create("inmem:///"), partitions, 1234L);
+    TestUtils.assertSerializable(checkpoint);
   }
 
   @Test(expected = Coder.NonDeterministicException.class)
@@ -137,6 +149,12 @@ public class DirectBatchUnboundedSourceTest {
 
   private BatchLogReader throwingReader() {
     return new BatchLogReader() {
+
+      @Override
+      public URI getUri() {
+        return URI.create("throw:///");
+      }
+
       @Override
       public List<Partition> getPartitions(long startStamp, long endStamp) {
         return Collections.singletonList(() -> 0);
