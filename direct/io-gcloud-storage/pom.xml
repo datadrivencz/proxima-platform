@@ -115,6 +115,7 @@
               <shadedPattern>${shadePattern}.org.apache.commons.</shadedPattern>
             </relocation>
           </relocations>
+          <minimizeJar>true</minimizeJar>
         </configuration>
         <executions>
           <execution>

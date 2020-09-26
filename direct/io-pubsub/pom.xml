@@ -229,6 +229,7 @@
               <shadedPattern>cz.o2.proxima.storage.pubsub.internal.proto.</shadedPattern>
             </relocation>
           </relocations>
+          <minimizeJar>true</minimizeJar>
         </configuration>
         <executions>
           <execution>

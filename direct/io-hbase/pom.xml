@@ -84,6 +84,7 @@
               <shadedPattern>${shadePattern}.com.fasterxml.</shadedPattern>
             </relocation>
           </relocations>
+          <minimizeJar>true</minimizeJar>
         </configuration>
         <executions>
           <execution>

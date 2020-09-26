@@ -60,6 +60,7 @@
               <shadedPattern>${coreShade}.com.google.common.</shadedPattern>
             </relocation>
           </relocations>
+          <minimizeJar>true</minimizeJar>
         </configuration>
         <executions>
           <execution>

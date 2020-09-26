@@ -76,6 +76,7 @@
               <shadedPattern>${shadePattern}.io.grpc.</shadedPattern>
             </relocation>
           </relocations>
+          <minimizeJar>true</minimizeJar>
         </configuration>
         <executions>
           <execution>

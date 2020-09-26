@@ -190,6 +190,7 @@
               <shadedPattern>${shadePattern}.org.apache.xerces.</shadedPattern>
             </relocation>
           </relocations>
+          <minimizeJar>true</minimizeJar>
         </configuration>
         <executions>
           <execution>

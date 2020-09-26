@@ -105,6 +105,7 @@
               <shadedPattern>cz.o2.proxima.kafka.shaded.com.google.protobuf.</shadedPattern>
             </relocation>
           </relocations>
+          <minimizeJar>true</minimizeJar>
         </configuration>
         <executions>
           <execution>

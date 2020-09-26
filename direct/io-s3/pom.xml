@@ -75,6 +75,7 @@
               <shadedPattern>${shadePattern}.org.joda.time.</shadedPattern>
             </relocation>
           </relocations>
+          <minimizeJar>true</minimizeJar>
         </configuration>
         <executions>
           <execution>

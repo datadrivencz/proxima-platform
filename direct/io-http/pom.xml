@@ -65,6 +65,7 @@
               <shadedPattern>cz.o2.proxima.http.shaded.websocket.</shadedPattern>
             </relocation>
           </relocations>
+          <minimizeJar>true</minimizeJar>
         </configuration>
         <executions>
           <execution>
