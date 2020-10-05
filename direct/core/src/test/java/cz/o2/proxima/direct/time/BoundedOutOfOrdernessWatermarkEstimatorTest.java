@@ -40,6 +40,7 @@ import java.util.Random;
 import java.util.UUID;
 import org.junit.Before;
 import org.junit.Test;
+import org.mockito.stubbing.Answer;
 
 public class BoundedOutOfOrdernessWatermarkEstimatorTest {
   private static final long OUT_OF_ORDERNESS = 1000L;
@@ -126,6 +127,30 @@ public class BoundedOutOfOrdernessWatermarkEstimatorTest {
     for (int i = 0; i < 100; i++) {
       long previousWatermark = estimator.getWatermark();
       estimator.update(element(random.nextLong()));
+      assertTrue(previousWatermark <= estimator.getWatermark());
+    }
+  }
+
+  @Test
+  public void testGetWatermarkMonotonicityAfterIdle() {
+    final Random random = new Random(now);
+    final WatermarkIdlePolicy idlePolicy = mock(WatermarkIdlePolicy.class);
+    final long idleFrom = 10_000L;
+    when(idlePolicy.getIdleWatermark())
+        .thenAnswer(
+            (Answer<Long>) invocationOnMock -> Math.min(random.nextLong(), idleFrom) + idleFrom);
+    final BoundedOutOfOrdernessWatermarkEstimator estimator =
+        BoundedOutOfOrdernessWatermarkEstimator.newBuilder()
+            .withWatermarkIdlePolicy(idlePolicy)
+            .build();
+    for (int i = 0; i < 100; i++) {
+      long previousWatermark = estimator.getWatermark();
+      if (i % 10 == 0) {
+        // Every tenth element is "idle".
+        estimator.idle();
+      } else {
+        estimator.update(element(Math.min(random.nextLong(), idleFrom)));
+      }
       assertTrue(previousWatermark <= estimator.getWatermark());
     }
   }

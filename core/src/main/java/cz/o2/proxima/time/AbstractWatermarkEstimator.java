@@ -26,6 +26,9 @@ public abstract class AbstractWatermarkEstimator implements WatermarkEstimator {
   /** If estimator is in the idle state */
   private boolean isIdle = false;
 
+  /** Maximum watermark we have seen so far. */
+  private long maxWatermark = Long.MIN_VALUE;
+
   protected AbstractWatermarkEstimator(WatermarkIdlePolicy idlePolicy) {
     Preconditions.checkNotNull(idlePolicy, "Idle policy must be provided");
     this.idlePolicy = idlePolicy;
@@ -71,9 +74,9 @@ public abstract class AbstractWatermarkEstimator implements WatermarkEstimator {
    */
   @Override
   public long getWatermark() {
-    if (isIdle) {
-      return Math.max(estimateWatermark(), idlePolicy.getIdleWatermark());
-    }
-    return estimateWatermark();
+    final long currentEstimate =
+        isIdle ? Math.max(estimateWatermark(), idlePolicy.getIdleWatermark()) : estimateWatermark();
+    maxWatermark = Math.max(maxWatermark, currentEstimate);
+    return maxWatermark;
   }
 }
