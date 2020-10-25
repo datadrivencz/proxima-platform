@@ -27,9 +27,10 @@ export GOOGLE_APPLICATION_CREDENTIALS=/tmp/google-credentials.json
 
 RESUME=""
 if echo ${VERSION} | grep SNAPSHOT >/dev/null && echo ${GITHUB_REPOSITORY} | grep O2-Czech-Republic >/dev/null; then
+  git submodule update
   TRY=0
   while [ $TRY -lt 3 ]; do
-    CMD="mvn deploy -DskipTests -Prelease-snapshot -Pallow-snapshots"
+    CMD="mvn deploy -DskipTests -Prelease-snapshot -Pallow-snapshots -Pwith-doc"
     if [ ! -z "${RESUME}" ]; then
       CMD="${CMD} $(echo $RESUME | sed "s/.\+\(-rf .\+\)/\1/")"
     fi

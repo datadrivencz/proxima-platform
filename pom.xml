@@ -588,6 +588,7 @@
     <module>scheme</module>
     <module>tools</module>
     <module>utils-zookeeper</module>
+    <module>docs</module>
   </modules>
 
 </project>

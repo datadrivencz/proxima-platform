@@ -9,6 +9,7 @@ addons:
   apt:
     packages:
       - realpath
+      - hugo
   sonarcloud:
     organization: datadriven
 
