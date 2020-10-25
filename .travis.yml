@@ -17,11 +17,11 @@ install: true
 before_script:
   - wget https://github.com/sormuras/bach/raw/master/install-jdk.sh
 script:
-  - mvn spotless:check -B -V && mvn install -B -V -Pallow-snapshots,with-coverage,travis -Dorg.slf4j.simpleLogger.log.org.apache.maven.plugins.shade=error || exit 1
+  - travis_wait 60 mvn spotless:check -B -V && mvn install -B -V -Pallow-snapshots,with-coverage,travis -Dorg.slf4j.simpleLogger.log.org.apache.maven.plugins.shade=error || exit 1
   - export JAVA_HOME=$HOME/openjdk11
   - chmod u+x $TRAVIS_BUILD_DIR/install-jdk.sh
   - $TRAVIS_BUILD_DIR/install-jdk.sh --feature 11 --target $JAVA_HOME
-  - if [ "${TRAVIS_PULL_REQUEST}" != "false" ] || [ "${TRAVIS_BRANCH}" == "master" ]; then mvn sonar:sonar -B -V -Pallow-snapshots,with-coverage,travis; fi
+  - if [ "${TRAVIS_PULL_REQUEST}" != "false" ] || [ "${TRAVIS_BRANCH}" == "master" ]; then travis_wait 30 mvn sonar:sonar -B -V -Pallow-snapshots,with-coverage,travis; fi
 
 before_cache: rm -rf ~/.m2/repository/cz/o2/proxima || /bin/true
 
