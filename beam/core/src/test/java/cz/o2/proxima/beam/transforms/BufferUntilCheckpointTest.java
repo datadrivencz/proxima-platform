@@ -17,19 +17,21 @@ package cz.o2.proxima.beam.transforms;
 
 import static org.junit.Assert.assertNotNull;
 
-import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.testing.PAssert;
+import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.values.PCollection;
+import org.junit.Rule;
 import org.junit.Test;
 
 public class BufferUntilCheckpointTest {
 
-  @Test
+  @Rule public TestPipeline p = TestPipeline.create();
+
+  @Test(timeout = 10_000)
   public void testBufferUntilCheckpointIsIdentity() {
-    Pipeline p = Pipeline.create();
     PCollection<String> input = p.apply(Create.of("a", "b", "c")).setCoder(StringUtf8Coder.of());
     PCollection<String> output = input.apply(ParDo.of(new BufferUntilCheckpoint<>()));
 

@@ -24,16 +24,18 @@ import cz.o2.proxima.repository.Repository;
 import cz.o2.proxima.storage.StreamElement;
 import java.util.Arrays;
 import java.util.UUID;
-import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.testing.PAssert;
+import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.transforms.Count;
 import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
+import org.junit.Rule;
 import org.junit.Test;
 
 public class ExtractKeyToKvTest {
 
+  @Rule public TestPipeline p = TestPipeline.create();
   private final Repository repo =
       Repository.ofTest(ConfigFactory.load("test-reference.conf").resolve());
   private final EntityDescriptor gateway = repo.getEntity("gateway");
@@ -41,7 +43,6 @@ public class ExtractKeyToKvTest {
 
   @Test
   public void testToKv() {
-    Pipeline p = Pipeline.create();
     PCollection<StreamElement> elems = p.apply(Create.of(write("gw1"), write("gw2")));
     PCollection<KV<String, Long>> result =
         elems.apply(ExtractKeyToKv.fromStreamElements()).apply(Count.perKey());
