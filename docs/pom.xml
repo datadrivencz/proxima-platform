@@ -60,6 +60,7 @@
                     <argument>-F</argument>
                     <argument>-d</argument>
                     <arguemnt>${project.build.directory}/public/</arguemnt>
+                    <argument>--minify</argument>
                     <argument>--buildDrafts</argument>
                   </arguments>
                 </configuration>

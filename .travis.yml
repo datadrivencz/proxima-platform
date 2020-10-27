@@ -1,3 +1,5 @@
+dist: focal
+
 sudo: false
 
 language: java
