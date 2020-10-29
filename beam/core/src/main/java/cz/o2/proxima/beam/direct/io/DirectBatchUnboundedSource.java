@@ -269,7 +269,7 @@ public class DirectBatchUnboundedSource
       this.toProcess = toProcess.stream().sorted().collect(Collectors.toList());
       this.consumedFromCurrent = 0;
       this.skip = checkpointMark == null ? 0 : checkpointMark.skipFromFirst;
-      log.info("Created {} reading from {}", getClass().getSimpleName(), reader);
+      log.debug("Created {} reading from {}", getClass().getSimpleName(), reader);
       Preconditions.checkArgument(
           toProcess.stream().map(Partition::getId).distinct().count() == toProcess.size(),
           "List of partitions to process must contain unique partitions, got %s",
