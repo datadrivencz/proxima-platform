@@ -22,7 +22,7 @@
   <parent>
     <artifactId>platform-parent</artifactId>
     <groupId>cz.o2.proxima</groupId>
-    <version>0.5-SNAPSHOT</version>
+    <version>0.6-SNAPSHOT</version>
   </parent>
   <modelVersion>4.0.0</modelVersion>
 
@@ -65,7 +65,8 @@
                   </arguments>
                 </configuration>
               </execution>
-              <execution>
+              <!-- @FIXME: temp disabled -->
+              <!--execution>
                 <id>deploy-doc</id>
                 <phase>deploy</phase>
                 <goals>
@@ -78,7 +79,7 @@
                     <argument>deploy</argument>
                   </arguments>
                 </configuration>
-              </execution>
+              </execution-->
             </executions>
           </plugin>
         </plugins>
