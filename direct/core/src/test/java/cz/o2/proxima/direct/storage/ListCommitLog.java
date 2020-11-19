@@ -19,30 +19,36 @@ import static cz.o2.proxima.direct.commitlog.ObserverUtils.asRepartitionContext;
 
 import com.google.common.base.MoreObjects;
 import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
 import cz.o2.proxima.direct.commitlog.CommitLogReader;
 import cz.o2.proxima.direct.commitlog.LogObserver;
+import cz.o2.proxima.direct.commitlog.LogObserver.OnNextContext;
 import cz.o2.proxima.direct.commitlog.ObserveHandle;
 import cz.o2.proxima.direct.commitlog.ObserverUtils;
 import cz.o2.proxima.direct.commitlog.Offset;
 import cz.o2.proxima.direct.core.Context;
-import cz.o2.proxima.functional.BiConsumer;
+import cz.o2.proxima.functional.UnaryPredicate;
 import cz.o2.proxima.storage.Partition;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.storage.commitlog.Position;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
-import lombok.Getter;
-
+import java.util.function.BiPredicate;
+import java.util.stream.Collectors;
+import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import lombok.Getter;
 
 /**
  * A bounded {@link CommitLogReader} containing predefined data.
@@ -53,14 +59,19 @@ public class ListCommitLog implements CommitLogReader {
 
   private static final Partition PARTITION = () -> 0;
 
-  static class IntOffset implements Offset {
+  private static final Map<String, List<StreamElement>> UUID_TO_DATA = new ConcurrentHashMap<>();
+  private static final Map<String, Consumer> CONSUMERS = new ConcurrentHashMap<>();
+
+  static class ListOffset implements Offset {
 
     private static final long serialVersionUID = 1L;
 
+    @Getter private final String consumerName;
     @Getter final int offset;
     @Getter final long watermark;
 
-    public IntOffset(int offset, long watermark) {
+    private ListOffset(String consumerName, int offset, long watermark) {
+      this.consumerName = Objects.requireNonNull(consumerName);
       this.offset = offset;
       this.watermark = watermark;
     }
@@ -80,8 +91,8 @@ public class ListCommitLog implements CommitLogReader {
 
     @Override
     public boolean equals(Object obj) {
-      if (obj instanceof IntOffset) {
-        IntOffset other = (IntOffset) obj;
+      if (obj instanceof ListOffset) {
+        ListOffset other = (ListOffset) obj;
         return other.offset == this.offset && other.watermark == this.watermark;
       }
       return false;
@@ -103,10 +114,10 @@ public class ListCommitLog implements CommitLogReader {
 
   private final class ListObserveHandle implements ObserveHandle {
 
-    @Nullable private final String consumerName;
+    private final String consumerName;
 
-    ListObserveHandle(Offset offset) {
-      this.offset = offset;
+    ListObserveHandle(String logUuid, String consumerName) {
+      this.consumerName = Objects.requireNonNull(consumerName);
     }
 
     @Override
@@ -114,25 +125,104 @@ public class ListCommitLog implements CommitLogReader {
 
     @Override
     public List<Offset> getCommittedOffsets() {
-      return Collections.singletonList(offset);
+      Consumer consumer = Objects.requireNonNull(CONSUMERS.get(consumerName));
+      return consumer.getCommittedOffsets();
     }
 
     @Override
-    public void resetOffsets(List<Offset> offsets) {}
+    public void resetOffsets(List<Offset> offsets) {
+      throw new UnsupportedOperationException();
+    }
 
     @Override
     public List<Offset> getCurrentOffsets() {
-      return getCommittedOffsets();
+      Consumer consumer = Objects.requireNonNull(CONSUMERS.get(consumerName));
+      return consumer.getCurrentOffsets();
     }
 
     @Override
     public void waitUntilReady() {}
   }
 
-  private final List<StreamElement> data;
+  private class Consumer {
+
+    /**
+     * UUID of the {@link cz.o2.proxima.direct.storage.ListCommitLog} that this consumer reads from.
+     */
+    @Getter private final String logUuid;
+
+    private final String consumerName;
+
+    @Getter
+    private final Set<Integer> inflightOffsets = Collections.synchronizedSet(new HashSet<>());
+
+    @Getter private final Set<Integer> ackedOffsets = Collections.synchronizedSet(new HashSet<>());
+
+    /** Last offset pushed to consumer. */
+    private int currentOffset = 0;
+
+    private Consumer(String logUuid, String consumerName) {
+      this.logUuid = logUuid;
+      this.consumerName = consumerName;
+    }
+
+    public long getWatermark() {
+      List<StreamElement> data = UUID_TO_DATA.get(logUuid);
+      long watermark = Long.MAX_VALUE;
+      for (int i = externalizableOffsets ? currentOffset : 0; i < data.size(); i++) {
+        if (data.get(i).getStamp() < watermark) {
+          if (externalizableOffsets || !ackedOffsets.contains(i)) {
+            watermark = data.get(i).getStamp();
+          }
+        }
+      }
+      return watermark;
+    }
+
+    List<Offset> getCommittedOffsets() {
+      if (externalizableOffsets) {
+        return Collections.emptyList();
+      }
+      return Collections.singletonList(new ListOffset(consumerName, -1, getWatermark()));
+    }
+
+    List<Offset> getCurrentOffsets() {
+      return Collections.singletonList(
+          externalizableOffsets
+              ? new ListOffset(consumerName, currentOffset, getWatermark())
+              : new ListOffset(consumerName, -1, getWatermark()));
+    }
+
+    public void moveCurrentOffset(int offset) {
+      inflightOffsets.add(offset);
+      currentOffset = Math.max(offset, currentOffset);
+    }
+
+    public void ack(int offset) {
+      ackedOffsets.add(offset);
+    }
+
+    public void nack(int offset) {
+      inflightOffsets.remove(offset);
+    }
+
+    OnNextContext asOnNextContext(LogObserver.OffsetCommitter committer, ListOffset offset) {
+      LogObserver.OffsetCommitter wrappedCommitter =
+          (succ, exc) -> {
+            committer.commit(succ, exc);
+            if (succ) {
+              ack(offset.getOffset());
+            } else {
+              nack(offset.getOffset());
+            }
+          };
+      return ObserverUtils.asOnNextContext(wrappedCommitter, offset);
+    }
+  }
+
+  private final String uuid;
   private final Context context;
   private final boolean externalizableOffsets;
-  private final Map<String, Set<Integer>> committedOffsets = new ConcurrentHashMap<>();
   private transient ExecutorService executor;
 
   private ListCommitLog(List<StreamElement> data, Context context) {
@@ -140,7 +230,14 @@ public class ListCommitLog implements CommitLogReader {
   }
 
   private ListCommitLog(List<StreamElement> data, Context context, boolean externalizableOffsets) {
-    this.data = Lists.newArrayList(data);
+    this.uuid = UUID.randomUUID().toString();
+    UUID_TO_DATA.put(uuid, Collections.unmodifiableList(new ArrayList<>(data)));
+    this.context = context;
+    this.externalizableOffsets = externalizableOffsets;
+  }
+
+  private ListCommitLog(String uuid, Context context, boolean externalizableOffsets) {
+    this.uuid = uuid;
     this.context = context;
     this.externalizableOffsets = externalizableOffsets;
   }
@@ -160,35 +257,28 @@ public class ListCommitLog implements CommitLogReader {
   }
 
   @Override
-  public ObserveHandle observe(String name, Position position, LogObserver observer) {
+  public ObserveHandle observe(@Nullable String name, Position position, LogObserver observer) {
+    String consumerName = name == null ? UUID.randomUUID().toString() : name;
+    Consumer consumer =
+        CONSUMERS.computeIfAbsent(consumerName, k -> new Consumer(uuid, consumerName));
+    ListObserveHandle handle = new ListObserveHandle(uuid, consumerName);
     pushTo(
         (element, offset) ->
             observer.onNext(
                 element,
-                asOnNextContext(
+                consumer.asOnNextContext(
                     (succ, exc) -> {
-                      if (!succ && exc != null) {
+                      if (exc != null) {
                         observer.onError(exc);
                       }
                     },
-                    offsetFor(offset, getWatermark(offset)))),
+                    asOffset(consumerName, offset))),
         observer::onCompleted);
-    return new ListObserveHandle(offsetFor(0, Long.MIN_VALUE));
+    return handle;
   }
 
-  private Offset offsetFor(int offset, long watermark) {
-    if (externalizableOffsets) {
-      return new IntOffset(offset, watermark);
-    }
-    throw new UnsupportedOperationException();
-  }
-
-  private long getWatermark(int offset) {
-    long watermark = Long.MAX_VALUE;
-    for (int i = offset; i < data.size(); i++) {
-      watermark = Math.min(watermark, data.get(i).getStamp() - 1);
-    }
-    return watermark;
+  private List<StreamElement> data() {
+    return Objects.requireNonNull(UUID_TO_DATA.get(uuid));
   }
 
   @Override
@@ -204,9 +294,10 @@ public class ListCommitLog implements CommitLogReader {
 
   @Override
   public ObserveHandle observeBulk(
-      String name, Position position, boolean stopAtCurrent, LogObserver observer) {
+      @Nullable String name, Position position, boolean stopAtCurrent, LogObserver observer) {
 
-    return pushToObserver(0, observer);
+    String consumerName = name == null ? UUID.randomUUID().toString() : name;
+    return pushToObserver(consumerName, 0, observer);
   }
 
   @Override
@@ -222,14 +313,25 @@ public class ListCommitLog implements CommitLogReader {
 
   @Override
   public ObserveHandle observeBulkOffsets(Collection<Offset> offsets, LogObserver observer) {
-    return pushToObserver(((IntOffset) Iterables.getOnlyElement(offsets)).offset + 1, observer);
+    Set<String> consumers =
+        offsets.stream().map(o -> ((ListOffset) o).getConsumerName()).collect(Collectors.toSet());
+    final String name = Iterables.getOnlyElement(consumers);
+    if (externalizableOffsets) {
+      ListOffset offset = (ListOffset) Iterables.getOnlyElement(offsets);
+      return pushToObserver(name, offset.getOffset() + 1, observer);
+    }
+    final Consumer consumer = Objects.requireNonNull(CONSUMERS.get(name));
+    final Set<Integer> committed = consumer.getAckedOffsets();
+    final Set<Integer> inflight = consumer.getInflightOffsets();
+    return pushToObserver(name, o -> !committed.contains(o) && !inflight.contains(o), observer);
   }
 
   @Override
   public Factory<?> asFactory() {
-    final List<StreamElement> data = this.data;
+    final String uuid = this.uuid;
     final Context context = this.context;
-    return repo -> new ListCommitLog(data, context);
+    final boolean externalizableOffsets = this.externalizableOffsets;
+    return repo -> new ListCommitLog(uuid, context, externalizableOffsets);
   }
 
   @Override
@@ -237,35 +339,45 @@ public class ListCommitLog implements CommitLogReader {
     return externalizableOffsets;
   }
 
-  private ObserveHandle pushToObserver(int skip, LogObserver observer) {
-    observer.onRepartition(asRepartitionContext(Collections.singletonList(PARTITION)));
+  private ObserveHandle pushToObserver(@Nonnull String name, int skip, LogObserver observer) {
     AtomicInteger skipCounter = new AtomicInteger(skip);
+    return pushToObserver(name, offset -> skipCounter.decrementAndGet() <= 0, observer);
+  }
+
+  private ObserveHandle pushToObserver(
+      @Nonnull String name, UnaryPredicate<Integer> offsetPredicate, LogObserver observer) {
+
+    observer.onRepartition(asRepartitionContext(Collections.singletonList(PARTITION)));
+    Consumer consumer = CONSUMERS.computeIfAbsent(name, k -> new Consumer(uuid, name));
+    ListObserveHandle handle = new ListObserveHandle(uuid, name);
     pushTo(
         (element, offset) -> {
-          if (skipCounter.decrementAndGet() <= 0) {
-            observer.onNext(
+          if (offsetPredicate.apply(offset)) {
+            return observer.onNext(
                 element,
-                asOnNextContext(
+                consumer.asOnNextContext(
                     (succ, exc) -> {
                       if (!succ) {
                         observer.onError(exc);
                       }
                     },
-                    offsetFor(offset, System.currentTimeMillis())));
+                    asOffset(name, offset)));
           }
+          return true;
         },
         observer::onCompleted);
-    return new ListObserveHandle();
+    return handle;
   }
 
-  private void pushTo(BiConsumer<StreamElement, Integer> consumer, Runnable finish) {
-
+  private void pushTo(BiPredicate<StreamElement, Integer> consumer, Runnable finish) {
     executor()
         .execute(
             () -> {
               int index = 0;
-              for (StreamElement el : data) {
-                consumer.accept(el, index++);
+              for (StreamElement el : data()) {
+                if (!consumer.test(el, index++)) {
+                  break;
+                }
               }
               finish.run();
             });
@@ -278,9 +390,10 @@ public class ListCommitLog implements CommitLogReader {
     return executor;
   }
 
-  private static LogObserver.OnNextContext asOnNextContext(
-      LogObserver.OffsetCommitter offsetCommitter, Offset offset) {
-
-    return ObserverUtils.asOnNextContext(offsetCommitter, offset);
+  private ListOffset asOffset(String consumerName, int offset) {
+    Consumer consumer = Objects.requireNonNull(CONSUMERS.get(consumerName));
+    consumer.moveCurrentOffset(offset);
+    long watermark = consumer.getWatermark();
+    return new ListOffset(consumerName, offset, watermark);
   }
 }
