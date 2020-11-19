@@ -21,7 +21,9 @@ import com.typesafe.config.ConfigFactory;
 import cz.o2.proxima.direct.commitlog.CommitLogReader;
 import cz.o2.proxima.direct.commitlog.LogObserver;
 import cz.o2.proxima.direct.commitlog.ObserveHandle;
+import cz.o2.proxima.direct.commitlog.Offset;
 import cz.o2.proxima.direct.core.DirectDataOperator;
+import cz.o2.proxima.direct.storage.ListCommitLog.ListObserveHandle;
 import cz.o2.proxima.functional.Consumer;
 import cz.o2.proxima.functional.UnaryPredicate;
 import cz.o2.proxima.repository.AttributeDescriptor;
@@ -67,6 +69,89 @@ public class ListCommitLogTest {
     assertEquals(10, data.size());
     assertFalse(handle.getCommittedOffsets().isEmpty());
     assertFalse(handle.getCurrentOffsets().isEmpty());
+    ListObserveHandle listObserveHandle = (ListObserveHandle) handle;
+    ListCommitLog.Consumer consumer = listObserveHandle.getConsumer();
+    assertTrue(consumer.getInflightOffsets().isEmpty());
+  }
+
+  @Test(timeout = 10000)
+  public void testObserveBulkNonExternalizableUnnamed() throws InterruptedException {
+    CommitLogReader reader = ListCommitLog.ofNonExternalizable(data(10), direct.getContext());
+    List<StreamElement> data = new ArrayList<>();
+    CountDownLatch first = new CountDownLatch(1);
+    CountDownLatch second = new CountDownLatch(1);
+    ObserveHandle handle =
+        reader.observeBulk(
+            null,
+            new LogObserver() {
+              @Override
+              public boolean onError(Throwable error) {
+                throw new RuntimeException(error);
+              }
+
+              @Override
+              public boolean onNext(StreamElement ingest, OnNextContext context) {
+                // do not confirm this
+                data.add(ingest);
+                return false;
+              }
+
+              @Override
+              public void onCancelled() {
+                first.countDown();
+              }
+            });
+    first.await();
+    List<Offset> offsets = handle.getCurrentOffsets();
+    handle = reader.observeBulkOffsets(offsets, toList(data, b -> second.countDown()));
+    second.await();
+    assertEquals(10, data.size());
+    assertFalse(handle.getCommittedOffsets().isEmpty());
+    assertFalse(handle.getCurrentOffsets().isEmpty());
+    ListObserveHandle listObserveHandle = (ListObserveHandle) handle;
+    ListCommitLog.Consumer consumer = listObserveHandle.getConsumer();
+    assertTrue(consumer.getInflightOffsets().isEmpty());
+  }
+
+  @Test
+  public void testObserveNonExternalizableWatermark() throws InterruptedException {
+    int numElements = 10;
+    CommitLogReader reader =
+        ListCommitLog.ofNonExternalizable(data(numElements), direct.getContext());
+    CountDownLatch first = new CountDownLatch(1);
+    List<Long> watermarks = new ArrayList<>();
+    ObserveHandle handle =
+        reader.observeBulk(
+            null,
+            new LogObserver() {
+
+              int received = 0;
+
+              @Override
+              public boolean onError(Throwable error) {
+                throw new RuntimeException(error);
+              }
+
+              @Override
+              public boolean onNext(StreamElement ingest, OnNextContext context) {
+                watermarks.add(context.getWatermark());
+                if (++received == numElements) {
+                  context.confirm();
+                }
+                return true;
+              }
+
+              @Override
+              public void onCompleted() {
+                first.countDown();
+              }
+            });
+    first.await();
+    assertEquals(numElements, watermarks.size());
+    long min = watermarks.get(0);
+    for (int i = 1; i < numElements; i++) {
+      assertEquals(min, (long) watermarks.get(i));
+    }
   }
 
   @Test(timeout = 10000)
@@ -156,6 +241,7 @@ public class ListCommitLogTest {
   }
 
   private List<StreamElement> data(int count) {
+    long now = System.currentTimeMillis();
     return IntStream.range(0, count)
         .mapToObj(
             i ->
@@ -165,7 +251,7 @@ public class ListCommitLogTest {
                     UUID.randomUUID().toString(),
                     "key" + i,
                     data.getName(),
-                    System.currentTimeMillis(),
+                    now + i,
                     new byte[] {(byte) i}))
         .collect(Collectors.toList());
   }
