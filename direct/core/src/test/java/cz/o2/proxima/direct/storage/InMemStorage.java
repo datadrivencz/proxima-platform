@@ -64,7 +64,6 @@ import cz.o2.proxima.time.Watermarks;
 import cz.o2.proxima.util.Pair;
 import java.io.Serializable;
 import java.net.URI;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
@@ -320,7 +319,7 @@ public class InMemStorage implements DataAccessorFactory {
 
       int id = createConsumerId(stopAtCurrent);
 
-      observer.onRepartition(asRepartitionContext(Arrays.asList(PARTITION)));
+      observer.onRepartition(asRepartitionContext(Collections.singletonList(PARTITION)));
       AtomicReference<Thread> threadInterrupt = new AtomicReference<>();
       AtomicBoolean killSwitch = new AtomicBoolean();
       Supplier<ConsumedOffset> offsetSupplier =
@@ -466,6 +465,7 @@ public class InMemStorage implements DataAccessorFactory {
           scheduler.scheduleAtFixedRate(
               onIdle, IDLE_FLUSH_TIME, IDLE_FLUSH_TIME, TimeUnit.MILLISECONDS);
       onIdleRef.set(onIdleFuture);
+      AtomicReference<StreamElement> lastConsumed = new AtomicReference<>();
       BiConsumer<StreamElement, OffsetCommitter> consumer =
           (el, committer) -> {
             try {
@@ -473,9 +473,15 @@ public class InMemStorage implements DataAccessorFactory {
                 synchronized (observer) {
                   el = cloneAndUpdateAttribute(getEntityDescriptor(), el);
                   watermark.update(el);
+                  Optional.ofNullable(lastConsumed.get())
+                      .ifPresent(
+                          last ->
+                              consumedOffsets.add(
+                                  String.format(
+                                      "%s#%s:%d",
+                                      last.getKey(), last.getAttribute(), last.getStamp())));
+                  lastConsumed.set(el);
                   long w = watermark.getWatermark();
-                  consumedOffsets.add(
-                      String.format("%s#%s:%d", el.getKey(), el.getAttribute(), el.getStamp()));
                   killSwitch.compareAndSet(
                       false,
                       !observer.onNext(
@@ -562,7 +568,7 @@ public class InMemStorage implements DataAccessorFactory {
     }
 
     @Override
-    public Factory asFactory() {
+    public Factory<?> asFactory() {
       final EntityDescriptor entity = getEntityDescriptor();
       final URI uri = getUri();
       return repo -> new InMemCommitLogReader(entity, uri);
@@ -622,7 +628,7 @@ public class InMemStorage implements DataAccessorFactory {
       return InMemStorage.toMapKey(getUri(), key, attribute);
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"unchecked", "rawtypes"})
     @Override
     public void scanWildcardAll(
         String key, RandomOffset offset, long stamp, int limit, Consumer<KeyValue<?>> consumer) {
@@ -631,7 +637,7 @@ public class InMemStorage implements DataAccessorFactory {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"unchecked", "rawtypes"})
     public <T> void scanWildcard(
         String key,
         AttributeDescriptor<T> wildcard,
@@ -644,7 +650,6 @@ public class InMemStorage implements DataAccessorFactory {
       scanWildcardPrefix(key, prefix, offset, stamp, limit, (Consumer) consumer);
     }
 
-    @SuppressWarnings("unchecked")
     private void scanWildcardPrefix(
         String key,
         String prefix,
@@ -678,7 +683,7 @@ public class InMemStorage implements DataAccessorFactory {
                 consumer.accept(
                     KeyValue.of(
                         getEntityDescriptor(),
-                        (AttributeDescriptor) attr.get(),
+                        attr.get(),
                         key,
                         attribute,
                         new RawOffset(attribute),
@@ -723,10 +728,7 @@ public class InMemStorage implements DataAccessorFactory {
       final URI uri = getUri();
       final cz.o2.proxima.functional.Factory<ExecutorService> executorFactory =
           this.executorFactory;
-      return repo -> {
-        Reader reader = new Reader(entity, uri, executorFactory);
-        return reader;
-      };
+      return repo -> new Reader(entity, uri, executorFactory);
     }
 
     @Override
@@ -739,7 +741,7 @@ public class InMemStorage implements DataAccessorFactory {
 
     @Override
     public List<Partition> getPartitions(long startStamp, long endStamp) {
-      return Arrays.asList(PARTITION);
+      return Collections.singletonList(PARTITION);
     }
 
     @Override
