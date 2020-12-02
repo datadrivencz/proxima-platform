@@ -29,12 +29,10 @@ import cz.o2.proxima.direct.commitlog.ObserverUtils;
 import cz.o2.proxima.direct.commitlog.Offset;
 import cz.o2.proxima.direct.core.Context;
 import cz.o2.proxima.functional.BiFunction;
-import cz.o2.proxima.functional.Factory;
 import cz.o2.proxima.functional.UnaryPredicate;
 import cz.o2.proxima.storage.Partition;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.storage.commitlog.Position;
-import cz.o2.proxima.util.Pair;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
@@ -109,22 +107,45 @@ public class ListCommitLog implements CommitLogReader {
     }
   }
 
+  /**
+   * Create the new {@link ListCommitLog}, with externalizable offsets (that are offsets that can be
+   * persisted in external system - e.g. a checkpoint - and be sure they represent the same element
+   * even upon recovery). Commit-logs with "externalizable offsets" (e.g. Apache Kafka) need not
+   * rely on ack() and nack() of elements, as offsets can be taken and recovered independently of
+   * the actual acknowledgements. Consumers are free to ack messages nevertheless.
+   *
+   * @param data the data to be present in the commit log
+   * @param context {@link Context} for direct consumption
+   * @return the commit-log
+   */
   public static ListCommitLog of(List<StreamElement> data, Context context) {
     return new ListCommitLog(data, context);
   }
 
+  /**
+   * Create the new {@link ListCommitLog}, which mimics non-externalizable offsets (that are offsets
+   * that cannot be persisted in external system - e.g. a checkpoint - and be sure they represent
+   * the same element even upon recovery). Commit-logs with "non-externalizable offsets" (e.g.
+   * Google PubSub) rely heavily on ack() and nack() of elements to ensure at-least-once semantics
+   * (typically not exactly-once-semantics, because when consumer consumes element and does neither
+   * ack() nor nack() it until timeout, the element is resend to another (or the same) consumer).
+   *
+   * @param data the data to be present in the commit log
+   * @param context {@link Context} for direct consumption
+   * @return the commit-log
+   */
   public static ListCommitLog ofNonExternalizable(List<StreamElement> data, Context context) {
     return new ListCommitLog(data, context, false);
   }
 
   @VisibleForTesting
-  final class ListObserveHandle implements ObserveHandle {
+  static final class ListObserveHandle implements ObserveHandle {
 
     @Getter private final String consumerName;
 
     @Getter private volatile boolean closed = false;
 
-    ListObserveHandle(String logUuid, String consumerName) {
+    ListObserveHandle(String consumerName) {
       this.consumerName = Objects.requireNonNull(consumerName);
     }
 
@@ -244,9 +265,9 @@ public class ListCommitLog implements CommitLogReader {
                 new ArrayList<>(inflightOffsets)
                     .stream()
                     .filter(o -> o <= offset)
-                    .map(o -> Pair.of(o, offsetToContext.remove(o)))
-                    .filter(p -> p.getSecond() != null)
-                    .forEach(p -> p.getSecond().commit(succ, exc));
+                    .map(offsetToContext::remove)
+                    .filter(Objects::nonNull)
+                    .forEach(p -> p.commit(succ, exc));
               }
             };
       } else {
@@ -303,7 +324,7 @@ public class ListCommitLog implements CommitLogReader {
     String consumerName = name == null ? UUID.randomUUID().toString() : name;
     Consumer consumer =
         CONSUMERS.computeIfAbsent(consumerName, k -> new Consumer(uuid, consumerName));
-    ListObserveHandle handle = new ListObserveHandle(uuid, consumerName);
+    ListObserveHandle handle = new ListObserveHandle(consumerName);
     pushTo(
         (element, offset) -> {
           if (handle.isClosed()) {
@@ -404,7 +425,7 @@ public class ListCommitLog implements CommitLogReader {
 
     observer.onRepartition(asRepartitionContext(Collections.singletonList(PARTITION)));
     Consumer consumer = CONSUMERS.computeIfAbsent(name, k -> new Consumer(uuid, name));
-    ListObserveHandle handle = new ListObserveHandle(uuid, name);
+    ListObserveHandle handle = new ListObserveHandle(name);
     pushTo(
         (element, offset) -> {
           if (handle.isClosed()) {
