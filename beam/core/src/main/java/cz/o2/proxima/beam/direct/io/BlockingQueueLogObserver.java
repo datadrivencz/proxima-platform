@@ -30,12 +30,10 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.annotation.Nullable;
@@ -148,7 +146,7 @@ class BlockingQueueLogObserver implements LogObserver, BatchLogObserver {
   private final AtomicReference<Throwable> error = new AtomicReference<>();
   private final AtomicLong watermark;
   private final BlockingQueue<Pair<StreamElement, UnifiedContext>> queue;
-  private final AtomicBoolean stopped = new AtomicBoolean();
+  private volatile boolean stopped = false;
   private volatile boolean nackAllIncoming = false;
   @Getter @Nullable private UnifiedContext lastWrittenContext;
   @Getter @Nullable private UnifiedContext lastReadContext;
@@ -196,7 +194,7 @@ class BlockingQueueLogObserver implements LogObserver, BatchLogObserver {
 
   private boolean enqueue(StreamElement element, UnifiedContext context) {
     try {
-      Preconditions.checkArgument(element == null || context != null);
+      Preconditions.checkArgument(element != null && context != null);
       lastWrittenContext = context;
       if (limit-- > 0) {
         return putToQueue(element, context);
@@ -206,6 +204,10 @@ class BlockingQueueLogObserver implements LogObserver, BatchLogObserver {
     } catch (InterruptedException ex) {
       log.warn("Interrupted while putting element {} to queue", element, ex);
       Thread.currentThread().interrupt();
+    } finally {
+      if (nackAllIncoming && context != null) {
+        context.nack();
+      }
     }
     return false;
   }
@@ -232,18 +234,12 @@ class BlockingQueueLogObserver implements LogObserver, BatchLogObserver {
       throws InterruptedException {
 
     Pair<StreamElement, UnifiedContext> p = Pair.of(element, context);
-    if (stopped.get()) {
-      if (nackAllIncoming && context != null) {
-        context.nack();
+    while (!stopped) {
+      if (queue.offer(p, 50, TimeUnit.MILLISECONDS)) {
+        return true;
       }
-    } else {
-      while (!stopped.get()) {
-        if (queue.offer(p, 50, TimeUnit.MILLISECONDS)) {
-          return true;
-        }
-      }
-      log.debug("{}: Finishing consumption due to source being stopped", name);
     }
+    log.debug("{}: Finishing consumption due to source being stopped", name);
     return false;
   }
 
@@ -261,7 +257,7 @@ class BlockingQueueLogObserver implements LogObserver, BatchLogObserver {
    */
   @Nullable
   StreamElement take() {
-    if (!stopped.get()) {
+    if (!stopped) {
       return consumeTaken(queue.poll());
     }
     return null;
@@ -274,7 +270,7 @@ class BlockingQueueLogObserver implements LogObserver, BatchLogObserver {
    */
   @Nullable
   StreamElement takeBlocking() throws InterruptedException {
-    while (!stopped.get()) {
+    while (!stopped) {
       Pair<StreamElement, UnifiedContext> taken = queue.poll(50, TimeUnit.MILLISECONDS);
       if (taken != null) {
         return consumeTaken(taken);
@@ -318,12 +314,11 @@ class BlockingQueueLogObserver implements LogObserver, BatchLogObserver {
 
   void stop(boolean nack) {
     nackAllIncoming = nack;
-    stopped.set(true);
+    stopped = true;
     if (nack) {
       List<Pair<StreamElement, UnifiedContext>> drop = new ArrayList<>();
       queue.drainTo(drop);
       drop.stream().map(Pair::getSecond).filter(Objects::nonNull).forEach(UnifiedContext::nack);
-      Optional.ofNullable(lastWrittenContext).ifPresent(UnifiedContext::nack);
     }
     if (getWatermark() < Watermarks.MAX_WATERMARK) {
       ExceptionUtils.ignoringInterrupted(() -> cancelledLatch.await(1, TimeUnit.SECONDS));
