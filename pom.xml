@@ -425,6 +425,7 @@
             <exclude>**/src/test/resources/**</exclude>
             <exclude>**/src/main/resources/**</exclude>
             <exclude>install-jdk.sh</exclude>
+            <exclude>**/src/themes/**</exclude>
           </excludes>
         </configuration>
         <executions>
@@ -592,6 +593,7 @@
     <module>scheme</module>
     <module>tools</module>
     <module>utils-zookeeper</module>
+    <module>docs</module>
   </modules>
 
 </project>
