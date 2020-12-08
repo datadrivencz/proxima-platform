@@ -160,7 +160,7 @@ public abstract class BulkBlobWriter<BlobT extends BlobBase, AccessorT extends B
           BulkBlobWriter.this.accessor.getNamingConvention(),
           BulkBlobWriter.this.accessor.getFileFormat(),
           BulkBlobWriter.this.context,
-          BulkBlobWriter.this.accessor.getRollPeriod(),
+          BulkBlobWriter.this.accessor.getLogRollInterval(),
           BulkBlobWriter.this.accessor.getAllowedLateness());
     }
 

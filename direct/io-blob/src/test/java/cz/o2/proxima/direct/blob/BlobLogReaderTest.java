@@ -24,6 +24,8 @@ import cz.o2.proxima.direct.batch.BatchLogReader.Factory;
 import cz.o2.proxima.direct.batch.ObserveHandle;
 import cz.o2.proxima.direct.blob.TestBlobStorageAccessor.BlobReader;
 import cz.o2.proxima.direct.blob.TestBlobStorageAccessor.BlobWriter;
+import cz.o2.proxima.direct.bulk.NamingConvention;
+import cz.o2.proxima.direct.bulk.NamingConventionFactory;
 import cz.o2.proxima.direct.core.Context;
 import cz.o2.proxima.direct.core.DirectDataOperator;
 import cz.o2.proxima.repository.AttributeDescriptor;
@@ -35,14 +37,20 @@ import cz.o2.proxima.util.Pair;
 import cz.o2.proxima.util.TestUtils;
 import java.io.IOException;
 import java.net.URI;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import org.junit.Before;
@@ -50,6 +58,47 @@ import org.junit.Test;
 
 /** Test suite for {@link BlobLogReader}. */
 public class BlobLogReaderTest {
+
+  /** Test convention that generates a new prefix for each writer in reverse-sorted order. */
+  public static class ReverseSortedNamingConventionFactory implements NamingConventionFactory {
+
+    @Override
+    public NamingConvention create(
+        String cfgPrefix,
+        Map<String, Object> cfg,
+        Duration rollTimePeriod,
+        String prefix,
+        String suffix) {
+      final AtomicInteger prefixCounter = new AtomicInteger(Integer.MAX_VALUE);
+      return new NamingConvention() {
+
+        private final NamingConvention delegate =
+            NamingConvention.defaultConvention(rollTimePeriod, prefix, suffix);
+
+        @Override
+        public String nameOf(long ts) {
+          return NamingConvention.defaultConvention(
+                  rollTimePeriod, Integer.toString(prefixCounter.getAndDecrement()), suffix)
+              .nameOf(ts);
+        }
+
+        @Override
+        public Collection<String> prefixesOf(long minTs, long maxTs) {
+          return delegate.prefixesOf(minTs, maxTs);
+        }
+
+        @Override
+        public boolean isInRange(String name, long minTs, long maxTs) {
+          return delegate.isInRange(name, minTs, maxTs);
+        }
+
+        @Override
+        public Pair<Long, Long> parseMinMaxTimestamp(String name) {
+          return delegate.parseMinMaxTimestamp(name);
+        }
+      };
+    }
+  }
 
   private final Repository repo = Repository.of(ConfigFactory.load("test-reference.conf"));
   private final EntityDescriptor gateway =
@@ -69,10 +118,17 @@ public class BlobLogReaderTest {
 
   @Test
   public void testListPartitions() throws InterruptedException {
-    List<Pair<Long, Long>> stamps =
-        Lists.newArrayList(
-            Pair.of(1234566000000L, 1234566000000L + 3_600_000L),
-            Pair.of(1234566000000L + 3_600_000L, (1234566000000L + 2 * 3_600_000L)));
+    // Unlimited parition time span.
+    accessor.setCfg(BlobStorageAccessor.PARTITION_MAX_TIME_SPAN_MS, -1);
+    // We need to truncate instant to hours, so it is consistent with naming convention behaviour.
+    final Instant currentHour = Instant.now().truncatedTo(ChronoUnit.HOURS);
+    final Duration logRollInterval = Duration.ofMillis(accessor.getLogRollInterval());
+    final List<Pair<Long, Long>> stamps =
+        Arrays.asList(
+            Pair.of(currentHour.toEpochMilli(), currentHour.plus(logRollInterval).toEpochMilli()),
+            Pair.of(
+                currentHour.plus(logRollInterval).toEpochMilli(),
+                currentHour.plus(logRollInterval.multipliedBy(2)).toEpochMilli()));
     writePartitions(
         stamps.stream().map(p -> (p.getSecond() + p.getFirst()) / 2).collect(Collectors.toList()));
     BlobReader reader = accessor.new BlobReader(context);
@@ -84,11 +140,20 @@ public class BlobLogReaderTest {
 
   @Test
   public void testListPartitionsWithMaxTimeSpan() throws InterruptedException {
-    accessor.setCfg(BlobStorageAccessor.PARTITION_MAX_TIME_SPAN_MS, 1000);
-    List<Pair<Long, Long>> stamps =
-        Lists.newArrayList(
-            Pair.of(1234566000000L, 1234566000000L + 3_600_000L),
-            Pair.of(1234566000000L + 3_600_000L, (1234566000000L + 2 * 3_600_000L)));
+    final Duration logRollInterval = Duration.ofMillis(accessor.getLogRollInterval());
+    accessor.setCfg(BlobStorageAccessor.PARTITION_MAX_TIME_SPAN_MS, logRollInterval.toMillis());
+    accessor.setCfg(
+        "naming-convention-factory", ReverseSortedNamingConventionFactory.class.getName());
+    // We need to truncate instant to hours, so it is consistent with naming convention behaviour.
+    final Instant currentHour = Instant.now().truncatedTo(ChronoUnit.HOURS);
+    final List<Pair<Long, Long>> stamps =
+        Arrays.asList(
+            Pair.of(currentHour.toEpochMilli(), currentHour.plus(logRollInterval).toEpochMilli()),
+            Pair.of(
+                currentHour.plus(logRollInterval).toEpochMilli(),
+                currentHour.plus(logRollInterval.multipliedBy(2)).toEpochMilli()),
+            Pair.of(currentHour.toEpochMilli(), currentHour.plus(logRollInterval).toEpochMilli()));
+
     writePartitions(
         stamps.stream().map(p -> (p.getSecond() + p.getFirst()) / 2).collect(Collectors.toList()));
     BlobReader reader = accessor.new BlobReader(context);
@@ -263,29 +328,22 @@ public class BlobLogReaderTest {
   }
 
   private void writePartitions(List<Long> stamps) throws InterruptedException {
-    CountDownLatch latch = new CountDownLatch(1);
-    BlobWriter writer = accessor.new BlobWriter(context);
-    stamps
-        .stream()
-        .map(
-            stamp ->
-                StreamElement.upsert(
-                    gateway,
-                    status,
-                    UUID.randomUUID().toString(),
-                    "key",
-                    status.getName(),
-                    stamp,
-                    new byte[] {1}))
-        .forEach(
-            update ->
-                writer.write(
-                    update,
-                    Long.MIN_VALUE,
-                    (succ, exc) -> {
-                      latch.countDown();
-                    }));
-    writer.updateWatermark(Long.MAX_VALUE);
-    assertTrue(latch.await(5, TimeUnit.SECONDS));
+    for (Long stamp : stamps) {
+      try (BlobWriter writer = accessor.new BlobWriter(context)) {
+        final CountDownLatch latch = new CountDownLatch(1);
+        final StreamElement element =
+            StreamElement.upsert(
+                gateway,
+                status,
+                UUID.randomUUID().toString(),
+                "key",
+                status.getName(),
+                stamp,
+                new byte[] {1});
+        writer.write(element, Long.MIN_VALUE, (success, exc) -> latch.countDown());
+        writer.updateWatermark(Long.MAX_VALUE);
+        assertTrue(latch.await(5, TimeUnit.SECONDS));
+      }
+    }
   }
 }

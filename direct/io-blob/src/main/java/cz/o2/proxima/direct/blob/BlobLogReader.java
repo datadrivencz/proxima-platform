@@ -25,7 +25,6 @@ import cz.o2.proxima.direct.batch.TerminationContext;
 import cz.o2.proxima.direct.bulk.FileFormat;
 import cz.o2.proxima.direct.bulk.FileSystem;
 import cz.o2.proxima.direct.bulk.NamingConvention;
-import cz.o2.proxima.direct.bulk.Path;
 import cz.o2.proxima.direct.bulk.Reader;
 import cz.o2.proxima.direct.core.Context;
 import cz.o2.proxima.repository.AttributeDescriptor;
@@ -35,6 +34,7 @@ import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.util.Pair;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -152,16 +152,23 @@ public abstract class BlobLogReader<BlobT extends BlobBase, BlobPathT extends Bl
   @SuppressWarnings("unchecked")
   @Override
   public List<Partition> getPartitions(long startStamp, long endStamp) {
-    List<Partition> ret = new ArrayList<>();
-    AtomicInteger id = new AtomicInteger();
-    @Nullable BulkStoragePartition<BlobT> current = null;
-    Stream<Path> paths = fs.list(startStamp, endStamp).sorted();
-    for (Iterator<Path> it = paths.iterator(); it.hasNext(); ) {
-      current =
-          considerBlobForPartitionInclusion(((BlobPathT) it.next()).getBlob(), id, current, ret);
+    final List<Partition> ret = new ArrayList<>();
+    final AtomicInteger id = new AtomicInteger();
+    @SuppressWarnings("rawtypes")
+    Stream<BlobPath<BlobT>> paths = (Stream) fs.list(startStamp, endStamp);
+    paths =
+        paths.sorted(
+            Comparator.comparingLong(
+                path -> namingConvention.parseMinMaxTimestamp(path.getBlobName()).getFirst()));
+    @Nullable BulkStoragePartition<BlobT> currentPartition = null;
+    final Iterator<BlobPath<BlobT>> it = paths.iterator();
+    while (it.hasNext()) {
+      currentPartition =
+          considerBlobForPartitionInclusion(it.next().getBlob(), id, currentPartition, ret);
     }
-    if (current != null) {
-      ret.add(current);
+    // If we still have an open partition, close it.
+    if (currentPartition != null) {
+      ret.add(currentPartition);
     }
     return ret;
   }
@@ -172,9 +179,8 @@ public abstract class BlobLogReader<BlobT extends BlobBase, BlobPathT extends Bl
       AtomicInteger partitionId,
       @Nullable BulkStoragePartition<BlobT> currentPartition,
       List<Partition> resultingPartitions) {
-
     log.trace("Considering blob {} for partition inclusion", b.getName());
-    Pair<Long, Long> minMaxStamp = namingConvention.parseMinMaxTimestamp(b.getName());
+    final Pair<Long, Long> minMaxStamp = namingConvention.parseMinMaxTimestamp(b.getName());
     BulkStoragePartition<BlobT> res = currentPartition;
     if (partitionMaxTimeSpan > 0
         && currentPartition != null

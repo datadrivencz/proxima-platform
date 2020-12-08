@@ -16,7 +16,6 @@
 package cz.o2.proxima.direct.blob;
 
 import static org.junit.Assert.*;
-import static org.mockito.Mockito.*;
 
 import com.typesafe.config.ConfigFactory;
 import cz.o2.proxima.direct.blob.TestBlobStorageAccessor.BlobWriter;
@@ -125,7 +124,7 @@ public class BulkBlobWriterTest implements Serializable {
           @Override
           public NamingConvention getNamingConvention() {
             return new DefaultNamingConvention(
-                Duration.ofMillis(getRollPeriod()), "prefix", "suffix", () -> "uuid");
+                Duration.ofMillis(getLogRollInterval()), "prefix", "suffix", () -> "uuid");
           }
         };
     writer = accessor.new BlobWriter(direct.getContext());
