@@ -138,6 +138,7 @@
       <groupId>cz.o2.proxima</groupId>
       <artifactId>proxima-direct-io-kafka</artifactId>
       <version>${project.version}</version>
+      <classifier>tests</classifier>
       <scope>test</scope>
     </dependency>
 
@@ -145,7 +146,6 @@
       <groupId>cz.o2.proxima</groupId>
       <artifactId>proxima-direct-io-kafka</artifactId>
       <version>${project.version}</version>
-      <classifier>tests</classifier>
       <scope>test</scope>
     </dependency>
 

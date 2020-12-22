@@ -16,24 +16,38 @@
 package cz.o2.proxima.beam.direct.io;
 
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
+import com.google.common.collect.ImmutableMap;
 import com.typesafe.config.ConfigFactory;
-import cz.o2.proxima.beam.direct.io.OffsetRestrictionTracker.OffsetRange;
+import cz.o2.proxima.direct.commitlog.CommitLogReader;
 import cz.o2.proxima.direct.core.DirectDataOperator;
+import cz.o2.proxima.direct.core.OnlineAttributeWriter;
+import cz.o2.proxima.direct.kafka.KafkaAccessor;
+import cz.o2.proxima.direct.kafka.LocalKafkaCommitLogDescriptor;
 import cz.o2.proxima.direct.storage.ListCommitLog;
+import cz.o2.proxima.direct.time.WatermarkConfiguration;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.repository.Repository;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.storage.commitlog.Position;
 import cz.o2.proxima.time.WatermarkEstimator;
+import cz.o2.proxima.time.WatermarkEstimatorFactory;
+import cz.o2.proxima.time.WatermarkIdlePolicyFactory;
 import cz.o2.proxima.time.Watermarks;
+import java.net.URI;
 import java.nio.ByteBuffer;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+
 import org.apache.beam.runners.direct.DirectRunner;
 import org.apache.beam.runners.flink.FlinkPipelineOptions;
 import org.apache.beam.runners.flink.FlinkRunner;
@@ -65,7 +79,7 @@ public class CommitLogReadTest {
 
   @Parameters
   public static List<Class<? extends PipelineRunner<?>>> runners() {
-    return Arrays.asList(FlinkRunner.class, DirectRunner.class);
+    return Arrays.asList(FlinkRunner.class , DirectRunner.class );
   }
 
   private final Repository repo =
@@ -126,6 +140,122 @@ public class CommitLogReadTest {
     ListCommitLog commitLog = ListCommitLog.of(input, direct.getContext());
     testReadingFromCommitLogMany(
         50, CommitLogRead.of("name", Position.CURRENT, 50, repo, commitLog));
+  }
+
+  @Test(timeout = 20000)
+  public void testWithMultiplePartitions() throws InterruptedException {
+    int numPartitions = 3;
+    int numElements = 10;
+    LocalKafkaCommitLogDescriptor kafka = new LocalKafkaCommitLogDescriptor();
+    KafkaAccessor accessor =
+        kafka.createAccessor(
+            direct,
+            event,
+            URI.create("kafka-test://brokers/topic-" + UUID.randomUUID().toString()),
+            ImmutableMap.of(
+                LocalKafkaCommitLogDescriptor.CFG_NUM_PARTITIONS,
+                numPartitions,
+                WatermarkConfiguration.prefixedKey(WatermarkConfiguration.CFG_ESTIMATOR_FACTORY),
+                FiniteElementsWatermarkEstimatorFactory.class.getName(),
+                WatermarkConfiguration.prefixedKey("numElements"),
+                numElements,
+                WatermarkConfiguration.prefixedKey("name"),
+                UUID.randomUUID().toString()));
+
+    writeElementsToKafka(numElements, accessor);
+
+    CommitLogReader reader =
+        Objects.requireNonNull(accessor.getCommitLogReader(direct.getContext()).orElse(null));
+
+    testReadingFromCommitLogMany(
+        numElements, CommitLogRead.of("name", Position.OLDEST, Long.MAX_VALUE, repo, reader));
+  }
+
+  @Test(timeout = 60000)
+  public void testWithMultiplePartitionsMany() throws InterruptedException {
+    int numPartitions = 3;
+    int numElements = 1000;
+    LocalKafkaCommitLogDescriptor kafka = new LocalKafkaCommitLogDescriptor();
+    KafkaAccessor accessor =
+        kafka.createAccessor(
+            direct,
+            event,
+            URI.create("kafka-test://brokers/topic-" + UUID.randomUUID().toString()),
+            ImmutableMap.of(
+                LocalKafkaCommitLogDescriptor.CFG_NUM_PARTITIONS,
+                numPartitions,
+                WatermarkConfiguration.prefixedKey(WatermarkConfiguration.CFG_ESTIMATOR_FACTORY),
+                FiniteElementsWatermarkEstimatorFactory.class.getName(),
+                WatermarkConfiguration.prefixedKey("numElements"),
+                numElements,
+                WatermarkConfiguration.prefixedKey("name"),
+                UUID.randomUUID().toString()));
+
+    writeElementsToKafka(numElements, accessor);
+
+    CommitLogReader reader =
+        Objects.requireNonNull(accessor.getCommitLogReader(direct.getContext()).orElse(null));
+
+    testReadingFromCommitLogMany(
+        numElements, CommitLogRead.of("name", Position.OLDEST, Long.MAX_VALUE, repo, reader));
+  }
+
+  public static class FiniteElementsWatermarkEstimatorFactory implements WatermarkEstimatorFactory {
+
+    private static final Map<String, Boolean> FINISHED = new ConcurrentHashMap<>();
+
+    @Override
+    public WatermarkEstimator create(
+        Map<String, Object> cfg, WatermarkIdlePolicyFactory idlePolicyFactory) {
+
+      return new WatermarkEstimator() {
+
+        final String name = cfg.get(WatermarkConfiguration.prefixedKey("name")).toString();
+        final int lastElement =
+            Integer.parseInt(cfg.get(WatermarkConfiguration.prefixedKey("numElements")).toString())
+                - 1;
+        long watermark = Watermarks.MIN_WATERMARK;
+
+        {
+          FINISHED.remove(name);
+        }
+
+        @Override
+        public long getWatermark() {
+          return watermark = FINISHED.get(name) != null ? Watermarks.MAX_WATERMARK : watermark;
+        }
+
+        @Override
+        public void setMinWatermark(long minWatermark) {
+          // nop
+        }
+
+        @Override
+        public void update(StreamElement element) {
+          int elementId = ByteBuffer.wrap(element.getValue()).getInt();
+          if (elementId >= lastElement) {
+            FINISHED.put(name, true);
+          }
+        }
+      };
+    }
+  }
+
+  private void writeElementsToKafka(int numElements, KafkaAccessor accessor)
+      throws InterruptedException {
+    OnlineAttributeWriter writer =
+        Objects.requireNonNull(accessor.getWriter(direct.getContext()).orElse(null)).online();
+    CountDownLatch latch = new CountDownLatch(numElements);
+    createInput(numElements)
+        .forEach(
+            e ->
+                writer.write(
+                    e,
+                    (succ, exc) -> {
+                      assertTrue(succ);
+                      latch.countDown();
+                    }));
+    latch.await();
   }
 
   private void testReadingFromCommitLogMany(int numElements, ListCommitLog commitLog) {
@@ -204,29 +334,21 @@ public class CommitLogReadTest {
   }
 
   private static CommitLogRead getCommitLogReadTransform(ListCommitLog commitLog, Repository repo) {
-    return new CommitLogRead(
-        "name", Position.CURRENT, Long.MAX_VALUE, repo.asFactory(), commitLog) {
-      @Override
-      BlockingQueueLogObserver newObserver(String name, OffsetRange restriction) {
-        return BlockingQueueLogObserver.create(
-            name, restriction.getTotalLimit(), Watermarks.MIN_WATERMARK, 10000);
-      }
-    };
+    return CommitLogRead.of("name", Position.CURRENT, Long.MAX_VALUE, repo.asFactory(), commitLog);
   }
 
   private static class TestWatermarkEstimator implements WatermarkEstimator {
 
     private final int numElements;
-    int consumed;
+    private long watermark = Watermarks.MIN_WATERMARK;
 
     public TestWatermarkEstimator(int numElements) {
       this.numElements = numElements;
-      consumed = 0;
     }
 
     @Override
     public long getWatermark() {
-      return consumed < numElements ? Watermarks.MIN_WATERMARK : Watermarks.MAX_WATERMARK;
+      return watermark;
     }
 
     @Override
@@ -236,7 +358,9 @@ public class CommitLogReadTest {
 
     @Override
     public void update(StreamElement element) {
-      consumed++;
+      if (ByteBuffer.wrap(element.getValue()).getInt() == numElements - 1) {
+        watermark = Watermarks.MAX_WATERMARK;
+      }
     }
   }
 }
