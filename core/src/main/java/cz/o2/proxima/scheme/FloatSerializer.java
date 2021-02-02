@@ -38,7 +38,7 @@ public class FloatSerializer implements ValueSerializerFactory {
   @SuppressWarnings("unchecked")
   @Override
   public <T> ValueSerializer<T> getValueSerializer(URI specifier) {
-    return (ValueSerializer)
+    return (ValueSerializer<T>)
         new ValueSerializer<Float>() {
 
           private static final long serialVersionUID = 1L;
@@ -79,6 +79,20 @@ public class FloatSerializer implements ValueSerializerFactory {
           @Override
           public SchemaTypeDescriptor<Float> getValueSchemaDescriptor() {
             return SchemaDescriptors.floats().toTypeDescriptor();
+          }
+
+          @Override
+          public Object read(Float value) {
+            return value;
+          }
+
+          @Override
+          public Optional<Float> write(Object value) {
+            try {
+              return Optional.of((Float) value);
+            } catch (ClassCastException e) {
+              return Optional.empty();
+            }
           }
         };
   }

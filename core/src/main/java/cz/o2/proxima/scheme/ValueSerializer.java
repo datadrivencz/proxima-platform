@@ -110,4 +110,26 @@ public interface ValueSerializer<T> extends Serializable {
     throw new UnsupportedOperationException(
         getClass() + " is not ported to provide a ValueSchemaDescriptor. " + "Please fill issue.");
   }
+
+  /**
+   * Read value and return it as Object with respect of schema.
+   *
+   * @param value
+   * @return value
+   */
+  default Object read(T value) {
+    throw new UnsupportedOperationException(
+        getClass() + " is not ported to support read method. " + "Please fill issue.");
+  }
+
+  /**
+   * Read value and create target object based on Object with respect of schema.
+   *
+   * @param value
+   * @return value
+   */
+  default Optional<T> write(Object value) {
+    throw new UnsupportedOperationException(
+        getClass() + " is not ported to support write method. " + "Please fill issue.");
+  }
 }

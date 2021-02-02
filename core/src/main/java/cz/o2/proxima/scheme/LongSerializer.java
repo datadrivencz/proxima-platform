@@ -38,7 +38,7 @@ public class LongSerializer implements ValueSerializerFactory {
   @SuppressWarnings("unchecked")
   @Override
   public <T> ValueSerializer<T> getValueSerializer(URI specifier) {
-    return (ValueSerializer)
+    return (ValueSerializer<T>)
         new ValueSerializer<Long>() {
 
           private static final long serialVersionUID = 1L;
@@ -79,6 +79,20 @@ public class LongSerializer implements ValueSerializerFactory {
           @Override
           public SchemaTypeDescriptor<Long> getValueSchemaDescriptor() {
             return SchemaDescriptors.longs().toTypeDescriptor();
+          }
+
+          @Override
+          public Object read(Long value) {
+            return value;
+          }
+
+          @Override
+          public Optional<Long> write(Object value) {
+            try {
+              return Optional.of((Long) value);
+            } catch (ClassCastException e) {
+              return Optional.empty();
+            }
           }
         };
   }

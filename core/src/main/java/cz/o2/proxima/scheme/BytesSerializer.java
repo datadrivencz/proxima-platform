@@ -38,7 +38,7 @@ public class BytesSerializer implements ValueSerializerFactory {
   @SuppressWarnings("unchecked")
   @Override
   public <T> ValueSerializer<T> getValueSerializer(URI scheme) {
-    return (ValueSerializer)
+    return (ValueSerializer<T>)
         new ValueSerializer<byte[]>() {
 
           private static final long serialVersionUID = 1L;
@@ -77,6 +77,20 @@ public class BytesSerializer implements ValueSerializerFactory {
           @Override
           public SchemaTypeDescriptor<byte[]> getValueSchemaDescriptor() {
             return SchemaDescriptors.bytes().toTypeDescriptor();
+          }
+
+          @Override
+          public Object read(byte[] value) {
+            return value;
+          }
+
+          @Override
+          public Optional<byte[]> write(Object value) {
+            try {
+              return Optional.of((byte[]) value);
+            } catch (ClassCastException e) {
+              return Optional.empty();
+            }
           }
         };
   }

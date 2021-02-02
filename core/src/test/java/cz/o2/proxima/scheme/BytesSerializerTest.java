@@ -73,4 +73,11 @@ public class BytesSerializerTest {
     SchemaTypeDescriptor<byte[]> descriptor = serializer.getValueSchemaDescriptor();
     assertEquals(AttributeValueType.BYTE, descriptor.getArrayTypeDescriptor().getValueType());
   }
+
+  @Test
+  public void testReadAndWriteValue() {
+    Optional<byte[]> v = serializer.write(new byte[] {1, 2});
+    assertTrue(v.isPresent());
+    assertArrayEquals(new byte[] {1, 2}, (byte[]) serializer.read(v.get()));
+  }
 }

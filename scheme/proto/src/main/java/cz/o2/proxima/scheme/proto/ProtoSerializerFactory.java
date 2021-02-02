@@ -158,5 +158,24 @@ public class ProtoSerializerFactory implements ValueSerializerFactory {
       }
       return valueSchemaDescriptor;
     }
+
+    @Override
+    public Object read(M value) {
+      return ProtoUtils.convertProtoObjectToMap(value);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Override
+    public Optional<M> write(Object value) {
+      try {
+        return Optional.of(
+            (M)
+                ProtoUtils.createProtoObject(
+                    (Map<String, Object>) value, getDefault().toBuilder()));
+      } catch (Exception e) {
+        log.warn("Unable to create protobuf object.", e);
+        return Optional.empty();
+      }
+    }
   }
 }

@@ -27,10 +27,12 @@ import cz.o2.proxima.scheme.proto.test.Scheme.Event;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Optional;
+import lombok.extern.slf4j.Slf4j;
 import org.junit.Before;
 import org.junit.Test;
 
 /** Test for {@link ProtoSerializerFactory}. */
+@Slf4j
 public class ProtoSerializerFactoryTest {
 
   private final ValueSerializerFactory factory = new ProtoSerializerFactory();
@@ -83,5 +85,17 @@ public class ProtoSerializerFactoryTest {
   public void testGetSchemaDescriptor() {
     SchemaTypeDescriptor<Event> descriptor = serializer.getValueSchemaDescriptor();
     assertEquals(AttributeValueType.STRUCTURE, descriptor.getType());
+  }
+
+  @Test
+  public void testReadAndWrite() {
+    Event message =
+        Event.newBuilder()
+            .setGatewayId("gateway")
+            .setPayload(ByteString.copyFrom(new byte[] {0}))
+            .build();
+    Optional<Event> result = serializer.write(serializer.read(message));
+    assertTrue(result.isPresent());
+    assertEquals(message, result.get());
   }
 }

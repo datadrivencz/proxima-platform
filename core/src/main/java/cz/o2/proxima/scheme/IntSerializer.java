@@ -38,7 +38,7 @@ public class IntSerializer implements ValueSerializerFactory {
   @SuppressWarnings("unchecked")
   @Override
   public <T> ValueSerializer<T> getValueSerializer(URI specifier) {
-    return (ValueSerializer)
+    return (ValueSerializer<T>)
         new ValueSerializer<Integer>() {
 
           private static final long serialVersionUID = 1L;
@@ -79,6 +79,20 @@ public class IntSerializer implements ValueSerializerFactory {
           @Override
           public SchemaTypeDescriptor<Integer> getValueSchemaDescriptor() {
             return SchemaDescriptors.integers().toTypeDescriptor();
+          }
+
+          @Override
+          public Object read(Integer value) {
+            return value;
+          }
+
+          @Override
+          public Optional<Integer> write(Object value) {
+            try {
+              return Optional.of((Integer) value);
+            } catch (ClassCastException e) {
+              return Optional.empty();
+            }
           }
         };
   }

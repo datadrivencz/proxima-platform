@@ -18,6 +18,7 @@ package cz.o2.proxima.scheme;
 import static org.junit.Assert.*;
 
 import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
+import java.util.Optional;
 import org.junit.Test;
 
 /** Test suite for {@link IntSerializer}. */
@@ -70,5 +71,14 @@ public class IntSerializerTest {
     SchemaTypeDescriptor<Integer> descriptor =
         serializer.<Integer>getValueSerializer(null).getValueSchemaDescriptor();
     assertTrue(descriptor.isPrimitiveType());
+  }
+
+  @Test
+  public void testReadAndWriteValue() {
+    ValueSerializer<Integer> s = serializer.getValueSerializer(null);
+    Integer value = 100;
+    Optional<Integer> v = s.write(value);
+    assertTrue(v.isPresent());
+    assertEquals(value, s.read(v.get()));
   }
 }

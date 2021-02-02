@@ -20,6 +20,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
+import java.util.Optional;
 import org.junit.Test;
 
 /** Test suite for {@link LongSerializer}. */
@@ -72,5 +73,14 @@ public class LongSerializerTest {
     SchemaTypeDescriptor<Long> descriptor =
         serializer.<Long>getValueSerializer(null).getValueSchemaDescriptor();
     assertTrue(descriptor.isPrimitiveType());
+  }
+
+  @Test
+  public void testReadAndWriteValue() {
+    ValueSerializer<Long> s = serializer.getValueSerializer(null);
+    long value = 100L;
+    Optional<Long> v = s.write(value);
+    assertTrue(v.isPresent());
+    assertEquals(value, s.read(v.get()));
   }
 }
