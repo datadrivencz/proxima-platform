@@ -56,7 +56,9 @@ public abstract class BlobStorageAccessor extends AbstractStorage implements Dat
   /** Maximal amount of time (in milliseconds) a partition containing multiple blobs can span. */
   public static final String PARTITION_MAX_TIME_SPAN_MS = "partition.max-time-span-ms";
 
-  final Map<String, Object> cfg;
+  private final Map<String, Object> cfg;
+
+  private transient volatile NamingConvention namingConvention;
 
   protected BlobStorageAccessor(EntityDescriptor entityDesc, URI uri, Map<String, Object> cfg) {
     super(entityDesc, uri);
@@ -79,11 +81,20 @@ public abstract class BlobStorageAccessor extends AbstractStorage implements Dat
   }
 
   public NamingConvention getNamingConvention() {
-    return FileFormatUtils.getNamingConvention("", getCfg(), getRollPeriod(), getFileFormat());
+    if (namingConvention == null) {
+      synchronized (this) {
+        if (namingConvention == null) {
+          namingConvention =
+              FileFormatUtils.getNamingConvention(
+                  "", getCfg(), getLogRollInterval(), getFileFormat());
+        }
+      }
+    }
+    return namingConvention;
   }
 
   public File getTmpDir() {
-    File parent =
+    final File parent =
         Optional.ofNullable(cfg.get("tmp.dir"))
             .map(Object::toString)
             .map(File::new)
@@ -91,18 +102,18 @@ public abstract class BlobStorageAccessor extends AbstractStorage implements Dat
     return new File(parent, "blob-local-storage-" + UUID.randomUUID());
   }
 
-  public long getRollPeriod() {
+  public long getLogRollInterval() {
     return Optional.ofNullable(cfg.get(LOG_ROLL_INTERVAL))
         .map(Object::toString)
         .map(Long::valueOf)
-        .orElse(3600000L);
+        .orElse(3_600_000L);
   }
 
   public long getAllowedLateness() {
     return Optional.ofNullable(cfg.get(ALLOWED_LATENESS_MS))
         .map(Object::toString)
         .map(Long::valueOf)
-        .orElse(5 * 60000L);
+        .orElse(5 * 60_000L);
   }
 
   public long getPartitionMinSize() {
@@ -116,13 +127,13 @@ public abstract class BlobStorageAccessor extends AbstractStorage implements Dat
     return Optional.ofNullable(cfg.get(PARTITION_MAX_BLOBS))
         .map(Object::toString)
         .map(Integer::valueOf)
-        .orElse(1000);
+        .orElse(1_000);
   }
 
   public long getPartitionMaxTimeSpanMs() {
     return Optional.ofNullable(cfg.get(PARTITION_MAX_TIME_SPAN_MS))
         .map(Object::toString)
         .map(Long::valueOf)
-        .orElse(-1L);
+        .orElseGet(this::getLogRollInterval);
   }
 }
