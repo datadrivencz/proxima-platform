@@ -101,22 +101,22 @@ public abstract class AbstractFileFormatTest {
 
   @Test
   public void testWriteAndReadAllTypes() throws IOException {
-    assertWriteAndReadElements(Arrays.asList(deleteWildcard(), delete(), upsert()));
+    assertWriteAndReadElements(getFileFormat(), Arrays.asList(deleteWildcard(), delete(), upsert()));
   }
 
   @Test
   public void testWriteAndReadUpsert() throws IOException {
-    assertWriteAndReadElements(Collections.singletonList(upsert()));
+    assertWriteAndReadElements(getFileFormat(), Collections.singletonList(upsert()));
   }
 
   @Test
   public void testWriteAndReadDelete() throws IOException {
-    assertWriteAndReadElements(Collections.singletonList(delete()));
+    assertWriteAndReadElements(getFileFormat(), Collections.singletonList(delete()));
   }
 
   @Test
   public void testWriteAndReadDeleteWildcard() throws IOException {
-    assertWriteAndReadElements(Collections.singletonList(deleteWildcard()));
+    assertWriteAndReadElements(getFileFormat(), Collections.singletonList(deleteWildcard()));
   }
 
   protected void writeElements(Path path, FileFormat format, List<StreamElement> elements)
@@ -144,8 +144,7 @@ public abstract class AbstractFileFormatTest {
     return data;
   }
 
-  protected void assertWriteAndReadElements(List<StreamElement> elements) throws IOException {
-    final FileFormat format = getFileFormat();
+  protected void assertWriteAndReadElements(FileFormat format, List<StreamElement> elements) throws IOException {
     writeElements(file, format, elements);
     List<StreamElement> read = readElements(file, format);
     assertTrue(elements.containsAll(read));
