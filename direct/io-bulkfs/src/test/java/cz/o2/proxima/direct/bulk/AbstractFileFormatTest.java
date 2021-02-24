@@ -101,7 +101,8 @@ public abstract class AbstractFileFormatTest {
 
   @Test
   public void testWriteAndReadAllTypes() throws IOException {
-    assertWriteAndReadElements(getFileFormat(), Arrays.asList(deleteWildcard(), delete(), upsert()));
+    assertWriteAndReadElements(
+        getFileFormat(), Arrays.asList(deleteWildcard(), delete(), upsert()));
   }
 
   @Test
@@ -144,7 +145,8 @@ public abstract class AbstractFileFormatTest {
     return data;
   }
 
-  protected void assertWriteAndReadElements(FileFormat format, List<StreamElement> elements) throws IOException {
+  protected void assertWriteAndReadElements(FileFormat format, List<StreamElement> elements)
+      throws IOException {
     writeElements(file, format, elements);
     List<StreamElement> read = readElements(file, format);
     assertTrue(elements.containsAll(read));

@@ -38,8 +38,7 @@ public class ParquetFileFormat implements FileFormat {
 
   public static final String PARQUET_CONFIG_COMPRESSION_KEY_NAME = ParquetOutputFormat.COMPRESSION;
   public static final String PARQUET_CONFIG_BLOCK_SIZE_KEY_NAME = ParquetOutputFormat.BLOCK_SIZE;
-  public static final String PARQUET_CONFIG_VALUES_PREFIX_KEY_NAME =
-      "parquet.values.name.prefix";
+  public static final String PARQUET_CONFIG_VALUES_PREFIX_KEY_NAME = "parquet.values.name.prefix";
 
   public static final int PARQUET_DEFAULT_BLOCK_SIZE = 1024 * 1024;
   public static final int PARQUET_DEFAULT_MAX_PADDING_BYTES = 512 * 1024;
