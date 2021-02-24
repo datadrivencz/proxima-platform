@@ -171,18 +171,36 @@ public class ParquetFileFormatTest extends AbstractFileFormatTest {
 
   @Test
   public void testWriteAndReadComplexValue() throws IOException {
-    final Repository protoRepo = ConfigRepository
-        .ofTest(ConfigFactory.load("test-proto.conf").resolve());
+    final Repository protoRepo =
+        ConfigRepository.ofTest(ConfigFactory.load("test-proto.conf").resolve());
     final EntityDescriptor event = protoRepo.getEntity("event");
     final AttributeDescriptor<Event> dataAttribute = event.getAttribute("data");
-    List<StreamElement> elements = Arrays.asList(
-        StreamElement.upsert(event, dataAttribute, UUID.randomUUID().toString(), "key1",
-            dataAttribute.getName(), now, Event.newBuilder().setGatewayId("gatewayId1").setPayload(
-                ByteString.copyFromUtf8("payload1")).build().toByteArray()),
-        StreamElement.upsert(event, dataAttribute, UUID.randomUUID().toString(), "key2",
-            dataAttribute.getName(), now, Event.newBuilder().setGatewayId("gatewayId2")
-                .setPayload(ByteString.copyFromUtf8("payload2")).build().toByteArray())
-    );
+    List<StreamElement> elements =
+        Arrays.asList(
+            StreamElement.upsert(
+                event,
+                dataAttribute,
+                UUID.randomUUID().toString(),
+                "key1",
+                dataAttribute.getName(),
+                now,
+                Event.newBuilder()
+                    .setGatewayId("gatewayId1")
+                    .setPayload(ByteString.copyFromUtf8("payload1"))
+                    .build()
+                    .toByteArray()),
+            StreamElement.upsert(
+                event,
+                dataAttribute,
+                UUID.randomUUID().toString(),
+                "key2",
+                dataAttribute.getName(),
+                now,
+                Event.newBuilder()
+                    .setGatewayId("gatewayId2")
+                    .setPayload(ByteString.copyFromUtf8("payload2"))
+                    .build()
+                    .toByteArray()));
     FileFormat format = getFileFormat();
     format.setup(
         TestUtils.createTestFamily(

@@ -152,18 +152,22 @@ public class SchemaDescriptors {
    * @return Structure type descriptor
    */
   public static <T> StructureTypeDescriptor<T> structures(String name) {
-    return structures(name, Collections.emptyMap());
+    return structures(name, Collections.emptyMap(), null);
   }
 
   public static <T> StructureTypeDescriptor<T> structures(
       String name, Map<String, TypeDescriptor<?>> fields) {
-    Map<String, SchemaTypeDescriptor<?>> f =
+    return structures(name, fields, null);
+  }
+
+  public static <T> StructureTypeDescriptor<T> structures(
+      String name, Map<String, TypeDescriptor<?>> fields, @Nullable FieldReader<T> fieldReader) {
+    final Map<String, SchemaTypeDescriptor<?>> cast =
         fields
             .entrySet()
             .stream()
             .collect(Collectors.toMap(Entry::getKey, v -> v.getValue().toTypeDescriptor()));
-
-    return new StructureTypeDescriptor<>(name, f);
+    return new StructureTypeDescriptor<>(name, cast, fieldReader);
   }
 
   /**
@@ -197,10 +201,8 @@ public class SchemaDescriptors {
 
   private static class GenericValue<T> implements AttributeValue<T> {
 
-    @Getter
-    private final AttributeValueType type;
-    @Getter
-    private final T value;
+    @Getter private final AttributeValueType type;
+    @Getter private final T value;
 
     public GenericValue(AttributeValueType type, T value) {
       this.type = type;
@@ -208,7 +210,8 @@ public class SchemaDescriptors {
     }
 
     public StructureValue<T> asStructureValue() {
-      Preconditions.checkState(type.equals(AttributeValueType.STRUCTURE),
+      Preconditions.checkState(
+          type.equals(AttributeValueType.STRUCTURE),
           "Cannot convert value as Structure type. Give {} type.");
       return (StructureValue<T>) this;
     }
@@ -366,7 +369,6 @@ public class SchemaDescriptors {
         return true;
       }
       if (o instanceof SchemaTypeDescriptor) {
-        @SuppressWarnings("unchecked")
         SchemaTypeDescriptor<?> other = (SchemaTypeDescriptor<?>) o;
         if (!type.equals(other.getType())) {
           return false;
@@ -392,10 +394,6 @@ public class SchemaDescriptors {
     }
   }
 
-
-  public interface ValueExtractor {
-
-  }
   /**
    * Primitive type descriptor with simple type (eq String, Long, Integer, etc).
    *
@@ -415,26 +413,9 @@ public class SchemaDescriptors {
           .build();
     }
 
-    @SuppressWarnings("unchecked")
-    public <V> PrimitiveValue<T, V> valueOf(V value) {
-      switch (getType()) {
-        case STRING:
-          return (PrimitiveValue<T, V>) new PrimitiveValue<T, String>(AttributeValueType.STRING,
-              (T) value.toString()) {
-            @Override
-            public T createFrom(String from) {
-              return (T) from;
-            }
-
-            @Override
-            public String valueOf(T of) {
-              return of.toString();
-            }
-          };
-      }
-      return null;
+    public T readValue(T value) {
+      return value;
     }
-
 
     @Override
     public boolean equals(Object o) {
@@ -476,7 +457,6 @@ public class SchemaDescriptors {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
     public boolean equals(Object o) {
       if (this == o) {
         return true;
@@ -494,6 +474,11 @@ public class SchemaDescriptors {
     }
   }
 
+  public interface FieldReader<T> extends Serializable {
+
+    <V> V readField(String field, TypeDescriptor<V> fieldDescriptor, T value);
+  }
+
   /**
    * Structure type descriptor allows to have fields with type as another descriptor.
    *
@@ -502,12 +487,17 @@ public class SchemaDescriptors {
   public static class StructureTypeDescriptor<T> extends GenericTypeDescriptor<T> {
 
     @Getter final String name;
-    @Getter private Map<String, TypeDescriptor<?>> fields = new HashMap<>();
+    @Getter private final Map<String, TypeDescriptor<?>> fields = new HashMap<>();
+    @Nullable private final FieldReader<T> fieldReader;
 
-    public StructureTypeDescriptor(String name, Map<String, SchemaTypeDescriptor<?>> fields) {
+    private StructureTypeDescriptor(
+        String name,
+        Map<String, SchemaTypeDescriptor<?>> fields,
+        @Nullable FieldReader<T> fieldReader) {
       super(AttributeValueType.STRUCTURE);
       this.name = name;
       fields.forEach(this::addField);
+      this.fieldReader = fieldReader;
     }
 
     /**
@@ -541,6 +531,13 @@ public class SchemaDescriptors {
                   new IllegalArgumentException(
                       "Field " + name + " not found in structure " + getName()))
           .toTypeDescriptor();
+    }
+
+    public <V> V readField(String field, TypeDescriptor<V> fieldDescriptor, T value) {
+      if (fieldReader == null) {
+        throw new UnsupportedOperationException("Field reader is not set.");
+      }
+      return fieldReader.readField(field, fieldDescriptor, value);
     }
 
     @Override

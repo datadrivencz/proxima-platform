@@ -19,8 +19,10 @@ import cz.o2.proxima.direct.bulk.Path;
 import cz.o2.proxima.direct.bulk.Writer;
 import cz.o2.proxima.direct.bulk.fs.parquet.ParquetFileFormat.OPERATION;
 import cz.o2.proxima.scheme.AttributeValueType;
+import cz.o2.proxima.scheme.SchemaDescriptors;
 import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
 import cz.o2.proxima.storage.StreamElement;
+import cz.o2.proxima.util.Optionals;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Collections;
@@ -159,28 +161,26 @@ public class ProximaParquetWriter implements Writer {
               name ->
                   element.getAttributeDescriptor().getValueSerializer().getValueSchemaDescriptor());
       log.debug("Writing attribute {}", attribute);
-      writeValue(attribute, attributeSchema, element.getValue());
+      writeValue(attribute, attributeSchema, Optionals.get(element.getParsed()));
     }
 
-    private void writeValue(String name ,SchemaTypeDescriptor<?> schema, byte[] value) {
+    private <T> void writeValue(String name, SchemaTypeDescriptor<T> schema, T value) {
+      log.debug("Writing field [{}] with schema [{}].", name, schema);
       writeStartField(name);
       switch (schema.getType()) {
         case STRUCTURE:
           recordConsumer.startGroup();
-          schema
-              .getStructureTypeDescriptor()
+          final SchemaDescriptors.StructureTypeDescriptor<T> structureDescriptor =
+              schema.getStructureTypeDescriptor();
+          structureDescriptor
               .getFields()
               .forEach(
                   (field, type) -> {
-                    log.info("Trying to write field {} with type {}", field, type);
+                    @SuppressWarnings({"unchecked", "rawtypes "})
+                    final SchemaTypeDescriptor<Object> cast = (SchemaTypeDescriptor) type;
+                    writeValue(field, cast, structureDescriptor.readField(field, cast, value));
                   });
-          // FIXME
           recordConsumer.endGroup();
-          break;
-        case BYTE:
-        case STRING:
-        case ENUM:
-          recordConsumer.addBinary(Binary.fromReusedByteArray(value));
           break;
         case ARRAY:
           if (schema
@@ -189,32 +189,31 @@ public class ProximaParquetWriter implements Writer {
               .getType()
               .equals(AttributeValueType.BYTE)) {
             // Array of bytes should be encoded just as binary
-            recordConsumer.addBinary(Binary.fromReusedByteArray(value));
+            recordConsumer.addBinary(Binary.fromReusedByteArray((byte[]) value));
           } else {
-            recordConsumer.startGroup();
-            // FIXME
-            recordConsumer.endGroup();
+            throw new UnsupportedOperationException("Not implemented");
           }
           break;
+        case BYTE:
+          recordConsumer.addBinary(Binary.fromConstantByteArray(new byte[] {(byte) value}));
+        case STRING:
+          recordConsumer.addBinary(Binary.fromString(((String) value)));
+        case ENUM:
+          throw new UnsupportedOperationException("Not implemented.");
         case LONG:
-          long longVal = Long.parseLong(new String(value));
-          recordConsumer.addLong(longVal);
+          recordConsumer.addLong((long) value);
           break;
         case INT:
-          int intVal = Integer.parseInt(new String(value));
-          recordConsumer.addInteger(intVal);
+          recordConsumer.addInteger((int) value);
           break;
         case DOUBLE:
-          double doubleVal = Double.parseDouble(new String(value));
-          recordConsumer.addDouble(doubleVal);
+          recordConsumer.addDouble((double) value);
           break;
         case FLOAT:
-          float floatVal = Float.parseFloat(new String(value));
-          recordConsumer.addFloat(floatVal);
+          recordConsumer.addFloat((float) value);
           break;
         case BOOLEAN:
-          boolean boolVal = Boolean.parseBoolean(new String(value));
-          recordConsumer.addBoolean(boolVal);
+          recordConsumer.addBoolean((boolean) value);
           break;
       }
       writeEndField(name);

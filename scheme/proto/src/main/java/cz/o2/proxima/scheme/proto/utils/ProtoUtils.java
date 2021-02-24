@@ -18,9 +18,11 @@ package cz.o2.proxima.scheme.proto.utils;
 import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.Descriptors.EnumValueDescriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor;
+import com.google.protobuf.Message;
 import cz.o2.proxima.scheme.SchemaDescriptors;
 import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.StructureTypeDescriptor;
+import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -35,8 +37,29 @@ public class ProtoUtils {
     // no-op
   }
 
-  public static <T> SchemaTypeDescriptor<T> convertProtoToSchema(Descriptor proto) {
-    StructureTypeDescriptor<T> schema = SchemaDescriptors.structures(proto.getName());
+  private static class ProtoFieldReader<T extends Message>
+      implements SchemaDescriptors.FieldReader<T> {
+
+    private final Descriptor protoDescriptor;
+
+    private ProtoFieldReader(Descriptor protoDescriptor) {
+      this.protoDescriptor = protoDescriptor;
+    }
+
+    @Override
+    public <V> V readField(
+        String field, SchemaDescriptors.TypeDescriptor<V> fieldDescriptor, T value) {
+      final FieldDescriptor protoFieldDescriptor = protoDescriptor.findFieldByName(field);
+      @SuppressWarnings("unchecked")
+      final V result = (V) value.getField(protoFieldDescriptor);
+      return result;
+    }
+  }
+
+  public static <T extends Message> SchemaTypeDescriptor<T> convertProtoToSchema(Descriptor proto) {
+    StructureTypeDescriptor<T> schema =
+        SchemaDescriptors.structures(
+            proto.getName(), Collections.emptyMap(), new ProtoFieldReader<>(proto));
     proto.getFields().forEach(f -> schema.addField(f.getName(), convertField(f)));
     return schema.toTypeDescriptor();
   }
