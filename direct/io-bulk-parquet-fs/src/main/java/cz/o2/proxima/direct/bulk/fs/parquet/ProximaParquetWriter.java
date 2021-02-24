@@ -131,7 +131,7 @@ public class ProximaParquetWriter implements Writer {
     private final RecordConsumer recordConsumer;
     private final MessageType parquetSchema;
     private final String attributeNamesPrefix;
-    private Map<String, SchemaTypeDescriptor<?>> schemasCache = new HashMap<>();
+    private final Map<String, SchemaTypeDescriptor<?>> schemasCache = new HashMap<>();
 
     public StreamElementParquetWriter(
         RecordConsumer recordConsumer, MessageType parquetSchema, String attributeNamesPrefix) {

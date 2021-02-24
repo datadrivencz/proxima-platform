@@ -49,7 +49,7 @@ public class ParquetUtilsTest {
   @Test
   public void testCreateParquetSchemaForAttributeDescriptor() {
     AttributeDescriptor<byte[]> attr = gateway.getAttribute("armed");
-    String prefix = ParquetFileFormat.PARQUET_DEFAULT_ATTRIBUTE_NAMES_PREFIX;
+    String prefix = ParquetFileFormat.PARQUET_DEFAULT_VALUES_NAME_PREFIX;
     Type parquet = ParquetUtils.createParquetSchema(attr, prefix);
     log.debug("Parquet schema: {}", parquet);
     assertEquals(prefix + attr.getName(), parquet.getName());
@@ -80,7 +80,7 @@ public class ParquetUtilsTest {
 
     MessageType parquet =
         ParquetUtils.createParquetSchema(
-            family, ParquetFileFormat.PARQUET_DEFAULT_ATTRIBUTE_NAMES_PREFIX);
+            family, ParquetFileFormat.PARQUET_DEFAULT_VALUES_NAME_PREFIX);
     log.debug("Parquet schema: {}", parquet);
     assertProximaFieldsInParquetSchema(parquet, false);
   }
