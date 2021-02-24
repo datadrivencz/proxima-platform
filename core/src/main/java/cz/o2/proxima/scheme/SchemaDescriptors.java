@@ -351,6 +351,68 @@ public class SchemaDescriptors {
     return new StructureTypeDescriptor<>(name, fields, valueProvider);
   }
 
+  public interface AttributeValue<T> {
+
+    AttributeValueType getType();
+
+    T getValue();
+  }
+
+  private static class GenericValue<T> implements AttributeValue<T> {
+
+    @Getter
+    private final AttributeValueType type;
+    @Getter
+    private final T value;
+
+    public GenericValue(AttributeValueType type, T value) {
+      this.type = type;
+      this.value = value;
+    }
+
+    public StructureValue<T> asStructureValue() {
+      Preconditions.checkState(type.equals(AttributeValueType.STRUCTURE),
+          "Cannot convert value as Structure type. Give {} type.");
+      return (StructureValue<T>) this;
+    }
+  }
+
+  public static class PrimitiveValue<T, V> extends GenericValue<T> {
+
+    public PrimitiveValue(AttributeValueType type, T value) {
+      super(type, value);
+    }
+
+    public T createFrom(V from) {
+      return null;
+    }
+
+    public V valueOf(T of) {
+      return null;
+    }
+  }
+
+  public static class StructureValue<T> extends GenericValue<T> {
+
+    public StructureValue(T value) {
+      super(AttributeValueType.STRUCTURE, value);
+    }
+  }
+
+  public static class ArrayValue<T> extends GenericValue<T> {
+
+    public ArrayValue(T value) {
+      super(AttributeValueType.ARRAY, value);
+    }
+  }
+
+  public static class EnumValue<T> extends GenericValue<T> {
+
+    public EnumValue(T value) {
+      super(AttributeValueType.ENUM, value);
+    }
+  }
+
   /**
    * Generic type descriptor. Parent class for other types.
    *
@@ -465,6 +527,10 @@ public class SchemaDescriptors {
     }
   }
 
+
+  public interface ValueExtractor {
+
+  }
   /**
    * Primitive type descriptor with simple type (eq String, Long, Integer, etc).
    *
@@ -485,6 +551,27 @@ public class SchemaDescriptors {
     public PrimitiveTypeDescriptor<T> asPrimitiveTypeDescriptor() {
       return this;
     }
+
+    @SuppressWarnings("unchecked")
+    public <V> PrimitiveValue<T, V> valueOf(V value) {
+      switch (getType()) {
+        case STRING:
+          return (PrimitiveValue<T, V>) new PrimitiveValue<T, String>(AttributeValueType.STRING,
+              (T) value.toString()) {
+            @Override
+            public T createFrom(String from) {
+              return (T) from;
+            }
+
+            @Override
+            public String valueOf(T of) {
+              return of.toString();
+            }
+          };
+      }
+      return null;
+    }
+
 
     @Override
     public boolean equals(Object o) {

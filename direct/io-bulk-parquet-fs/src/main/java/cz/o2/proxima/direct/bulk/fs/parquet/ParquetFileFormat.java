@@ -38,12 +38,12 @@ public class ParquetFileFormat implements FileFormat {
 
   public static final String PARQUET_CONFIG_COMPRESSION_KEY_NAME = ParquetOutputFormat.COMPRESSION;
   public static final String PARQUET_CONFIG_BLOCK_SIZE_KEY_NAME = ParquetOutputFormat.BLOCK_SIZE;
-  public static final String PARQUET_CONFIG_ATTRIBUTES_PREFIX_KEY_NAME =
-      "parquet.attribute.names.prefix";
+  public static final String PARQUET_CONFIG_VALUES_PREFIX_KEY_NAME =
+      "parquet.values.name.prefix";
 
   public static final int PARQUET_DEFAULT_BLOCK_SIZE = 1024 * 1024;
   public static final int PARQUET_DEFAULT_MAX_PADDING_BYTES = 512 * 1024;
-  public static final String PARQUET_DEFAULT_ATTRIBUTE_NAMES_PREFIX = "attr_";
+  public static final String PARQUET_DEFAULT_VALUES_NAME_PREFIX = "";
   static final String PARQUET_COLUMN_NAME_KEY = "key";
   static final String PARQUET_COLUMN_NAME_UUID = "uuid";
   static final String PARQUET_COLUMN_NAME_ATTRIBUTE = "attribute";
@@ -69,9 +69,9 @@ public class ParquetFileFormat implements FileFormat {
                         .orElse(null)));
 
     attributeNamesPrefix =
-        Optional.ofNullable(family.getCfg().get(PARQUET_CONFIG_ATTRIBUTES_PREFIX_KEY_NAME))
+        Optional.ofNullable(family.getCfg().get(PARQUET_CONFIG_VALUES_PREFIX_KEY_NAME))
             .map(Object::toString)
-            .orElse(PARQUET_DEFAULT_ATTRIBUTE_NAMES_PREFIX);
+            .orElse(PARQUET_DEFAULT_VALUES_NAME_PREFIX);
   }
 
   @Override
