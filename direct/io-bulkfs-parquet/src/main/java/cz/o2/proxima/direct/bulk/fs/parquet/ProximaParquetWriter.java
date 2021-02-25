@@ -20,6 +20,7 @@ import cz.o2.proxima.direct.bulk.Writer;
 import cz.o2.proxima.direct.bulk.fs.parquet.ParquetFileFormat.OPERATION;
 import cz.o2.proxima.scheme.AttributeValueType;
 import cz.o2.proxima.scheme.SchemaDescriptors;
+import cz.o2.proxima.scheme.SchemaDescriptors.ArrayTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.util.Optionals;
@@ -27,6 +28,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.hadoop.conf.Configuration;
@@ -211,6 +213,9 @@ public class ProximaParquetWriter implements Writer {
             // Array of bytes should be encoded just as binary
             recordConsumer.addBinary(Binary.fromReusedByteArray((byte[]) value));
           } else {
+            ArrayTypeDescriptor<T> arrayTypeDescriptor = schema.toTypeDescriptor()
+                .getArrayTypeDescriptor();
+            arrayTypeDescriptor.readValues(value, arrayTypeDescriptor.getValueDescriptor());
             throw new UnsupportedOperationException("Not implemented for now.");
           }
           break;
