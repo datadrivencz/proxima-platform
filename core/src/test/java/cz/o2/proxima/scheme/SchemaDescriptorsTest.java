@@ -21,6 +21,7 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
+import cz.o2.proxima.scheme.AttributeValueAccessors.PrimitiveValueAccessor;
 import cz.o2.proxima.scheme.SchemaDescriptors.ArrayTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.EnumTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.PrimitiveTypeDescriptor;
@@ -84,6 +85,8 @@ public class SchemaDescriptorsTest {
     assertThrows(IllegalStateException.class, descriptor::getArrayTypeDescriptor);
     assertThrows(IllegalStateException.class, descriptor::getStructureTypeDescriptor);
     assertThrows(IllegalStateException.class, descriptor::getEnumTypeDescriptor);
+    assertEquals("10", string.getValueAccessor().createFrom(10));
+    assertEquals("20", string.getValueAccessor().valueOf("20"));
   }
 
   @Test
@@ -188,18 +191,27 @@ public class SchemaDescriptorsTest {
   public void testDoubleType() {
     PrimitiveTypeDescriptor<Double> descriptor = SchemaDescriptors.doubles();
     assertEquals(AttributeValueType.DOUBLE, descriptor.getType());
+    final PrimitiveValueAccessor<Double> valueProvider = descriptor.getValueAccessor();
+    assertEquals(20.08D, valueProvider.valueOf(20.08));
+    assertEquals(20.08D, valueProvider.createFrom("20.08"), 0.0001);
   }
 
   @Test
   public void testFloatType() {
     PrimitiveTypeDescriptor<Float> descriptor = SchemaDescriptors.floats();
     assertEquals(AttributeValueType.FLOAT, descriptor.getType());
+    final PrimitiveValueAccessor<Float> valueProvider = descriptor.getValueAccessor();
+    assertEquals(13.37F, valueProvider.valueOf(13.37F));
+    assertEquals(13.37F, valueProvider.createFrom("13.37"), 0.0001);
   }
 
   @Test
   public void testBooleanType() {
     PrimitiveTypeDescriptor<Boolean> descriptor = SchemaDescriptors.booleans();
     assertEquals(AttributeValueType.BOOLEAN, descriptor.getType());
+    final PrimitiveValueAccessor<Boolean> valueProvider = descriptor.getValueAccessor();
+    assertEquals(true, valueProvider.valueOf(true));
+    assertEquals(false, valueProvider.createFrom("false"));
   }
 
   @Test
@@ -211,7 +223,6 @@ public class SchemaDescriptorsTest {
 
     assertEquals(desc, desc.toTypeDescriptor().getEnumTypeDescriptor());
 
-    assertEquals(desc, SchemaDescriptors.enums(new String[] {"LEFT", "RIGHT"}));
     assertEquals(desc, SchemaDescriptors.enums(values));
   }
 }

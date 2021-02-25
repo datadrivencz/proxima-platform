@@ -154,7 +154,7 @@ public class ProtoSerializerFactory implements ValueSerializerFactory {
     public SchemaTypeDescriptor<M> getValueSchemaDescriptor() {
       if (valueSchemaDescriptor == null) {
         valueSchemaDescriptor =
-            ProtoUtils.convertProtoToSchema(getDefault().getDescriptorForType());
+            ProtoUtils.convertProtoToSchema(getDefault().getDescriptorForType(), getDefault());
       }
       return valueSchemaDescriptor;
     }

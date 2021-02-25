@@ -17,6 +17,7 @@ package cz.o2.proxima.scheme;
 
 /** Possible attribute and field types */
 public enum AttributeValueType {
+  UNKNOWN,
   STRUCTURE,
   ARRAY,
   ENUM,
