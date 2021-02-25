@@ -102,27 +102,29 @@ public abstract class AbstractFileFormatTest {
   @Test
   public void testWriteAndReadAllTypes() throws IOException {
     assertWriteAndReadElements(
-        getFileFormat(), Arrays.asList(deleteWildcard(), delete(), upsert()));
+        getFileFormat(), entity, Arrays.asList(deleteWildcard(), delete(), upsert()));
   }
 
   @Test
   public void testWriteAndReadUpsert() throws IOException {
-    assertWriteAndReadElements(getFileFormat(), Collections.singletonList(upsert()));
+    assertWriteAndReadElements(getFileFormat(), entity, Collections.singletonList(upsert()));
   }
 
   @Test
   public void testWriteAndReadDelete() throws IOException {
-    assertWriteAndReadElements(getFileFormat(), Collections.singletonList(delete()));
+    assertWriteAndReadElements(getFileFormat(), entity, Collections.singletonList(delete()));
   }
 
   @Test
   public void testWriteAndReadDeleteWildcard() throws IOException {
-    assertWriteAndReadElements(getFileFormat(), Collections.singletonList(deleteWildcard()));
+    assertWriteAndReadElements(
+        getFileFormat(), entity, Collections.singletonList(deleteWildcard()));
   }
 
-  protected void writeElements(Path path, FileFormat format, List<StreamElement> elements)
+  protected void writeElements(
+      Path path, FileFormat format, EntityDescriptor entityDescriptor, List<StreamElement> elements)
       throws IOException {
-    try (Writer writer = format.openWriter(path, entity)) {
+    try (Writer writer = format.openWriter(path, entityDescriptor)) {
       elements.forEach(
           e -> {
             try {
@@ -135,9 +137,10 @@ public abstract class AbstractFileFormatTest {
     }
   }
 
-  protected List<StreamElement> readElements(Path path, FileFormat format) throws IOException {
+  protected List<StreamElement> readElements(
+      Path path, FileFormat format, EntityDescriptor entityDescriptor) throws IOException {
     List<StreamElement> data = new ArrayList<>();
-    try (Reader reader = format.openReader(path, entity)) {
+    try (Reader reader = format.openReader(path, entityDescriptor)) {
       for (StreamElement e : reader) {
         data.add(e);
       }
@@ -145,10 +148,11 @@ public abstract class AbstractFileFormatTest {
     return data;
   }
 
-  protected void assertWriteAndReadElements(FileFormat format, List<StreamElement> elements)
+  protected void assertWriteAndReadElements(
+      FileFormat format, EntityDescriptor entityDescriptor, List<StreamElement> elements)
       throws IOException {
-    writeElements(file, format, elements);
-    List<StreamElement> read = readElements(file, format);
+    writeElements(file, format, entityDescriptor, elements);
+    List<StreamElement> read = readElements(file, format, entityDescriptor);
     assertTrue(elements.containsAll(read));
     assertEquals(elements.size(), read.size());
     Map<String, StreamElement> elementsByUuid =

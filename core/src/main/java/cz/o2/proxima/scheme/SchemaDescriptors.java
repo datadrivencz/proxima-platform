@@ -15,6 +15,8 @@
  */
 package cz.o2.proxima.scheme;
 
+import com.google.common.base.MoreObjects;
+import com.google.common.base.MoreObjects.ToStringHelper;
 import com.google.common.base.Preconditions;
 import java.io.Serializable;
 import java.util.Arrays;
@@ -152,22 +154,25 @@ public class SchemaDescriptors {
    * @return Structure type descriptor
    */
   public static <T> StructureTypeDescriptor<T> structures(String name) {
-    return structures(name, Collections.emptyMap(), null);
+    return structures(name, Collections.emptyMap(), null, null);
   }
 
   public static <T> StructureTypeDescriptor<T> structures(
       String name, Map<String, TypeDescriptor<?>> fields) {
-    return structures(name, fields, null);
+    return structures(name, fields, null, null);
   }
 
   public static <T> StructureTypeDescriptor<T> structures(
-      String name, Map<String, TypeDescriptor<?>> fields, @Nullable FieldReader<T> fieldReader) {
+      String name,
+      Map<String, TypeDescriptor<?>> fields,
+      @Nullable FieldReader<T> fieldReader,
+      @Nullable ValueBuilder<T> valueBuilder) {
     final Map<String, SchemaTypeDescriptor<?>> cast =
         fields
             .entrySet()
             .stream()
             .collect(Collectors.toMap(Entry::getKey, v -> v.getValue().toTypeDescriptor()));
-    return new StructureTypeDescriptor<>(name, cast, fieldReader);
+    return new StructureTypeDescriptor<>(name, cast, fieldReader, valueBuilder);
   }
 
   /**
@@ -190,67 +195,6 @@ public class SchemaDescriptors {
      * @return schema type descriptor
      */
     SchemaTypeDescriptor<T> toTypeDescriptor();
-  }
-
-  public interface AttributeValue<T> {
-
-    AttributeValueType getType();
-
-    T getValue();
-  }
-
-  private static class GenericValue<T> implements AttributeValue<T> {
-
-    @Getter private final AttributeValueType type;
-    @Getter private final T value;
-
-    public GenericValue(AttributeValueType type, T value) {
-      this.type = type;
-      this.value = value;
-    }
-
-    public StructureValue<T> asStructureValue() {
-      Preconditions.checkState(
-          type.equals(AttributeValueType.STRUCTURE),
-          "Cannot convert value as Structure type. Give {} type.");
-      return (StructureValue<T>) this;
-    }
-  }
-
-  public static class PrimitiveValue<T, V> extends GenericValue<T> {
-
-    public PrimitiveValue(AttributeValueType type, T value) {
-      super(type, value);
-    }
-
-    public T createFrom(V from) {
-      return null;
-    }
-
-    public V valueOf(T of) {
-      return null;
-    }
-  }
-
-  public static class StructureValue<T> extends GenericValue<T> {
-
-    public StructureValue(T value) {
-      super(AttributeValueType.STRUCTURE, value);
-    }
-  }
-
-  public static class ArrayValue<T> extends GenericValue<T> {
-
-    public ArrayValue(T value) {
-      super(AttributeValueType.ARRAY, value);
-    }
-  }
-
-  public static class EnumValue<T> extends GenericValue<T> {
-
-    public EnumValue(T value) {
-      super(AttributeValueType.ENUM, value);
-    }
   }
 
   /**
@@ -285,6 +229,18 @@ public class SchemaDescriptors {
     public int hashCode() {
       return Objects.hash(type);
     }
+  }
+
+  public interface ValueBuilder<T> extends Serializable {
+
+    <V> ValueBuilder<T> setField(String name, V value);
+
+    T build();
+  }
+
+  public interface FieldReader<T> extends Serializable {
+
+    <V> V readField(String field, SchemaTypeDescriptor<V> fieldDescriptor, T value);
   }
 
   /**
@@ -392,6 +348,21 @@ public class SchemaDescriptors {
     public int hashCode() {
       return super.hashCode();
     }
+
+    @Override
+    public String toString() {
+      ToStringHelper builder = MoreObjects.toStringHelper(this).add("type", getType());
+      if (isStructureType()) {
+        builder.add("structure", getStructureTypeDescriptor());
+      } else if (isArrayType()) {
+        builder.add("array", getArrayTypeDescriptor());
+      } else if (isEnumType()) {
+        builder.add("enum", getEnumTypeDescriptor());
+      } else {
+        builder.add("primitive", getPrimitiveTypeDescriptor());
+      }
+      return builder.toString();
+    }
   }
 
   /**
@@ -413,10 +384,6 @@ public class SchemaDescriptors {
           .build();
     }
 
-    public T readValue(T value) {
-      return value;
-    }
-
     @Override
     public boolean equals(Object o) {
       return super.equals(o);
@@ -425,6 +392,11 @@ public class SchemaDescriptors {
     @Override
     public int hashCode() {
       return Objects.hashCode(type.name());
+    }
+
+    @Override
+    public String toString() {
+      return MoreObjects.toStringHelper(this).add("type", getType()).toString();
     }
   }
 
@@ -472,11 +444,11 @@ public class SchemaDescriptors {
     public int hashCode() {
       return 31 + valueDescriptor.hashCode();
     }
-  }
 
-  public interface FieldReader<T> extends Serializable {
-
-    <V> V readField(String field, TypeDescriptor<V> fieldDescriptor, T value);
+    @Override
+    public String toString() {
+      return MoreObjects.toStringHelper(this).add("valueType", getValueDescriptor()).toString();
+    }
   }
 
   /**
@@ -489,15 +461,18 @@ public class SchemaDescriptors {
     @Getter final String name;
     @Getter private final Map<String, TypeDescriptor<?>> fields = new HashMap<>();
     @Nullable private final FieldReader<T> fieldReader;
+    @Nullable private final ValueBuilder<T> valueBuilder;
 
     private StructureTypeDescriptor(
         String name,
         Map<String, SchemaTypeDescriptor<?>> fields,
-        @Nullable FieldReader<T> fieldReader) {
+        @Nullable FieldReader<T> fieldReader,
+        @Nullable ValueBuilder<T> valueBuilder) {
       super(AttributeValueType.STRUCTURE);
       this.name = name;
       fields.forEach(this::addField);
       this.fieldReader = fieldReader;
+      this.valueBuilder = valueBuilder;
     }
 
     /**
@@ -533,11 +508,18 @@ public class SchemaDescriptors {
           .toTypeDescriptor();
     }
 
-    public <V> V readField(String field, TypeDescriptor<V> fieldDescriptor, T value) {
+    public <V> V readField(String field, SchemaTypeDescriptor<V> fieldDescriptor, T value) {
       if (fieldReader == null) {
         throw new UnsupportedOperationException("Field reader is not set.");
       }
       return fieldReader.readField(field, fieldDescriptor, value);
+    }
+
+    public ValueBuilder<T> getValueBuilder() {
+      if (valueBuilder == null) {
+        throw new UnsupportedOperationException("ValueBuild is not set.");
+      }
+      return valueBuilder;
     }
 
     @Override
@@ -559,7 +541,6 @@ public class SchemaDescriptors {
       if (!super.equals(o)) {
         return false;
       }
-      @SuppressWarnings("unchecked")
       StructureTypeDescriptor<?> that = (StructureTypeDescriptor<?>) o;
       return name.equals(that.name) && fields.equals(that.fields);
     }
@@ -567,6 +548,11 @@ public class SchemaDescriptors {
     @Override
     public int hashCode() {
       return Objects.hash(super.hashCode(), name, fields);
+    }
+
+    @Override
+    public String toString() {
+      return MoreObjects.toStringHelper(this).add("fields", fields).toString();
     }
   }
 

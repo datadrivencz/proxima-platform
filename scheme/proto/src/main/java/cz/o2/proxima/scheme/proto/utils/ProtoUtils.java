@@ -15,57 +15,62 @@
  */
 package cz.o2.proxima.scheme.proto.utils;
 
+import com.google.common.base.Preconditions;
+import com.google.protobuf.ByteString;
 import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.Descriptors.EnumValueDescriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor;
+import com.google.protobuf.Descriptors.FieldDescriptor.JavaType;
 import com.google.protobuf.Message;
+import com.google.protobuf.Message.Builder;
 import cz.o2.proxima.scheme.SchemaDescriptors;
 import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.StructureTypeDescriptor;
+import cz.o2.proxima.scheme.SchemaDescriptors.ValueBuilder;
 import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
+import javax.annotation.Nullable;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 public class ProtoUtils {
 
-  private static Map<String, SchemaTypeDescriptor<?>> structCache = new ConcurrentHashMap<>();
+  private static final Map<String, SchemaTypeDescriptor<?>> structCache = new ConcurrentHashMap<>();
 
   private ProtoUtils() {
     // no-op
   }
 
-  private static class ProtoFieldReader<T extends Message>
-      implements SchemaDescriptors.FieldReader<T> {
-
-    private final Descriptor protoDescriptor;
-
-    private ProtoFieldReader(Descriptor protoDescriptor) {
-      this.protoDescriptor = protoDescriptor;
-    }
-
-    @Override
-    public <V> V readField(
-        String field, SchemaDescriptors.TypeDescriptor<V> fieldDescriptor, T value) {
-      final FieldDescriptor protoFieldDescriptor = protoDescriptor.findFieldByName(field);
-      @SuppressWarnings("unchecked")
-      final V result = (V) value.getField(protoFieldDescriptor);
-      return result;
-    }
-  }
-
-  public static <T extends Message> SchemaTypeDescriptor<T> convertProtoToSchema(Descriptor proto) {
+  public static <T extends Message> SchemaTypeDescriptor<T> convertProtoToSchema(
+      Descriptor proto, @Nullable Builder builder) {
     StructureTypeDescriptor<T> schema =
         SchemaDescriptors.structures(
-            proto.getName(), Collections.emptyMap(), new ProtoFieldReader<>(proto));
-    proto.getFields().forEach(f -> schema.addField(f.getName(), convertField(f)));
+            proto.getName(),
+            Collections.emptyMap(),
+            new ProtoFieldReader<>(),
+            new ProtoValueBuilder<>(builder));
+    proto
+        .getFields()
+        .forEach(
+            field -> {
+              Builder fieldBuilder = null;
+              if (builder != null) {
+                if (field.getJavaType().equals(JavaType.MESSAGE) && !field.isRepeated()) {
+                  fieldBuilder = builder.getFieldBuilder(field);
+                } else if (field.isRepeated()) {
+                  // throw new UnsupportedOperationException("FIXME - builder");
+                }
+              }
+              schema.addField(field.getName(), convertField(field, fieldBuilder));
+            });
     return schema.toTypeDescriptor();
   }
 
   @SuppressWarnings("unchecked")
-  protected static <T> SchemaTypeDescriptor<T> convertField(FieldDescriptor proto) {
+  protected static <T> SchemaTypeDescriptor<T> convertField(
+      FieldDescriptor proto, Builder builder) {
     SchemaTypeDescriptor<T> descriptor;
 
     switch (proto.getJavaType()) {
@@ -105,7 +110,7 @@ public class ProtoUtils {
       case MESSAGE:
         final String messageTypeName = proto.getMessageType().toProto().getName();
         structCache.computeIfAbsent(
-            messageTypeName, name -> convertProtoToSchema(proto.getMessageType()));
+            messageTypeName, name -> convertProtoToSchema(proto.getMessageType(), builder));
         descriptor = (SchemaTypeDescriptor<T>) structCache.get(messageTypeName).toTypeDescriptor();
 
         break;
@@ -118,6 +123,55 @@ public class ProtoUtils {
       return SchemaDescriptors.arrays(descriptor).toTypeDescriptor();
     } else {
       return descriptor;
+    }
+  }
+
+  public static class ProtoValueBuilder<T extends Message> implements ValueBuilder<T> {
+
+    private final Builder delegate;
+
+    public ProtoValueBuilder(Builder delegate) {
+      this.delegate = delegate;
+    }
+
+    @Override
+    public <V> ValueBuilder<T> setField(String name, V value) {
+      final FieldDescriptor protoFieldDescriptor =
+          delegate.getDescriptorForType().findFieldByName(name);
+      delegate.setField(protoFieldDescriptor, value);
+      return this;
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public T build() {
+      return (T) delegate.build();
+    }
+  }
+
+  private static class ProtoFieldReader<T extends Message>
+      implements SchemaDescriptors.FieldReader<T> {
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public <V> V readField(
+        String field, SchemaDescriptors.SchemaTypeDescriptor<V> fieldDescriptor, T value) {
+      final FieldDescriptor protoFieldDescriptor =
+          value.getDescriptorForType().findFieldByName(field);
+      Preconditions.checkNotNull(
+          protoFieldDescriptor,
+          "Field {} not exists in {}",
+          field,
+          value.getDescriptorForType().getName());
+      if (protoFieldDescriptor.getJavaType().equals(JavaType.BYTE_STRING)) {
+        // ByteString is an special case and needs to be handled as ByteString
+        return (V) ((ByteString) value.getField(protoFieldDescriptor)).toByteArray();
+      } else if (protoFieldDescriptor.getJavaType().equals(JavaType.ENUM)) {
+        // Enums is encoded as String
+        return (V) (((EnumValueDescriptor) value.getField(protoFieldDescriptor)).getName());
+      } else {
+        return (V) value.getField(protoFieldDescriptor);
+      }
     }
   }
 }

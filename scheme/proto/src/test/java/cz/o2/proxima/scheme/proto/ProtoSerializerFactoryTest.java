@@ -20,7 +20,6 @@ import static org.junit.Assert.assertTrue;
 
 import com.google.protobuf.ByteString;
 import cz.o2.proxima.scheme.AttributeValueType;
-import cz.o2.proxima.scheme.SchemaDescriptors;
 import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
 import cz.o2.proxima.scheme.ValueSerializer;
 import cz.o2.proxima.scheme.ValueSerializerFactory;
@@ -84,24 +83,6 @@ public class ProtoSerializerFactoryTest {
   public void testGetSchemaDescriptor() {
     SchemaTypeDescriptor<Event> descriptor = serializer.getValueSchemaDescriptor();
     assertEquals(AttributeValueType.STRUCTURE, descriptor.getType());
-
-    final Event event =
-        Event.newBuilder()
-            .setGatewayId("test-id")
-            .setPayload(ByteString.copyFromUtf8("test-payload"))
-            .build();
-
-    final SchemaDescriptors.StructureTypeDescriptor<Event> structureDescriptor =
-        descriptor.getStructureTypeDescriptor();
-    @SuppressWarnings("unchecked")
-    final SchemaDescriptors.PrimitiveTypeDescriptor<String> gatewayDescriptor =
-        (SchemaDescriptors.PrimitiveTypeDescriptor<String>)
-            structureDescriptor.getField("gatewayId").getPrimitiveTypeDescriptor();
-    @SuppressWarnings("unchecked")
-    final SchemaDescriptors.ArrayTypeDescriptor<Byte> payloadDescriptor =
-        (SchemaDescriptors.ArrayTypeDescriptor<Byte>)
-            structureDescriptor.getField("payload").getArrayTypeDescriptor();
-
-    assertEquals("test-id", structureDescriptor.readField("gatewayId", gatewayDescriptor, event));
+    assertEquals(2, descriptor.getStructureTypeDescriptor().getFields().size());
   }
 }
