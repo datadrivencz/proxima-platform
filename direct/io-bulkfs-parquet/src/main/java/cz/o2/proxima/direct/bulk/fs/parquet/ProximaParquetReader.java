@@ -163,6 +163,9 @@ public class ProximaParquetReader implements Reader {
                     @Override
                     public Converter convertPrimitiveType(
                         List<GroupType> path, PrimitiveType primitiveType) {
+                      if (path.size() > 1) {
+                        log.info("Tadaaa");
+                      }
                       return new PrimitiveConverter() {
                         @Override
                         public void addBinary(Binary value) {
@@ -214,18 +217,31 @@ public class ProximaParquetReader implements Reader {
                     public Converter convertGroupType(
                         List<GroupType> path, GroupType groupType, List<Converter> converters) {
                       log.info("convertGroupType called {} {}", path, converters);
+                      if (path != null) {
+                        log.info("XXX");
+                      }
+                      record.put(groupType.getName(), new HashMap<String, Object>());
+                      if (groupType.isPrimitive()) {
+                        converters.forEach(
+                            c -> {
+                              Converter x = c;
+                            });
+                      }
                       return new GroupConverter() {
+
+                        private String name;
 
                         public Converter getConverter(int fieldIndex) {
                           return converters.get(fieldIndex);
                         }
 
                         public void start() {
-                          // current = "start()";
+                          name = groupType.getName();
                         }
 
                         public void end() {
                           // current = "end()";
+                          log.info("Called end.");
                         }
                       };
                     }
@@ -252,6 +268,8 @@ public class ProximaParquetReader implements Reader {
       Optional<AttributeDescriptor<Object>> attribute = entity.findAttribute(attributeName);
       if (!attribute.isPresent()) {
         // current attribute is not in entity -> skip
+        log.info(
+            "Skipping attribute [{}] which is not in current attribute family.", attributeName);
         return null;
       }
       final String uuid =

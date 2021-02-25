@@ -38,7 +38,9 @@ import org.apache.parquet.io.OutputFile;
 import org.apache.parquet.io.PositionOutputStream;
 import org.apache.parquet.io.api.Binary;
 import org.apache.parquet.io.api.RecordConsumer;
+import org.apache.parquet.schema.GroupType;
 import org.apache.parquet.schema.MessageType;
+import org.apache.parquet.schema.Type;
 
 @Slf4j
 public class ProximaParquetWriter implements Writer {
@@ -144,7 +146,7 @@ public class ProximaParquetWriter implements Writer {
 
     public void write(StreamElement element) {
       recordConsumer.startMessage();
-      writeStreamElementHeader(element);
+      writeStreamElementHeader(element, parquetSchema);
       if (element.getValue() != null && element.getValue().length > 0) {
         writeAttribute(element);
       }
@@ -152,7 +154,7 @@ public class ProximaParquetWriter implements Writer {
     }
 
     private void writeAttribute(StreamElement element) {
-      log.trace("Writing stream element {}", element);
+      log.debug("Writing stream element {}", element);
       String attribute =
           attributeNamesPrefix + element.getAttributeDescriptor().toAttributePrefix(false);
       SchemaTypeDescriptor<?> attributeSchema =
@@ -161,24 +163,43 @@ public class ProximaParquetWriter implements Writer {
               name ->
                   element.getAttributeDescriptor().getValueSerializer().getValueSchemaDescriptor());
       log.debug("Writing attribute {}", attribute);
-      writeValue(attribute, attributeSchema, Optionals.get(element.getParsed()));
+      writeValue(attribute, attributeSchema, Optionals.get(element.getParsed()), parquetSchema);
     }
 
-    private <T> void writeValue(String name, SchemaTypeDescriptor<T> schema, T value) {
+    private <T> void writeValue(
+        String name, SchemaTypeDescriptor<T> schema, T value, GroupType currentParquetSchema) {
       log.debug("Writing field [{}] with schema [{}].", name, schema);
-      writeStartField(name);
+      writeStartField(name, currentParquetSchema);
       switch (schema.getType()) {
         case STRUCTURE:
           recordConsumer.startGroup();
           final SchemaDescriptors.StructureTypeDescriptor<T> structureDescriptor =
               schema.getStructureTypeDescriptor();
+          Type innerSchema =
+              currentParquetSchema
+                  .getFields()
+                  .stream()
+                  .filter(attr -> attr.getName().equals(name))
+                  .findFirst()
+                  .orElseThrow(
+                      () ->
+                          new IllegalStateException(
+                              String.format(
+                                  "Unable to find attribute [%s] in parquet schema [%s].",
+                                  name, currentParquetSchema)));
+          log.info("inner");
           structureDescriptor
               .getFields()
               .forEach(
                   (field, type) -> {
-                    @SuppressWarnings({"unchecked", "rawtypes "})
-                    final SchemaTypeDescriptor<Object> cast = (SchemaTypeDescriptor) type;
-                    writeValue(field, cast, structureDescriptor.readField(field, cast, value));
+                    @SuppressWarnings("unchecked")
+                    SchemaTypeDescriptor<Object> cast =
+                        (SchemaTypeDescriptor<Object>) type.toTypeDescriptor();
+                    writeValue(
+                        field,
+                        cast,
+                        structureDescriptor.readField(field, cast, value),
+                        innerSchema.asGroupType());
                   });
           recordConsumer.endGroup();
           break;
@@ -191,53 +212,58 @@ public class ProximaParquetWriter implements Writer {
             // Array of bytes should be encoded just as binary
             recordConsumer.addBinary(Binary.fromReusedByteArray((byte[]) value));
           } else {
-            throw new UnsupportedOperationException("Not implemented");
+            throw new UnsupportedOperationException("Not implemented for now.");
           }
           break;
         case BYTE:
-          recordConsumer.addBinary(Binary.fromConstantByteArray(new byte[] {(byte) value}));
+          recordConsumer.addBinary(Binary.fromConstantByteArray(new byte[] {(Byte) value}));
+          break;
         case STRING:
-          recordConsumer.addBinary(Binary.fromString(((String) value)));
         case ENUM:
-          throw new UnsupportedOperationException("Not implemented.");
+          recordConsumer.addBinary(Binary.fromString((String) value));
+          break;
         case LONG:
-          recordConsumer.addLong((long) value);
+          recordConsumer.addLong((Long) value);
           break;
         case INT:
-          recordConsumer.addInteger((int) value);
+          recordConsumer.addInteger((Integer) value);
           break;
         case DOUBLE:
-          recordConsumer.addDouble((double) value);
+          recordConsumer.addDouble((Double) value);
           break;
         case FLOAT:
-          recordConsumer.addFloat((float) value);
+          recordConsumer.addFloat((Float) value);
           break;
         case BOOLEAN:
-          recordConsumer.addBoolean((boolean) value);
+          recordConsumer.addBoolean((Boolean) value);
           break;
+        default:
+          throw new IllegalArgumentException("Unable to write unknown type " + schema.getType());
       }
-      writeEndField(name);
+      writeEndField(name, currentParquetSchema);
     }
 
-    private void writeStartField(String name) {
-      recordConsumer.startField(name, parquetSchema.getFieldIndex(name));
+    private void writeStartField(String name, GroupType schema) {
+      log.info("writing start field {} of schema {}", name, schema);
+      recordConsumer.startField(name, schema.getFieldIndex(name));
     }
 
-    private void writeEndField(String name) {
-      recordConsumer.endField(name, parquetSchema.getFieldIndex(name));
+    private void writeEndField(String name, GroupType schema) {
+      log.info("writing end field {} of schema {}", name, schema);
+      recordConsumer.endField(name, schema.getFieldIndex(name));
     }
 
-    private void writeStreamElementHeader(StreamElement element) {
-      writeStartField(ParquetFileFormat.PARQUET_COLUMN_NAME_KEY);
+    private void writeStreamElementHeader(StreamElement element, GroupType schema) {
+      writeStartField(ParquetFileFormat.PARQUET_COLUMN_NAME_KEY, schema);
       recordConsumer.addBinary(Binary.fromString(element.getKey()));
-      writeEndField(ParquetFileFormat.PARQUET_COLUMN_NAME_KEY);
-      writeStartField(ParquetFileFormat.PARQUET_COLUMN_NAME_UUID);
+      writeEndField(ParquetFileFormat.PARQUET_COLUMN_NAME_KEY, schema);
+      writeStartField(ParquetFileFormat.PARQUET_COLUMN_NAME_UUID, schema);
       recordConsumer.addBinary(Binary.fromString(element.getUuid()));
-      writeEndField(ParquetFileFormat.PARQUET_COLUMN_NAME_UUID);
-      writeStartField(ParquetFileFormat.PARQUET_COLUMN_NAME_TIMESTAMP);
+      writeEndField(ParquetFileFormat.PARQUET_COLUMN_NAME_UUID, schema);
+      writeStartField(ParquetFileFormat.PARQUET_COLUMN_NAME_TIMESTAMP, schema);
       recordConsumer.addLong(element.getStamp());
-      writeEndField(ParquetFileFormat.PARQUET_COLUMN_NAME_TIMESTAMP);
-      writeStartField(ParquetFileFormat.PARQUET_COLUMN_NAME_OPERATION);
+      writeEndField(ParquetFileFormat.PARQUET_COLUMN_NAME_TIMESTAMP, schema);
+      writeStartField(ParquetFileFormat.PARQUET_COLUMN_NAME_OPERATION, schema);
       if (element.isDeleteWildcard()) {
         recordConsumer.addBinary(Binary.fromString(OPERATION.DELETE_WILDCARD.getValue()));
       } else if (element.isDelete()) {
@@ -245,14 +271,14 @@ public class ProximaParquetWriter implements Writer {
       } else {
         recordConsumer.addBinary(Binary.fromString(OPERATION.UPSERT.getValue()));
       }
-      writeEndField(ParquetFileFormat.PARQUET_COLUMN_NAME_OPERATION);
-      writeStartField(ParquetFileFormat.PARQUET_COLUMN_NAME_ATTRIBUTE);
+      writeEndField(ParquetFileFormat.PARQUET_COLUMN_NAME_OPERATION, schema);
+      writeStartField(ParquetFileFormat.PARQUET_COLUMN_NAME_ATTRIBUTE, schema);
       recordConsumer.addBinary(Binary.fromString(element.getAttribute()));
-      writeEndField(ParquetFileFormat.PARQUET_COLUMN_NAME_ATTRIBUTE);
-      writeStartField(ParquetFileFormat.PARQUET_COLUMN_NAME_ATTRIBUTE_PREFIX);
+      writeEndField(ParquetFileFormat.PARQUET_COLUMN_NAME_ATTRIBUTE, schema);
+      writeStartField(ParquetFileFormat.PARQUET_COLUMN_NAME_ATTRIBUTE_PREFIX, schema);
       recordConsumer.addBinary(
           Binary.fromString(element.getAttributeDescriptor().toAttributePrefix()));
-      writeEndField(ParquetFileFormat.PARQUET_COLUMN_NAME_ATTRIBUTE_PREFIX);
+      writeEndField(ParquetFileFormat.PARQUET_COLUMN_NAME_ATTRIBUTE_PREFIX, schema);
     }
   }
 
