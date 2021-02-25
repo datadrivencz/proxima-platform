@@ -139,18 +139,23 @@ public class SchemaDescriptors {
    * Create {@link ArrayTypeDescriptor}.
    *
    * @param descriptor primitive type
-   * @param <T> value type
+   * @param <T>        value type
    * @return Array type descriptor
    */
   public static <T> ArrayTypeDescriptor<T> arrays(TypeDescriptor<T> descriptor) {
-    return new ArrayTypeDescriptor<>(descriptor.toTypeDescriptor());
+    return arrays(descriptor, null);
+  }
+
+  public static <T> ArrayTypeDescriptor<T> arrays(TypeDescriptor<T> descriptor,
+      @Nullable ArrayValueReader<T> reader) {
+    return new ArrayTypeDescriptor<>(descriptor.toTypeDescriptor(), reader);
   }
 
   /**
    * Create {@link StructureTypeDescriptor} with name
    *
    * @param name structure name
-   * @param <T> structure type
+   * @param <T>  structure type
    * @return Structure type descriptor
    */
   public static <T> StructureTypeDescriptor<T> structures(String name) {
@@ -243,6 +248,11 @@ public class SchemaDescriptors {
     <V> V readField(String field, SchemaTypeDescriptor<V> fieldDescriptor, T value);
   }
 
+  public interface ArrayValueReader<T> extends Serializable {
+
+    <V> List<T> getValues(T value, SchemaTypeDescriptor<V> valueDescriptor);
+  }
+
   /**
    * SchemaTypeDescriptor wrapper
    *
@@ -250,7 +260,8 @@ public class SchemaDescriptors {
    */
   public static class SchemaTypeDescriptor<T> implements TypeDescriptor<T> {
 
-    @Getter final AttributeValueType type;
+    @Getter
+    final AttributeValueType type;
 
     final @Nullable PrimitiveTypeDescriptor<T> primitiveTypeDescriptor;
     final @Nullable ArrayTypeDescriptor<T> arrayTypeDescriptor;
@@ -407,11 +418,16 @@ public class SchemaDescriptors {
    */
   public static class ArrayTypeDescriptor<T> extends GenericTypeDescriptor<T> {
 
-    @Getter final SchemaTypeDescriptor<T> valueDescriptor;
+    @Getter
+    final SchemaTypeDescriptor<T> valueDescriptor;
+    @Nullable
+    final ArrayValueReader<T> valueReader;
 
-    public ArrayTypeDescriptor(SchemaTypeDescriptor<T> valueDescriptor) {
+    public ArrayTypeDescriptor(SchemaTypeDescriptor<T> valueDescriptor,
+        ArrayValueReader<T> valueReader) {
       super(AttributeValueType.ARRAY);
       this.valueDescriptor = valueDescriptor;
+      this.valueReader = valueReader;
     }
 
     /**
@@ -448,6 +464,14 @@ public class SchemaDescriptors {
     @Override
     public String toString() {
       return MoreObjects.toStringHelper(this).add("valueType", getValueDescriptor()).toString();
+    }
+
+    //public <V> V readField(String field, SchemaTypeDescriptor<V> fieldDescriptor, T value) {
+    public <V> List<T> readValues(T value, SchemaTypeDescriptor<V> valueDescriptor) {
+      if (valueReader == null) {
+        throw new UnsupportedOperationException("Array value reader is not set.");
+      }
+      return valueReader.getValues(value, valueDescriptor);
     }
   }
 

@@ -24,10 +24,12 @@ import com.google.protobuf.Descriptors.FieldDescriptor.JavaType;
 import com.google.protobuf.Message;
 import com.google.protobuf.Message.Builder;
 import cz.o2.proxima.scheme.SchemaDescriptors;
+import cz.o2.proxima.scheme.SchemaDescriptors.ArrayValueReader;
 import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.StructureTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.ValueBuilder;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -120,7 +122,7 @@ public class ProtoUtils {
     }
 
     if (proto.isRepeated()) {
-      return SchemaDescriptors.arrays(descriptor).toTypeDescriptor();
+      return SchemaDescriptors.arrays(descriptor, new ProtoArrayValueReader<T>()).toTypeDescriptor();
     } else {
       return descriptor;
     }
@@ -172,6 +174,15 @@ public class ProtoUtils {
       } else {
         return (V) value.getField(protoFieldDescriptor);
       }
+    }
+  }
+
+  private static class ProtoArrayValueReader<T> implements ArrayValueReader<T> {
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public <V> List<T> getValues(T value, SchemaTypeDescriptor<V> valueDescriptor) {
+      return (List<T>) value;
     }
   }
 }
