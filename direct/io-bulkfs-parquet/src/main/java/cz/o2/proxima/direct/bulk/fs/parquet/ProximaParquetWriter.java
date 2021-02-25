@@ -187,7 +187,6 @@ public class ProximaParquetWriter implements Writer {
                               String.format(
                                   "Unable to find attribute [%s] in parquet schema [%s].",
                                   name, currentParquetSchema)));
-          log.info("inner");
           structureDescriptor
               .getFields()
               .forEach(
@@ -244,12 +243,12 @@ public class ProximaParquetWriter implements Writer {
     }
 
     private void writeStartField(String name, GroupType schema) {
-      log.info("writing start field {} of schema {}", name, schema);
+      log.debug("writing start field {} of schema {}", name, schema);
       recordConsumer.startField(name, schema.getFieldIndex(name));
     }
 
     private void writeEndField(String name, GroupType schema) {
-      log.info("writing end field {} of schema {}", name, schema);
+      log.debug("writing end field {} of schema {}", name, schema);
       recordConsumer.endField(name, schema.getFieldIndex(name));
     }
 
