@@ -92,7 +92,7 @@
         <module>io-pubsub</module>
         <module>io-s3</module>
         <module>rpc</module>
-        <module>io-bulk-parquet-fs</module>
+        <module>io-bulkfs-parquet</module>
       </modules>
     </profile>
 
@@ -117,7 +117,7 @@
         <module>io-pubsub</module>
         <module>io-s3</module>
         <module>rpc</module>
-        <module>io-bulk-parquet-fs</module>
+        <module>io-bulkfs-parquet</module>
       </modules>
     </profile>
   </profiles>
