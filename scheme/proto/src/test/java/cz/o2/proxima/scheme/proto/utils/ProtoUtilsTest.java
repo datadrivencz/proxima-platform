@@ -104,54 +104,56 @@ public class ProtoUtilsTest {
 
   @Test
   public void testReadValuesFromComplexObject() {
-    final StructureTypeDescriptor<Message> scheme = ProtoUtils
-        .convertProtoToSchema(ValueSchemeMessage.getDescriptor(), ValueSchemeMessage.newBuilder())
-        .getStructureTypeDescriptor();
+    final StructureTypeDescriptor<Message> scheme =
+        ProtoUtils.convertProtoToSchema(
+                ValueSchemeMessage.getDescriptor(), ValueSchemeMessage.newBuilder())
+            .getStructureTypeDescriptor();
 
-    final ValueSchemeMessage value = ValueSchemeMessage.newBuilder()
-        .addRepeatedString("repeated_string_1")
-        .addRepeatedString("repeated_string_2")
-        .addRepeatedInnerMessage(InnerMessage.newBuilder()
-            .addRepeatedInnerString("inner_repeated_string_1")
-            .addRepeatedInnerString("inner_repeated_string_2")
-            .setInnerEnum(Directions.LEFT)
-            .setInnerDoubleType(100.0)
-            .setInnerInnerMessage(SecondInnerMessage.newBuilder()
-                .setInnerFloatType(333.33F)
-                .buildPartial())
-            .build())
-        .setInnerMessage(InnerMessage.newBuilder()
-            .addRepeatedInnerString("inner_repeated_string_A")
-            .addRepeatedInnerString("inner_repeated_string_B")
-            .setInnerEnum(Directions.RIGHT)
-            .setInnerDoubleType(200.0)
-            .setInnerInnerMessage(SecondInnerMessage.newBuilder()
-                .setInnerFloatType(666.66F)
-                .buildPartial())
-            .build())
-        .setStringType("string_value")
-        .setBooleanType(true)
-        .setLongType(55)
-        .setIntType(69)
-        .build();
+    final ValueSchemeMessage value =
+        ValueSchemeMessage.newBuilder()
+            .addRepeatedString("repeated_string_1")
+            .addRepeatedString("repeated_string_2")
+            .addRepeatedInnerMessage(
+                InnerMessage.newBuilder()
+                    .addRepeatedInnerString("inner_repeated_string_1")
+                    .addRepeatedInnerString("inner_repeated_string_2")
+                    .setInnerEnum(Directions.LEFT)
+                    .setInnerDoubleType(100.0)
+                    .setInnerInnerMessage(
+                        SecondInnerMessage.newBuilder().setInnerFloatType(333.33F).buildPartial())
+                    .build())
+            .setInnerMessage(
+                InnerMessage.newBuilder()
+                    .addRepeatedInnerString("inner_repeated_string_A")
+                    .addRepeatedInnerString("inner_repeated_string_B")
+                    .setInnerEnum(Directions.RIGHT)
+                    .setInnerDoubleType(200.0)
+                    .setInnerInnerMessage(
+                        SecondInnerMessage.newBuilder().setInnerFloatType(666.66F).buildPartial())
+                    .build())
+            .setStringType("string_value")
+            .setBooleanType(true)
+            .setLongType(55)
+            .setIntType(69)
+            .build();
 
-    Object repeated = scheme
-        .readField("repeated_string", scheme.getField("repeated_string"), value);
+    Object repeated =
+        scheme.readField("repeated_string", scheme.getField("repeated_string"), value);
 
-    ArrayTypeDescriptor<Object> valueDescriptor = (ArrayTypeDescriptor<Object>) scheme
-        .getField("repeated_string")
-        .getArrayTypeDescriptor();
-    List<Object> values = valueDescriptor
-        .readValues(repeated, valueDescriptor.getValueDescriptor());
+    ArrayTypeDescriptor<Object> valueDescriptor =
+        (ArrayTypeDescriptor<Object>) scheme.getField("repeated_string").getArrayTypeDescriptor();
+    List<Object> values =
+        valueDescriptor.readValues(repeated, valueDescriptor.getValueDescriptor());
 
     assertEquals(Arrays.asList("repeated_string_1", "repeated_string_2"), values);
 
-    assertEquals("string_value",
-        scheme.readField("string_type", scheme.getField("string_type"), value));
+    assertEquals(
+        "string_value", scheme.readField("string_type", scheme.getField("string_type"), value));
     assertEquals(true, scheme.readField("boolean_type", scheme.getField("boolean_type"), value));
     assertEquals(55L, scheme.readField("long_type", scheme.getField("long_type"), value));
     assertEquals(69, scheme.readField("int_type", scheme.getField("int_type"), value));
-//    assertEquals(Arrays.asList("repeated_string_1", "repeated_string_2").toArray(new String[0]), scheme.readField("repeated_string", s));
+    //    assertEquals(Arrays.asList("repeated_string_1", "repeated_string_2").toArray(new
+    // String[0]), scheme.readField("repeated_string", s));
 
   }
 

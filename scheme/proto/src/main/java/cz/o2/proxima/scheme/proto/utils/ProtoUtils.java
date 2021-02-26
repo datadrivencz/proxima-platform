@@ -122,7 +122,8 @@ public class ProtoUtils {
     }
 
     if (proto.isRepeated()) {
-      return SchemaDescriptors.arrays(descriptor, new ProtoArrayValueReader<T>()).toTypeDescriptor();
+      return SchemaDescriptors.arrays(descriptor, new ProtoArrayValueReader<T>())
+          .toTypeDescriptor();
     } else {
       return descriptor;
     }
