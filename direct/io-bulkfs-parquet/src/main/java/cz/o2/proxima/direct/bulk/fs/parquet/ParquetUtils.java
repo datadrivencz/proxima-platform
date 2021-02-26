@@ -114,7 +114,7 @@ public class ParquetUtils {
               .as(valueType.getLogicalTypeAnnotation())
               .named(name);
         } else {
-          return Types.repeatedGroup().named(name);
+          return Types.repeatedGroup().named(name).withNewFields(valueType).asGroupType();
         }
       case STRUCTURE:
         GroupBuilder<GroupType> structure = Types.optionalGroup();

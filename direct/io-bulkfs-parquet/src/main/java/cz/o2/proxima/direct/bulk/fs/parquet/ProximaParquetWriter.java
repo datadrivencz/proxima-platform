@@ -28,7 +28,6 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.hadoop.conf.Configuration;
@@ -213,8 +212,8 @@ public class ProximaParquetWriter implements Writer {
             // Array of bytes should be encoded just as binary
             recordConsumer.addBinary(Binary.fromReusedByteArray((byte[]) value));
           } else {
-            ArrayTypeDescriptor<T> arrayTypeDescriptor = schema.toTypeDescriptor()
-                .getArrayTypeDescriptor();
+            ArrayTypeDescriptor<T> arrayTypeDescriptor =
+                schema.toTypeDescriptor().getArrayTypeDescriptor();
             arrayTypeDescriptor.readValues(value, arrayTypeDescriptor.getValueDescriptor());
             throw new UnsupportedOperationException("Not implemented for now.");
           }
