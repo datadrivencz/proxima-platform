@@ -31,6 +31,9 @@ import cz.o2.proxima.repository.ConfigRepository;
 import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.repository.Repository;
 import cz.o2.proxima.scheme.proto.test.Scheme.Event;
+import cz.o2.proxima.scheme.proto.test.Scheme.ValueSchemeMessage;
+import cz.o2.proxima.scheme.proto.test.Scheme.ValueSchemeMessage.Directions;
+import cz.o2.proxima.scheme.proto.test.Scheme.ValueSchemeMessage.InnerMessage;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.util.TestUtils;
 import java.io.File;
@@ -155,8 +158,8 @@ public class ParquetFileFormatTest extends AbstractFileFormatTest {
   @Test
   public void testAttributesNotFromFamilyShouldBeSkipped() throws IOException {
     URL testResource =
-        getClass().getClassLoader().getResource("stored-attribute-not-in-family.parquet.snappy");
-    assertNotNull(testResource);
+        getClass().getClassLoader().getResource("stored-attribute-not-in-family.parquet");
+    assertNotNull("Unable to read test parquet file from resources", testResource);
     File file = new File(testResource.getPath());
     Path path =
         Path.local(
@@ -209,6 +212,49 @@ public class ParquetFileFormatTest extends AbstractFileFormatTest {
             entity, URI.create("test:///"), Collections.singletonList(dataAttribute), getCfg()));
 
     assertWriteAndReadElements(format, event, elements);
+  }
+
+  @Test
+  public void testWriteProtoBufComplexObject() throws IOException {
+    final Repository complexRepo =
+        Repository.ofTest(ConfigFactory.load("test-proto.conf").resolve());
+    final EntityDescriptor event = complexRepo.getEntity("event");
+    final AttributeDescriptor<ValueSchemeMessage> complexAttr = event.getAttribute("complex");
+
+    final FileFormat fileFormat = getFileFormat();
+    fileFormat.setup(
+        TestUtils.createTestFamily(
+            event,
+            URI.create("test:///"),
+            Collections.singletonList(complexAttr),
+            Collections.emptyMap()));
+
+    File file = new File("/tmp/complex.parquet");
+    Path path =
+        Path.local(
+            FileSystem.local(
+                file,
+                NamingConvention.defaultConvention(
+                    Duration.ofHours(1), "prefix", getFileFormat().fileSuffix())),
+            file);
+    try (Writer writer = fileFormat.openWriter(path, entity)) {
+
+      writer.write(
+          StreamElement.upsert(
+              event,
+              complexAttr,
+              UUID.randomUUID().toString(),
+              "key1",
+              complexAttr.getName(),
+              now,
+              ValueSchemeMessage.newBuilder()
+                  .addRepeatedString("repeated_string_value_1")
+                  .addRepeatedString("repeated_string_value_2")
+                  .setInnerMessage(InnerMessage.newBuilder().setInnerEnum(Directions.LEFT).build())
+                  .setIntType(10)
+                  .build()
+                  .toByteArray()));
+    }
   }
 
   @Test
