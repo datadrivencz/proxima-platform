@@ -17,6 +17,7 @@ package cz.o2.proxima.direct.bulk.fs.parquet;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import com.typesafe.config.ConfigFactory;
@@ -25,6 +26,8 @@ import cz.o2.proxima.repository.AttributeFamilyDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.repository.Repository;
 import cz.o2.proxima.scheme.SchemaDescriptors;
+import cz.o2.proxima.scheme.proto.test.Scheme.ValueSchemeMessage;
+import cz.o2.proxima.scheme.proto.utils.ProtoUtils;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -168,6 +171,26 @@ public class ParquetUtilsTest {
   public void testCreateProximaSchemaForStreamElement() {
     assertProximaFieldsInParquetSchema(
         ParquetUtils.createMessageWithFields(Collections.emptyList()), true);
+  }
+
+  @Test
+  public void testConvertComplexProtoBufToParquetSchema() {
+    GroupType parquetSchema =
+        ParquetUtils.mapSchemaTypeToParquet(
+                ProtoUtils.convertProtoToSchema(
+                    ValueSchemeMessage.getDescriptor(), ValueSchemeMessage.newBuilder()),
+                "complex")
+            .asGroupType();
+    log.info("Converted complex schema: {}", parquetSchema);
+    GroupType repeatedInnerMessage =
+        parquetSchema
+            .getFields()
+            .get(parquetSchema.getFieldIndex("repeated_inner_message"))
+            .asGroupType();
+    assertNotNull(repeatedInnerMessage);
+    assertTrue(repeatedInnerMessage.isRepetition(Repetition.REPEATED));
+    assertEquals("repeated_inner_message", repeatedInnerMessage.getName());
+    assertFalse(repeatedInnerMessage.getFields().isEmpty());
   }
 
   private void assertProximaFieldsInParquetSchema(Type type, boolean checkSize) {
