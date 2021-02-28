@@ -168,6 +168,19 @@ public class ProximaParquetWriter implements Writer {
           attribute, attributeSchema, Optionals.get(element.getParsed()), parquetSchema, true);
     }
 
+    private Type getInnerParquetSchemaForAttribute(String name, GroupType schema) {
+      return schema
+          .getFields()
+          .stream()
+          .filter(attr -> attr.getName().equals(name))
+          .findFirst()
+          .orElseThrow(
+              () ->
+                  new IllegalStateException(
+                      String.format(
+                          "Unable to find attribute [%s] in parquet schema [%s].", name, schema)));
+    }
+
     private <T> void writeValue(
         String name,
         SchemaTypeDescriptor<T> schema,
@@ -183,18 +196,7 @@ public class ProximaParquetWriter implements Writer {
           recordConsumer.startGroup();
           final SchemaDescriptors.StructureTypeDescriptor<T> structureDescriptor =
               schema.getStructureTypeDescriptor();
-          final Type innerSchema =
-              currentParquetSchema
-                  .getFields()
-                  .stream()
-                  .filter(attr -> attr.getName().equals(name))
-                  .findFirst()
-                  .orElseThrow(
-                      () ->
-                          new IllegalStateException(
-                              String.format(
-                                  "Unable to find attribute [%s] in parquet schema [%s].",
-                                  name, currentParquetSchema)));
+          final Type innerSchema = getInnerParquetSchemaForAttribute(name, currentParquetSchema);
           structureDescriptor
               .getFields()
               .forEach(
@@ -237,7 +239,18 @@ public class ProximaParquetWriter implements Writer {
           } else {
             List<T> values = schema.getArrayTypeDescriptor().readValues(value, valueDescriptor);
             values.forEach(
-                val -> writeValue(name, valueDescriptor, val, currentParquetSchema, false));
+                val -> {
+                  if (valueDescriptor.isStructureType()) {
+                    writeValue(
+                        name,
+                        valueDescriptor,
+                        val,
+                        getInnerParquetSchemaForAttribute(name, currentParquetSchema).asGroupType(),
+                        true);
+                  } else {
+                    writeValue(name, valueDescriptor, val, currentParquetSchema, false);
+                  }
+                });
           }
           break;
         case BYTE:
