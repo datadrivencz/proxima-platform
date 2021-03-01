@@ -28,12 +28,14 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.parquet.hadoop.ParquetOutputFormat;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 import org.apache.parquet.schema.MessageType;
 
 @Internal
+@Slf4j
 public class ParquetFileFormat implements FileFormat {
 
   public static final String PARQUET_CONFIG_COMPRESSION_KEY_NAME = ParquetOutputFormat.COMPRESSION;
@@ -80,6 +82,11 @@ public class ParquetFileFormat implements FileFormat {
 
   @Override
   public Writer openWriter(Path path, EntityDescriptor entity) throws IOException {
+    log.info(
+        "Opening parquet writer for entity [{}] with path [{}] and schema: {}",
+        entity.getName(),
+        path,
+        getParquetSchema());
     return new ProximaParquetWriter(
         path, getParquetSchema(), attributeNamesPrefix, createWriterConfiguration());
   }
