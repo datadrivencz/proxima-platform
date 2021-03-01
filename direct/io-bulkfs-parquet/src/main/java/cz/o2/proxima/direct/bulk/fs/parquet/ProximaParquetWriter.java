@@ -217,8 +217,6 @@ public class ProximaParquetWriter implements Writer {
                     } else if (type.toTypeDescriptor().isStructureType()
                         && fieldValue.toString().isEmpty()) {
                       isEmptyValue = true;
-                    } else if (type.toTypeDescriptor().isPrimitiveType()) {
-                      isEmptyValue = true;
                     } else if (type.toTypeDescriptor().isEnumType()
                         && fieldValue.toString().isEmpty()) {
                       isEmptyValue = true;
@@ -284,12 +282,12 @@ public class ProximaParquetWriter implements Writer {
     }
 
     private void writeStartField(String name, GroupType schema) {
-      log.debug("writing start field {} of schema {}", name, schema);
+      log.debug("writing start field {} of schema {}", name, schema.getName());
       recordConsumer.startField(name, schema.getFieldIndex(name));
     }
 
     private void writeEndField(String name, GroupType schema) {
-      log.debug("writing end field {} of schema {}", name, schema);
+      log.debug("writing end field {} of schema {}", name, schema.getName());
       recordConsumer.endField(name, schema.getFieldIndex(name));
     }
 
