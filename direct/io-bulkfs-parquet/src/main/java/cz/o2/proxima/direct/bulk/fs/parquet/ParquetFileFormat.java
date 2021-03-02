@@ -39,11 +39,13 @@ import org.apache.parquet.schema.MessageType;
 public class ParquetFileFormat implements FileFormat {
 
   public static final String PARQUET_CONFIG_COMPRESSION_KEY_NAME = ParquetOutputFormat.COMPRESSION;
-  public static final String PARQUET_CONFIG_BLOCK_SIZE_KEY_NAME = ParquetOutputFormat.BLOCK_SIZE;
+  public static final String PARQUET_CONFIG_PAGE_SIZE_KEY_NAME = ParquetOutputFormat.PAGE_SIZE;
+  public static final String PARQUET_CONFIG_MAX_PADDING_BYTES_KEY_NAME =
+      ParquetOutputFormat.MAX_PADDING_BYTES;
   public static final String PARQUET_CONFIG_VALUES_PREFIX_KEY_NAME = "parquet.values.name.prefix";
 
-  public static final int PARQUET_DEFAULT_BLOCK_SIZE = 1024 * 1024;
-  public static final int PARQUET_DEFAULT_MAX_PADDING_BYTES = 512 * 1024;
+  public static final int PARQUET_DEFAULT_PAGE_SIZE = 8 * 1024 * 1024;
+  public static final int PARQUET_DEFAULT_MAX_PADDING_BYTES = 2 * 1024 * 1024;
   public static final String PARQUET_DEFAULT_VALUES_NAME_PREFIX = "";
   static final String PARQUET_COLUMN_NAME_KEY = "key";
   static final String PARQUET_COLUMN_NAME_UUID = "uuid";
@@ -94,10 +96,13 @@ public class ParquetFileFormat implements FileFormat {
   Configuration createWriterConfiguration() {
     Configuration conf = new Configuration();
     Map<String, Object> familyConf = new HashMap<>(familyDescriptor.getCfg());
-    familyConf.putIfAbsent(PARQUET_CONFIG_BLOCK_SIZE_KEY_NAME, PARQUET_DEFAULT_BLOCK_SIZE);
+    familyConf.putIfAbsent(PARQUET_CONFIG_PAGE_SIZE_KEY_NAME, PARQUET_DEFAULT_PAGE_SIZE);
     familyConf.putIfAbsent(ParquetOutputFormat.PAGE_SIZE, PARQUET_DEFAULT_MAX_PADDING_BYTES);
     familyConf.putIfAbsent(PARQUET_CONFIG_COMPRESSION_KEY_NAME, parquetCompressionCodec.name());
+    familyConf.putIfAbsent(
+        PARQUET_CONFIG_MAX_PADDING_BYTES_KEY_NAME, PARQUET_DEFAULT_MAX_PADDING_BYTES);
 
+    familyConf.putIfAbsent(ParquetOutputFormat.BLOCK_SIZE, PARQUET_DEFAULT_PAGE_SIZE);
     familyConf.forEach(
         (k, v) -> {
           if (k.startsWith("parquet.")) {

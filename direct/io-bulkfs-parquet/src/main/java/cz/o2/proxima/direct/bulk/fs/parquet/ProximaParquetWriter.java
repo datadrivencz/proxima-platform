@@ -50,13 +50,26 @@ public class ProximaParquetWriter implements Writer {
   private final ParquetWriter<StreamElement> writer;
 
   public ProximaParquetWriter(
-      Path path, MessageType schema, String attributeNamesPrefix, Configuration configuration)
+      Path path, MessageType schema, String attributeNamesPrefix, Configuration config)
       throws IOException {
     this.path = path;
     this.writer =
         new ParquetWriterBuilder(new BulkOutputFile(path.writer()), schema, attributeNamesPrefix)
-            .withConf(configuration)
+            .withConf(config)
             .withWriteMode(Mode.OVERWRITE)
+            // For some reason Writer ignores settings this via withConf()
+            .withRowGroupSize(
+                config.getInt(
+                    ParquetFileFormat.PARQUET_CONFIG_PAGE_SIZE_KEY_NAME,
+                    ParquetFileFormat.PARQUET_DEFAULT_PAGE_SIZE))
+            .withPageSize(
+                config.getInt(
+                    ParquetFileFormat.PARQUET_CONFIG_PAGE_SIZE_KEY_NAME,
+                    ParquetFileFormat.PARQUET_DEFAULT_PAGE_SIZE))
+            .withMaxPaddingSize(
+                config.getInt(
+                    ParquetFileFormat.PARQUET_CONFIG_MAX_PADDING_BYTES_KEY_NAME,
+                    ParquetFileFormat.PARQUET_DEFAULT_MAX_PADDING_BYTES))
             .build();
   }
 
