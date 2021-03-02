@@ -97,7 +97,7 @@ public class ParquetFileFormatTest extends AbstractFileFormatTest {
           }
         };
     if (testParams.getBlockSize() > 0) {
-      cfg.put(ParquetFileFormat.PARQUET_CONFIG_BLOCK_SIZE_KEY_NAME, testParams.getBlockSize());
+      cfg.put(ParquetFileFormat.PARQUET_CONFIG_PAGE_SIZE_KEY_NAME, testParams.getBlockSize());
     }
     if (testParams.getCompression() != null) {
       cfg.put(ParquetFileFormat.PARQUET_CONFIG_COMPRESSION_KEY_NAME, testParams.getCompression());
@@ -129,12 +129,12 @@ public class ParquetFileFormatTest extends AbstractFileFormatTest {
         format
             .createWriterConfiguration()
             .getInt(
-                ParquetFileFormat.PARQUET_CONFIG_BLOCK_SIZE_KEY_NAME,
-                ParquetFileFormat.PARQUET_DEFAULT_BLOCK_SIZE);
+                ParquetFileFormat.PARQUET_CONFIG_PAGE_SIZE_KEY_NAME,
+                ParquetFileFormat.PARQUET_DEFAULT_PAGE_SIZE);
     if (testParams.blockSize > 0) {
       assertEquals(testParams.blockSize, blockSize);
     } else {
-      assertEquals(ParquetFileFormat.PARQUET_DEFAULT_BLOCK_SIZE, blockSize);
+      assertEquals(ParquetFileFormat.PARQUET_DEFAULT_PAGE_SIZE, blockSize);
     }
   }
 
