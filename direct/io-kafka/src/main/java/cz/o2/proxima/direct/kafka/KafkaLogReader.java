@@ -384,6 +384,7 @@ public class KafkaLogReader extends AbstractStorage implements CommitLogReader {
             ConsumerRecords<Object, Object> poll;
             Map<TopicPartition, Long> endOffsets;
 
+            int numPolls = 0;
             do {
               poll = kafka.poll(pollDuration);
               endOffsets = stopAtCurrent ? findNonEmptyEndOffsets(kafka) : null;
@@ -392,13 +393,16 @@ public class KafkaLogReader extends AbstractStorage implements CommitLogReader {
                 log.debug(
                     "End offsets of current assignment {}: {}", kafka.assignment(), endOffsets);
               }
-
-              listener.onPartitionsAssigned(kafka.assignment());
             } while (poll.isEmpty()
+                && numPolls++ < 3
                 && accessor.isTopicRegex()
                 && kafka.assignment().isEmpty()
                 && !shutdown.get()
                 && !Thread.currentThread().isInterrupted());
+
+            if (name == null) {
+              listener.onPartitionsAssigned(kafka.assignment());
+            }
 
             latch.countDown();
 
@@ -660,23 +664,49 @@ public class KafkaLogReader extends AbstractStorage implements CommitLogReader {
         name != null || listener == null,
         "Please use either named group (with listener) or offsets without listener");
     KafkaConsumerFactory<Object, Object> factory = accessor.createConsumerFactory();
-    final KafkaConsumer<Object, Object> consumer;
+    final AtomicReference<KafkaConsumer<Object, Object>> consumer = new AtomicReference<>();
 
     if ("".equals(name)) {
       throw new IllegalArgumentException("Consumer group cannot be empty string");
     }
+    ConsumerRebalanceListener appliedListener =
+        new ConsumerRebalanceListener() {
+
+          @Override
+          public void onPartitionsRevoked(Collection<TopicPartition> collection) {
+            Optional.ofNullable(listener).ifPresent(l -> l.onPartitionsRevoked(collection));
+          }
+
+          @Override
+          public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
+            if (!partitions.isEmpty()) {
+              seekConsumerToOffsets(name, offsets, position, consumer.get());
+            }
+            Optional.ofNullable(listener).ifPresent(l -> l.onPartitionsAssigned(partitions));
+          }
+        };
     if (name != null) {
-      consumer = factory.create(name, listener);
+      consumer.set(factory.create(name, appliedListener));
     } else if (offsets != null) {
       List<Partition> partitions =
           offsets.stream().map(Offset::getPartition).collect(Collectors.toList());
-      consumer = factory.create(partitions);
+      consumer.set(factory.create(partitions));
+      seekConsumerToOffsets(null, offsets, position, consumer.get());
     } else {
       throw new IllegalArgumentException("Need either name or offsets to observe");
     }
     if (!accessor.isTopicRegex()) {
-      validateTopic(consumer, accessor.getTopic());
+      validateTopic(consumer.get(), accessor.getTopic());
     }
+    return consumer.get();
+  }
+
+  private void seekConsumerToOffsets(
+      @Nullable String name,
+      @Nullable Collection<Offset> offsets,
+      Position position,
+      KafkaConsumer<Object, Object> consumer) {
+
     if (position == Position.OLDEST) {
       // seek all partitions to oldest data
       if (offsets == null) {
@@ -692,11 +722,9 @@ public class KafkaLogReader extends AbstractStorage implements CommitLogReader {
         if (committed.values().stream().allMatch(Objects::isNull)) {
           log.info("Seeking consumer name {} to beginning of partitions {}", name, assignment);
           consumer.seekToBeginning(assignment);
-        } else {
-          if (!emptyPoll) {
-            log.info("Seeking consumer name {} to committed offsets {}", name, committed);
-            committed.forEach(consumer::seek);
-          }
+        } else if (!emptyPoll) {
+          log.info("Seeking consumer name {} to committed offsets {}", name, committed);
+          committed.forEach(consumer::seek);
         }
       } else {
         List<TopicPartition> tps =
@@ -716,7 +744,6 @@ public class KafkaLogReader extends AbstractStorage implements CommitLogReader {
     } else {
       log.info("Starting to process kafka partitions from newest data");
     }
-    return consumer;
   }
 
   @VisibleForTesting

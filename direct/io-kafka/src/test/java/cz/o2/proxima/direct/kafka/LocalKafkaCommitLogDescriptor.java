@@ -449,11 +449,11 @@ public class LocalKafkaCommitLogDescriptor implements DataAccessorFactory {
     }
 
     private <K, V> ConsumerRecords<K, V> pollConsumer(
-        ConsumerGroup group,
-        long period,
-        ConsumerId consumerId,
-        ElementSerializer<K, V> serializer,
-        @Nullable ConsumerRebalanceListener listener)
+        final ConsumerGroup group,
+        final long period,
+        final ConsumerId consumerId,
+        final ElementSerializer<K, V> serializer,
+        final @Nullable ConsumerRebalanceListener listener)
         throws InterruptedException {
 
       synchronized (consumerId) {

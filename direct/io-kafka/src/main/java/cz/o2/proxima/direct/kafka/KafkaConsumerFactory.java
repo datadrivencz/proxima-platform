@@ -15,6 +15,7 @@
  */
 package cz.o2.proxima.direct.kafka;
 
+import com.google.common.base.Preconditions;
 import cz.o2.proxima.storage.Partition;
 import java.net.URI;
 import java.util.Collection;
@@ -101,7 +102,16 @@ public class KafkaConsumerFactory<K, V> {
     return create(name, null);
   }
 
+  /**
+   * Create kafka consumer with fiven partitions.
+   *
+   * @param partitions the partitions to assign to the consumer
+   * @return {@link KafkaConsumer} with assigned partitions
+   */
   public KafkaConsumer<K, V> create(Collection<Partition> partitions) {
+    Preconditions.checkArgument(
+        topic != null,
+        "Please use fully specified topic when creating consumer for specific partitions");
     log.debug("Creating unnamed consumer for partitions {}", partitions);
     Properties cloned = clone(this.props);
     cloned.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, uri.getAuthority());
