@@ -20,7 +20,7 @@ import static org.junit.Assert.assertTrue;
 
 import com.google.protobuf.ByteString;
 import cz.o2.proxima.scheme.AttributeValueType;
-import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
+import cz.o2.proxima.scheme.SchemaDescriptors.GenericTypeDescriptor;
 import cz.o2.proxima.scheme.ValueSerializer;
 import cz.o2.proxima.scheme.ValueSerializerFactory;
 import cz.o2.proxima.scheme.proto.test.Scheme.Event;
@@ -81,7 +81,7 @@ public class ProtoSerializerFactoryTest {
 
   @Test
   public void testGetSchemaDescriptor() {
-    SchemaTypeDescriptor<Event> descriptor = serializer.getValueSchemaDescriptor();
+    GenericTypeDescriptor<Event> descriptor = serializer.getValueSchemaDescriptor();
     assertEquals(AttributeValueType.STRUCTURE, descriptor.getType());
   }
 }

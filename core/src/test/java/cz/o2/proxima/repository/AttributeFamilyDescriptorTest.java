@@ -21,7 +21,7 @@ import static org.junit.Assert.assertTrue;
 import com.typesafe.config.ConfigFactory;
 import cz.o2.proxima.repository.DefaultConsumerNameFactory.DefaultReplicationConsumerNameFactory;
 import cz.o2.proxima.scheme.AttributeValueType;
-import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
+import cz.o2.proxima.scheme.SchemaDescriptors.GenericTypeDescriptor;
 import cz.o2.proxima.storage.AccessType;
 import cz.o2.proxima.storage.StorageType;
 import cz.o2.proxima.util.TestUtils;
@@ -32,14 +32,13 @@ import org.junit.Test;
 
 public class AttributeFamilyDescriptorTest {
 
-  private final ConfigRepository repo;
   private final EntityDescriptor entity;
   private final AttributeDescriptor<byte[]> attribute;
   private final AttributeFamilyDescriptor descriptorWithSuffix;
   private final AttributeFamilyDescriptor descriptorWithoutSuffix;
 
   public AttributeFamilyDescriptorTest() {
-    this.repo =
+    ConfigRepository repo =
         ConfigRepository.Builder.of(
                 ConfigFactory.load()
                     .withFallback(ConfigFactory.load("test-reference.conf"))
@@ -148,8 +147,8 @@ public class AttributeFamilyDescriptorTest {
 
   @Test
   public void testGetValueDescriptor() {
-    SchemaTypeDescriptor<byte[]> descriptor = attribute.getSchemaTypeDescriptor();
+    GenericTypeDescriptor<byte[]> descriptor = attribute.getSchemaTypeDescriptor();
     assertEquals(AttributeValueType.ARRAY, descriptor.getType());
-    assertEquals(AttributeValueType.BYTE, descriptor.getArrayTypeDescriptor().getValueType());
+    assertEquals(AttributeValueType.BYTE, descriptor.asArrayTypeDescriptor().getValueType());
   }
 }

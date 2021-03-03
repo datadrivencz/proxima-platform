@@ -16,7 +16,7 @@
 package cz.o2.proxima.scheme;
 
 import cz.o2.proxima.annotations.Stable;
-import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
+import cz.o2.proxima.scheme.SchemaDescriptors.GenericTypeDescriptor;
 import java.net.URI;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
@@ -77,8 +77,8 @@ public class LongSerializer implements ValueSerializerFactory {
           }
 
           @Override
-          public SchemaTypeDescriptor<Long> getValueSchemaDescriptor() {
-            return SchemaDescriptors.longs().toTypeDescriptor();
+          public GenericTypeDescriptor<Long> getValueSchemaDescriptor() {
+            return SchemaDescriptors.longs();
           }
         };
   }

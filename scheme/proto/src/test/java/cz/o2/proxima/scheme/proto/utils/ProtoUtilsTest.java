@@ -23,7 +23,6 @@ import static org.junit.Assert.assertTrue;
 import com.google.protobuf.ByteString;
 import cz.o2.proxima.scheme.AttributeValueAccessors.StructureValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueType;
-import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.StructureTypeDescriptor;
 import cz.o2.proxima.scheme.proto.test.Scheme.Device;
 import cz.o2.proxima.scheme.proto.test.Scheme.ValueSchemeMessage;
@@ -42,22 +41,14 @@ public class ProtoUtilsTest {
 
   @Test
   public void testConvertSimpleProtoToSchema() {
-    SchemaTypeDescriptor<Device> schema =
+    StructureTypeDescriptor<Device> schema =
         ProtoUtils.convertProtoToSchema(Device.getDescriptor(), Device.getDefaultInstance());
     assertEquals(AttributeValueType.STRUCTURE, schema.getType());
-    assertEquals(2, schema.getStructureTypeDescriptor().getFields().size());
+    assertEquals(2, schema.getFields().size());
+    assertEquals(AttributeValueType.STRING, schema.getField("type").getType());
+    assertEquals(AttributeValueType.ARRAY, schema.getField("payload").getType());
     assertEquals(
-        AttributeValueType.STRING, schema.getStructureTypeDescriptor().getField("type").getType());
-    assertEquals(
-        AttributeValueType.ARRAY,
-        schema.getStructureTypeDescriptor().getField("payload").getType());
-    assertEquals(
-        AttributeValueType.BYTE,
-        schema
-            .getStructureTypeDescriptor()
-            .getField("payload")
-            .getArrayTypeDescriptor()
-            .getValueType());
+        AttributeValueType.BYTE, schema.getField("payload").asArrayTypeDescriptor().getValueType());
 
     Device value =
         Device.newBuilder()
@@ -65,14 +56,13 @@ public class ProtoUtilsTest {
             .setPayload(ByteString.copyFromUtf8("test-payload-value"))
             .build();
 
-    StructureValueAccessor<Device> valueProvider =
-        schema.getStructureTypeDescriptor().getValueAccessor();
+    StructureValueAccessor<Device> valueProvider = schema.getValueAccessor();
     assertThrows(
         IllegalArgumentException.class, () -> valueProvider.readField("unknown-field", value));
     assertEquals("test-type-value", valueProvider.readField("type", value));
     assertArrayEquals(
         "test-payload-value".getBytes(StandardCharsets.UTF_8),
-        valueProvider.readFieldAsBytes("payload", value));
+        valueProvider.readField("payload", value));
     Map<String, Object> createFrom =
         new HashMap<String, Object>() {
           {
@@ -88,11 +78,10 @@ public class ProtoUtilsTest {
 
   @Test
   public void testConvertComplexProtoToSchema() {
-    SchemaTypeDescriptor<ValueSchemeMessage> schema =
+    StructureTypeDescriptor<ValueSchemeMessage> descriptor =
         ProtoUtils.convertProtoToSchema(
             ValueSchemeMessage.getDescriptor(), ValueSchemeMessage.getDefaultInstance());
-    assertEquals(AttributeValueType.STRUCTURE, schema.getType());
-    StructureTypeDescriptor<ValueSchemeMessage> descriptor = schema.getStructureTypeDescriptor();
+    assertEquals(AttributeValueType.STRUCTURE, descriptor.getType());
     assertEquals(ValueSchemeMessage.getDescriptor().getName(), descriptor.getName());
     assertTrue(descriptor.hasField("repeated_inner_message"));
     assertEquals(AttributeValueType.ARRAY, descriptor.getField("repeated_inner_message").getType());
@@ -100,13 +89,13 @@ public class ProtoUtilsTest {
         AttributeValueType.ENUM,
         descriptor
             .getField("inner_message")
-            .getStructureTypeDescriptor()
+            .asStructureTypeDescriptor()
             .getField("inner_enum")
             .getType());
 
     assertEquals(
         AttributeValueType.STRUCTURE,
-        descriptor.getField("repeated_inner_message").getArrayTypeDescriptor().getValueType());
+        descriptor.getField("repeated_inner_message").asArrayTypeDescriptor().getValueType());
 
     final ValueSchemeMessage object =
         ValueSchemeMessage.newBuilder()
@@ -125,8 +114,7 @@ public class ProtoUtilsTest {
             .setIntType(69)
             .build();
 
-    final StructureValueAccessor<ValueSchemeMessage> valueProvider =
-        schema.getStructureTypeDescriptor().getValueAccessor();
+    final StructureValueAccessor<ValueSchemeMessage> valueProvider = descriptor.getValueAccessor();
 
     assertEquals(
         Arrays.asList("repeated_string_value_1", "repeated_string_value_2"),

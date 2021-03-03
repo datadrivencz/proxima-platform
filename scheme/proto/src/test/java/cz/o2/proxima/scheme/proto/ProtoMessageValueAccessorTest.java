@@ -39,8 +39,7 @@ public class ProtoMessageValueAccessorTest {
 
   private final StructureTypeDescriptor<ValueSchemeMessage> schema =
       ProtoUtils.convertProtoToSchema(
-              ValueSchemeMessage.getDescriptor(), ValueSchemeMessage.getDefaultInstance())
-          .getStructureTypeDescriptor();
+          ValueSchemeMessage.getDescriptor(), ValueSchemeMessage.getDefaultInstance());
   private final StructureValueAccessor<ValueSchemeMessage> valueAccessor =
       schema.getValueAccessor();
 
@@ -117,16 +116,16 @@ public class ProtoMessageValueAccessorTest {
     @SuppressWarnings("unchecked")
     final ArrayValueAccessor<Object> repeatedMessageAccessor =
         (ArrayValueAccessor<Object>)
-            schema.getField("repeated_inner_message").getArrayTypeDescriptor().getValueAccessor();
+            schema.getField("repeated_inner_message").asArrayTypeDescriptor().getValueAccessor();
 
     @SuppressWarnings("unchecked")
     StructureValueAccessor<Object> arrayValueAccessor =
         (StructureValueAccessor<Object>)
             schema
                 .getField("repeated_inner_message")
-                .getArrayTypeDescriptor()
+                .asArrayTypeDescriptor()
                 .getValueDescriptor()
-                .getStructureTypeDescriptor()
+                .asStructureTypeDescriptor()
                 .getValueAccessor();
 
     final List<Object> values = repeatedMessageAccessor.values(value.get("repeated_inner_message"));

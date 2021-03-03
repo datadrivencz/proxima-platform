@@ -15,9 +15,11 @@
  */
 package cz.o2.proxima.scheme;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
-import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
+import cz.o2.proxima.scheme.SchemaDescriptors.GenericTypeDescriptor;
 import org.junit.Test;
 
 /** Test suite for {@link IntSerializer}. */
@@ -67,7 +69,7 @@ public class IntSerializerTest {
 
   @Test
   public void testValueDescriptor() {
-    SchemaTypeDescriptor<Integer> descriptor =
+    GenericTypeDescriptor<Integer> descriptor =
         serializer.<Integer>getValueSerializer(null).getValueSchemaDescriptor();
     assertTrue(descriptor.isPrimitiveType());
   }

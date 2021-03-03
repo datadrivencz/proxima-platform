@@ -68,10 +68,6 @@ public class AttributeValueAccessors {
       throw new UnsupportedOperationException("Method readField is not implemented.");
     }
 
-    default byte[] readFieldAsBytes(String name, T value) {
-      throw new UnsupportedOperationException("Method readFieldAsBytes is not implemented.");
-    }
-
     default T createFrom(Map<String, Object> map) {
       throw new UnsupportedOperationException("Method createFrom is not implemented.");
     }

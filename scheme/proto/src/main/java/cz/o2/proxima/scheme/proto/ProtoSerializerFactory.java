@@ -20,7 +20,7 @@ import com.google.protobuf.Message.Builder;
 import com.google.protobuf.Parser;
 import com.google.protobuf.TextFormat;
 import com.google.protobuf.util.JsonFormat;
-import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
+import cz.o2.proxima.scheme.SchemaDescriptors.GenericTypeDescriptor;
 import cz.o2.proxima.scheme.ValueSerializer;
 import cz.o2.proxima.scheme.ValueSerializerFactory;
 import cz.o2.proxima.scheme.proto.utils.ProtoUtils;
@@ -82,7 +82,7 @@ public class ProtoSerializerFactory implements ValueSerializerFactory {
 
     transient Parser<?> parser = null;
 
-    @Nullable private transient SchemaTypeDescriptor<M> valueSchemaDescriptor;
+    @Nullable private transient GenericTypeDescriptor<M> valueSchemaDescriptor;
 
     ProtoValueSerializer(String protoClass) {
       this.protoClass = protoClass;
@@ -151,7 +151,7 @@ public class ProtoSerializerFactory implements ValueSerializerFactory {
     }
 
     @Override
-    public SchemaTypeDescriptor<M> getValueSchemaDescriptor() {
+    public GenericTypeDescriptor<M> getValueSchemaDescriptor() {
       if (valueSchemaDescriptor == null) {
         valueSchemaDescriptor =
             ProtoUtils.convertProtoToSchema(getDefault().getDescriptorForType(), getDefault());
