@@ -16,14 +16,14 @@
 package cz.o2.proxima.scheme;
 
 import java.io.Serializable;
-import java.util.List;
+import java.util.Arrays;
 import java.util.Map;
 
 public class AttributeValueAccessors {
 
   private AttributeValueAccessors() {}
 
-  private interface GenericValueAccessor<T> extends Serializable {
+  public interface GenericValueAccessor<T> extends Serializable {
 
     default T createFrom(Object object) {
       throw new UnsupportedOperationException("Method createFrom() is not implemented.");
@@ -32,14 +32,6 @@ public class AttributeValueAccessors {
     default Object valueOf(T value) {
       return value;
     }
-
-    default byte[] asBytes(Object object) {
-      throw new UnsupportedOperationException("Method asBytes() is not implemented.");
-    }
-
-    default Object fromBytes(byte[] bytes) {
-      throw new UnsupportedOperationException("Method fromBytes() is not implemented.");
-    }
   }
 
   public interface PrimitiveValueAccessor<T> extends GenericValueAccessor<T> {}
@@ -47,16 +39,40 @@ public class AttributeValueAccessors {
   public static class PrimitiveValueAccessorImpl<T> implements PrimitiveValueAccessor<T> {}
 
   public interface ArrayValueAccessor<T> extends GenericValueAccessor<T> {
-    default <V> List<T> values(V object) {
-      throw new UnsupportedOperationException("Method values() is not implemented.");
+
+    default <V> T[] createFrom(V[] object) {
+      throw new UnsupportedOperationException("Method createFrom() is not implemented.");
     }
 
-    default <V> List<V> valuesOf(T object) {
-      throw new UnsupportedOperationException("Method values() is not implemented.");
+    default <V> V[] valuesOf(T[] object) {
+      throw new UnsupportedOperationException("Method valuesOf() is not implemented.");
+    }
+
+    default <V> V[] valuesOf(T object) {
+      throw new UnsupportedOperationException("Method valuesOf() is not implemented.");
     }
   }
 
-  public static class ArrayValueAccessorImpl<T> implements ArrayValueAccessor<T> {}
+  public static class ArrayValueAccessorImpl<T> implements ArrayValueAccessor<T> {
+
+    private final GenericValueAccessor<T> valueAccessor;
+
+    public ArrayValueAccessorImpl(GenericValueAccessor<T> valueAccessor) {
+      this.valueAccessor = valueAccessor;
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public <V> T[] createFrom(V[] object) {
+      return (T[]) Arrays.stream(object).map(valueAccessor::createFrom).toArray();
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public <V> V[] valuesOf(T[] object) {
+      return (V[]) Arrays.stream(object).map(valueAccessor::valueOf).toArray();
+    }
+  }
 
   public interface StructureValueAccessor<T> extends GenericValueAccessor<T> {
 

@@ -15,6 +15,7 @@
  */
 package cz.o2.proxima.scheme.proto;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 
@@ -28,7 +29,6 @@ import cz.o2.proxima.scheme.proto.test.Scheme.ValueSchemeMessage.SecondInnerMess
 import cz.o2.proxima.scheme.proto.utils.ProtoUtils;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
@@ -90,17 +90,19 @@ public class ProtoMessageValueAccessorTest {
 
   @Test
   public void testReadTopLevelArrayOfString() {
-    assertEquals(
-        Arrays.asList("top_level_repeated_string_value_1", "top_level_repeated_string_value_2"),
+    assertArrayEquals(
+        Arrays.asList("top_level_repeated_string_value_1", "top_level_repeated_string_value_2")
+            .toArray(new Object[0]),
         valueAccessor.readField("repeated_string", referenceValue));
   }
 
   @Test
   public void testReadInnerMessage() {
     final Map<String, Object> innerValue = valueAccessor.readField("inner_message", referenceValue);
-    assertEquals(
-        Arrays.asList("inner_repeated_string_value1", "inner_repeated_string_value2"),
-        innerValue.get("repeated_inner_string"));
+    assertArrayEquals(
+        Arrays.asList("inner_repeated_string_value1", "inner_repeated_string_value2")
+            .toArray(new Object[0]),
+        (Object[]) innerValue.get("repeated_inner_string"));
     assertEquals(Directions.LEFT.name(), innerValue.get("inner_enum"));
     assertEquals(100D, innerValue.get("inner_double_type"));
     @SuppressWarnings("unchecked")
@@ -128,20 +130,20 @@ public class ProtoMessageValueAccessorTest {
                 .asStructureTypeDescriptor()
                 .getValueAccessor();
 
-    final List<Object> values = repeatedMessageAccessor.values(value.get("repeated_inner_message"));
-    assertEquals(2, values.size());
+    Object repeated_inner_message = value.get("repeated_inner_message");
+    final Object[] values = repeatedMessageAccessor.valuesOf(repeated_inner_message);
+    assertEquals(2, values.length);
 
     assertEquals(
         40.0,
-        Optional.ofNullable(arrayValueAccessor.readField("inner_double_type", values.get(0)))
+        Optional.ofNullable(arrayValueAccessor.readField("inner_double_type", values[0]))
             .orElse(-1));
-    assertEquals(Directions.LEFT.name(), arrayValueAccessor.readField("inner_enum", values.get(0)));
+    assertEquals(Directions.LEFT.name(), arrayValueAccessor.readField("inner_enum", values[0]));
     assertEquals(
         20.0,
-        Optional.ofNullable(arrayValueAccessor.readField("inner_double_type", values.get(1)))
+        Optional.ofNullable(arrayValueAccessor.readField("inner_double_type", values[1]))
             .orElse(-1));
-    assertEquals(
-        Directions.RIGHT.name(), arrayValueAccessor.readField("inner_enum", values.get(1)));
+    assertEquals(Directions.RIGHT.name(), arrayValueAccessor.readField("inner_enum", values[1]));
   }
 
   @Test

@@ -21,15 +21,16 @@ import com.google.protobuf.Descriptors.EnumValueDescriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor;
 import com.google.protobuf.Message;
 import com.google.protobuf.Message.Builder;
-import cz.o2.proxima.scheme.AttributeValueAccessors.ArrayValueAccessor;
+import cz.o2.proxima.scheme.AttributeValueAccessors.ArrayValueAccessorImpl;
 import cz.o2.proxima.scheme.AttributeValueAccessors.EnumValueAccessor;
+import cz.o2.proxima.scheme.AttributeValueAccessors.GenericValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.PrimitiveValueAccessor;
 import cz.o2.proxima.scheme.SchemaDescriptors;
 import cz.o2.proxima.scheme.SchemaDescriptors.GenericTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.StructureTypeDescriptor;
 import cz.o2.proxima.scheme.proto.ProtoMessageValueAccessor;
 import java.util.ArrayList;
-import java.util.List;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
@@ -82,25 +83,17 @@ public class ProtoUtils {
         descriptor =
             (GenericTypeDescriptor<T>)
                 SchemaDescriptors.bytes(
-                    new PrimitiveValueAccessor<byte[]>() {
+                    new PrimitiveValueAccessor<ByteString>() {
                       @Override
-                      public byte[] createFrom(Object object) {
-                        return ((ByteString) object).toByteArray();
+                      public ByteString createFrom(Object object) {
+                        return ByteString.copyFromUtf8(new String((byte[]) object));
+                        // return
+                        // ByteString.copyFrom(object.toString().getBytes(StandardCharsets.UTF_8));
                       }
 
                       @Override
-                      public Object valueOf(byte[] value) {
-                        return ByteString.copyFrom(value);
-                      }
-
-                      @Override
-                      public byte[] asBytes(Object object) {
-                        return ((ByteString) object).toByteArray();
-                      }
-
-                      @Override
-                      public Object fromBytes(byte[] bytes) {
-                        return ByteString.copyFrom(bytes);
+                      public Object valueOf(ByteString value) {
+                        return value.toByteArray();
                       }
                     });
         break;
@@ -178,10 +171,47 @@ public class ProtoUtils {
     }
 
     if (proto.isRepeated()) {
+      GenericValueAccessor<T> valueAccessor;
+      if (descriptor.isPrimitiveType()) {
+        valueAccessor = descriptor.asPrimitiveTypeDescriptor().getValueAccessor();
+      } else if (descriptor.isStructureType()) {
+        valueAccessor = descriptor.asStructureTypeDescriptor().getValueAccessor();
+      } else {
+        throw new UnsupportedOperationException("xxx");
+      }
+      return SchemaDescriptors.arrays(
+          descriptor,
+          new ArrayValueAccessorImpl<T>(valueAccessor) {
+            @Override
+            public <V> V[] valuesOf(T object) {
+              return valuesOf((T[]) object);
+            }
 
+            @Override
+            public <V> T[] createFrom(V[] object) {
+              return (T[]) Arrays.stream(object).map(valueAccessor::createFrom).toArray();
+            }
+          });
+      /*
       return SchemaDescriptors.arrays(
           descriptor,
           new ArrayValueAccessor<T>() {
+            @Override
+            public <V> T[] createFrom(V[] object) {
+              if (descriptor.isPrimitiveType()) {
+
+              }
+              Arrays.stream(object).map(v -> descriptor.)
+              @SuppressWarnings({"unchecked", "rawtypes"})
+              List<T> cast = (List) object;
+              return (T[]) cast.toArray();
+            }
+
+            @Override
+            public <V> V[] valuesOf(T[] object) {
+              return null;
+            }
+
             @Override
             public <V> List<T> values(V object) {
               @SuppressWarnings({"unchecked", "rawtypes"})
@@ -196,6 +226,8 @@ public class ProtoUtils {
               return (T) cast; // @TODO: WTF?
             }
           });
+
+       */
     } else {
       return descriptor;
     }
