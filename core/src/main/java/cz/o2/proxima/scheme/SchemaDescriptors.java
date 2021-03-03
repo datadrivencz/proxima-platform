@@ -23,7 +23,6 @@ import cz.o2.proxima.scheme.AttributeValueAccessors.GenericValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.PrimitiveValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.PrimitiveValueAccessorImpl;
 import cz.o2.proxima.scheme.AttributeValueAccessors.StructureValueAccessor;
-import cz.o2.proxima.scheme.AttributeValueAccessors.StructureValueAccessorImpl;
 import java.io.Serializable;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
@@ -97,14 +96,16 @@ public class SchemaDescriptors {
   public static ArrayTypeDescriptor<byte[]> bytes() {
     return bytes(
         new PrimitiveValueAccessor<byte[]>() {
+
           @Override
           public byte[] createFrom(Object object) {
             return object.toString().getBytes(StandardCharsets.UTF_8);
           }
 
           @Override
-          public Object valueOf(byte[] value) {
-            return new String(value); // this is weird
+          @SuppressWarnings("unchecked")
+          public <V> V valueOf(byte[] value) {
+            return (V) value;
           }
         });
   }
@@ -256,7 +257,7 @@ public class SchemaDescriptors {
 
   public static <T> StructureTypeDescriptor<T> structures(
       String name, Map<String, GenericTypeDescriptor<?>> fields) {
-    return structures(name, fields, new StructureValueAccessorImpl<>());
+    return structures(name, fields, new StructureValueAccessor<T>() {});
   }
 
   public static <T> StructureTypeDescriptor<T> structures(
