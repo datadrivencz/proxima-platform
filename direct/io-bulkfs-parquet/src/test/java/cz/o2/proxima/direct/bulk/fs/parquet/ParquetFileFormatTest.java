@@ -174,7 +174,6 @@ public class ParquetFileFormatTest extends AbstractFileFormatTest {
   }
 
   @Test
-  @Ignore(value = "issue in read")
   public void testWriteAndReadComplexValue() throws IOException {
     final Repository protoRepo =
         ConfigRepository.ofTest(ConfigFactory.load("test-proto.conf").resolve());
@@ -229,32 +228,28 @@ public class ParquetFileFormatTest extends AbstractFileFormatTest {
             Collections.singletonList(complexAttr),
             Collections.emptyMap()));
 
-    File file = new File("/tmp/complex.parquet");
-    Path path =
-        Path.local(
-            FileSystem.local(
-                file,
-                NamingConvention.defaultConvention(
-                    Duration.ofHours(1), "prefix", getFileFormat().fileSuffix())),
-            file);
-    try (Writer writer = fileFormat.openWriter(path, entity)) {
-
-      writer.write(
-          StreamElement.upsert(
-              event,
-              complexAttr,
-              UUID.randomUUID().toString(),
-              "key1",
-              complexAttr.getName(),
-              now,
-              ValueSchemeMessage.newBuilder()
-                  .addRepeatedString("repeated_string_value_1")
-                  .addRepeatedString("repeated_string_value_2")
-                  .setInnerMessage(InnerMessage.newBuilder().setInnerEnum(Directions.LEFT).build())
-                  .setIntType(10)
-                  .build()
-                  .toByteArray()));
-    }
+    assertWriteAndReadElements(fileFormat, event, Collections.singletonList(
+        StreamElement.upsert(
+            event,
+            complexAttr,
+            UUID.randomUUID().toString(),
+            "key1",
+            complexAttr.getName(),
+            now,
+            complexAttr
+                .getValueSerializer()
+                .serialize(
+                    ValueSchemeMessage.newBuilder()
+                        .addRepeatedString("repeated_string_value_1")
+                        .addRepeatedString("repeated_string_value_2")
+                        .setInnerMessage(
+                            InnerMessage.newBuilder()
+                                .setInnerEnum(Directions.LEFT)
+                                .setInnerDoubleType(69)
+                                .build())
+                        .setIntType(10)
+                        .setBooleanType(false)
+                        .build()))));
   }
 
   @Test
@@ -269,7 +264,7 @@ public class ParquetFileFormatTest extends AbstractFileFormatTest {
                     Duration.ofHours(1), "prefix", getFileFormat().fileSuffix())),
             file);
     try (Writer writer = getFileFormat().openWriter(path, entity)) {
-      /*
+
       writer.write(
           StreamElement.upsert(
               entity,
@@ -280,7 +275,7 @@ public class ParquetFileFormatTest extends AbstractFileFormatTest {
               now,
               new byte[] {69}));
 
-       */
+
       writer.write(upsert());
     }
   }

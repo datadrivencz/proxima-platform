@@ -97,8 +97,7 @@ public class ParquetUtilsTest {
     Mockito.when(attr.getSchemaTypeDescriptor())
         .thenReturn(
             SchemaDescriptors.structures("structure")
-                .addField("field", SchemaDescriptors.strings())
-                .toTypeDescriptor());
+                .addField("field", SchemaDescriptors.strings()));
     Type parquet = ParquetUtils.createParquetSchema(attr, "");
     log.debug("Parquet schema: {}", parquet);
     assertFalse(parquet.isPrimitive());
@@ -145,8 +144,7 @@ public class ParquetUtilsTest {
                             "inner_structure",
                             SchemaDescriptors.structures("inner_inner_structure")
                                 .addField("inner_inner_field1", SchemaDescriptors.bytes())
-                                .addField("inner_inner_field2", SchemaDescriptors.integers())))
-                .toTypeDescriptor(),
+                                .addField("inner_inner_field2", SchemaDescriptors.integers()))),
             "value");
     log.debug("Parquet schema: {}", type);
     List<String> expectedFields =
@@ -178,7 +176,7 @@ public class ParquetUtilsTest {
     GroupType parquetSchema =
         ParquetUtils.mapSchemaTypeToParquet(
                 ProtoUtils.convertProtoToSchema(
-                    ValueSchemeMessage.getDescriptor(), ValueSchemeMessage.newBuilder()),
+                    ValueSchemeMessage.getDescriptor(), ValueSchemeMessage.getDefaultInstance()),
                 "complex")
             .asGroupType();
     log.info("Converted complex schema: {}", parquetSchema);

@@ -19,15 +19,14 @@ import cz.o2.proxima.direct.bulk.Path;
 import cz.o2.proxima.direct.bulk.Writer;
 import cz.o2.proxima.direct.bulk.fs.parquet.ParquetFileFormat.OPERATION;
 import cz.o2.proxima.scheme.AttributeValueType;
-import cz.o2.proxima.scheme.SchemaDescriptors;
-import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
+import cz.o2.proxima.scheme.SchemaDescriptors.GenericTypeDescriptor;
+import cz.o2.proxima.scheme.SchemaDescriptors.StructureTypeDescriptor;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.util.Optionals;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.hadoop.conf.Configuration;
@@ -155,7 +154,7 @@ public class ProximaParquetWriter implements Writer {
     private final RecordConsumer recordConsumer;
     private final MessageType parquetSchema;
     private final String attributeNamesPrefix;
-    private final Map<String, SchemaTypeDescriptor<?>> schemasCache = new HashMap<>();
+    private final Map<String, GenericTypeDescriptor<?>> schemasCache = new HashMap<>();
 
     public StreamElementParquetWriter(
         RecordConsumer recordConsumer, MessageType parquetSchema, String attributeNamesPrefix) {
@@ -177,7 +176,7 @@ public class ProximaParquetWriter implements Writer {
       log.debug("Writing stream element {}", element);
       String attribute =
           attributeNamesPrefix + element.getAttributeDescriptor().toAttributePrefix(false);
-      SchemaTypeDescriptor<?> attributeSchema =
+      GenericTypeDescriptor<?> attributeSchema =
           schemasCache.computeIfAbsent(
               attribute,
               name ->
@@ -202,7 +201,7 @@ public class ProximaParquetWriter implements Writer {
 
     private <T> void writeValue(
         String name,
-        SchemaTypeDescriptor<T> schema,
+        GenericTypeDescriptor<T> schema,
         T value,
         GroupType currentParquetSchema,
         boolean writeStartAndEndField) {
@@ -213,61 +212,64 @@ public class ProximaParquetWriter implements Writer {
       switch (schema.getType()) {
         case STRUCTURE:
           recordConsumer.startGroup();
-          final SchemaDescriptors.StructureTypeDescriptor<T> structureDescriptor =
-              schema.getStructureTypeDescriptor();
+          final StructureTypeDescriptor<T> structureDescriptor = schema.asStructureTypeDescriptor();
           final Type innerSchema = getInnerParquetSchemaForAttribute(name, currentParquetSchema);
+
           structureDescriptor
               .getFields()
               .forEach(
                   (field, type) -> {
-                    @SuppressWarnings("unchecked")
-                    SchemaTypeDescriptor<Object> cast =
-                        (SchemaTypeDescriptor<Object>) type.toTypeDescriptor();
-                    final Object fieldValue = structureDescriptor.readField(field, cast, value);
-                    boolean isEmptyValue = false;
 
                     /**
                      * FIXME: This is dirty magic which checked if value is provided If not, value
-                     * is not written. This should be delegated into AttributeValueAccessor and
-                     * should not be here!
+                     * is not written. This should be refactored to writers which check values
+                     * inside and skip empty content
                      */
-                    if (type.toTypeDescriptor().isArrayType() && ((List<?>) fieldValue).isEmpty()) {
-                      isEmptyValue = true;
-                    } else if (type.toTypeDescriptor().isStructureType()
-                        && fieldValue.toString().isEmpty()) {
-                      isEmptyValue = true;
-                    } else if (type.toTypeDescriptor().isEnumType()
-                        && fieldValue.toString().isEmpty()) {
-                      isEmptyValue = true;
+                    Object fieldValue = "";
+                    if (value instanceof Map) {
+                      fieldValue = ((Map<?, ?>) value).get(field);
+                    } else {
+                      fieldValue = structureDescriptor.getValueAccessor().readField(field, value);
+                    }
+                    boolean isEmptyValue = fieldValue.toString().isEmpty();
+
+                    if (type.isArrayType()
+                        && !type.asArrayTypeDescriptor()
+                            .getValueType()
+                            .equals(AttributeValueType.BYTE)) {
+                      final Object clone = fieldValue;
+                      isEmptyValue = ((Object[]) clone).length == 0;
                     }
 
                     if (!isEmptyValue) {
+                      @SuppressWarnings("unchecked")
+                      final GenericTypeDescriptor<Object> cast =
+                          (GenericTypeDescriptor<Object>) type;
                       writeValue(field, cast, fieldValue, innerSchema.asGroupType(), true);
                     }
                   });
           recordConsumer.endGroup();
           break;
         case ARRAY:
-          final SchemaTypeDescriptor<T> valueDescriptor =
-              schema.getArrayTypeDescriptor().getValueDescriptor();
+          final GenericTypeDescriptor<T> valueDescriptor =
+              schema.asArrayTypeDescriptor().getValueDescriptor();
           if (valueDescriptor.getType().equals(AttributeValueType.BYTE)) {
             // Array of bytes should be encoded just as binary
             recordConsumer.addBinary(Binary.fromReusedByteArray((byte[]) value));
           } else {
-            List<T> values = schema.getArrayTypeDescriptor().readValues(value, valueDescriptor);
-            values.forEach(
-                val -> {
-                  if (valueDescriptor.isStructureType()) {
-                    writeValue(
-                        name,
-                        valueDescriptor,
-                        val,
-                        getInnerParquetSchemaForAttribute(name, currentParquetSchema).asGroupType(),
-                        true);
-                  } else {
-                    writeValue(name, valueDescriptor, val, currentParquetSchema, false);
-                  }
-                });
+            final T[] values = schema.asArrayTypeDescriptor().getValueAccessor().valuesOf(value);
+            for (T val : values) {
+              if (valueDescriptor.isStructureType()) {
+                writeValue(
+                    name,
+                    valueDescriptor,
+                    val,
+                    getInnerParquetSchemaForAttribute(name, currentParquetSchema).asGroupType(),
+                    true);
+              } else {
+                writeValue(name, valueDescriptor, val, currentParquetSchema, false);
+              }
+            }
           }
           break;
         case BYTE:

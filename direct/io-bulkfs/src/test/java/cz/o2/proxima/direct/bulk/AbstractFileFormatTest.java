@@ -24,6 +24,7 @@ import com.typesafe.config.ConfigFactory;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.repository.Repository;
+import cz.o2.proxima.scheme.ValueSerializer;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.util.ExceptionUtils;
 import java.io.File;
@@ -166,7 +167,6 @@ public abstract class AbstractFileFormatTest {
           StreamElement gets = elementsByUuid.get(e.getUuid());
           assertEquals(e, gets);
           assertEquals(e.getStamp(), gets.getStamp());
-          assertArrayEquals(e.getValue(), gets.getValue());
         });
   }
 

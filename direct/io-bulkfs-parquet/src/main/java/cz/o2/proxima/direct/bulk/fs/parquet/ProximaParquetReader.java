@@ -22,6 +22,10 @@ import cz.o2.proxima.direct.bulk.Reader;
 import cz.o2.proxima.direct.bulk.fs.parquet.ParquetFileFormat.OPERATION;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
+import cz.o2.proxima.scheme.AttributeValueAccessors.ArrayValueAccessor;
+import cz.o2.proxima.scheme.AttributeValueAccessors.StructureValueAccessor;
+import cz.o2.proxima.scheme.SchemaDescriptors.GenericTypeDescriptor;
+import cz.o2.proxima.scheme.ValueSerializer;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.util.ExceptionUtils;
 import java.io.IOException;
@@ -150,7 +154,8 @@ public class ProximaParquetReader implements Reader {
     private final GroupConverter root;
     private final EntityDescriptor entity;
     private final String attributeNamesPrefix;
-    private Map<String, Object> record = new HashMap<>();
+    private final Map<String, Object> record = new HashMap<>();
+
 
     public StreamElementRecordMaterializer(
         MessageType schema, EntityDescriptor entity, String attributeNamesPrefix) {
@@ -163,9 +168,7 @@ public class ProximaParquetReader implements Reader {
                     @Override
                     public Converter convertPrimitiveType(
                         List<GroupType> path, PrimitiveType primitiveType) {
-                      if (path.size() > 1) {
-                        log.info("Tadaaa");
-                      }
+
                       return new PrimitiveConverter() {
                         @Override
                         public void addBinary(Binary value) {
@@ -173,42 +176,43 @@ public class ProximaParquetReader implements Reader {
                             if (primitiveType
                                 .getLogicalTypeAnnotation()
                                 .equals(LogicalTypeAnnotation.stringType())) {
-                              record.put(primitiveType.getName(), value.toStringUsingUTF8());
+                              getMap(path).put(primitiveType.getName(), value.toStringUsingUTF8());
                             } else if (primitiveType
                                 .getLogicalTypeAnnotation()
                                 .equals(LogicalTypeAnnotation.enumType())) {
-                              record.put(primitiveType.getName(), new String(value.getBytes()));
+                              getMap(path)
+                                  .put(primitiveType.getName(), new String(value.getBytes()));
                             } else {
-                              record.put(primitiveType.getName(), value.getBytes());
+                              getMap(path).put(primitiveType.getName(), value.getBytes());
                             }
                           } else {
-                            record.put(primitiveType.getName(), value.getBytes());
+                            getMap(path).put(primitiveType.getName(), value.getBytes());
                           }
                         }
 
                         @Override
                         public void addBoolean(boolean value) {
-                          record.put(primitiveType.getName(), value);
+                          getMap(path).put(primitiveType.getName(), value);
                         }
 
                         @Override
                         public void addDouble(double value) {
-                          record.put(primitiveType.getName(), value);
+                          getMap(path).put(primitiveType.getName(), value);
                         }
 
                         @Override
                         public void addFloat(float value) {
-                          record.put(primitiveType.getName(), value);
+                          getMap(path).put(primitiveType.getName(), value);
                         }
 
                         @Override
                         public void addInt(int value) {
-                          record.put(primitiveType.getName(), value);
+                          getMap(path).put(primitiveType.getName(), value);
                         }
 
                         @Override
                         public void addLong(long value) {
-                          record.put(primitiveType.getName(), value);
+                          getMap(path).put(primitiveType.getName(), value);
                         }
                       };
                     }
@@ -216,32 +220,17 @@ public class ProximaParquetReader implements Reader {
                     @Override
                     public Converter convertGroupType(
                         List<GroupType> path, GroupType groupType, List<Converter> converters) {
-                      log.info("convertGroupType called {} {}", path, converters);
-                      if (path != null) {
-                        log.info("XXX");
-                      }
-                      record.put(groupType.getName(), new HashMap<String, Object>());
-                      if (groupType.isPrimitive()) {
-                        converters.forEach(
-                            c -> {
-                              Converter x = c;
-                            });
-                      }
                       return new GroupConverter() {
 
-                        private String name;
 
                         public Converter getConverter(int fieldIndex) {
                           return converters.get(fieldIndex);
                         }
 
                         public void start() {
-                          name = groupType.getName();
                         }
 
                         public void end() {
-                          // current = "end()";
-                          log.info("Called end.");
                         }
                       };
                     }
@@ -253,6 +242,22 @@ public class ProximaParquetReader implements Reader {
                       return convertGroupType(null, messageType, children);
                     }
                   });
+    }
+
+    private Map<String, Object> getMap(List<GroupType> path) {
+      Map<String, Object> res = record;
+      if (path != null) {
+        for (GroupType g : path) {
+          if (!g.getName().equals("proxima-bulk")) {
+            res.computeIfAbsent(
+                g.getName(),
+                name ->
+                    new HashMap<String, Map<String, Object>>());
+            res = (Map<String, Object>) res.get(g.getName());
+          }
+        }
+      }
+      return res;
     }
 
     @Override
@@ -297,8 +302,28 @@ public class ProximaParquetReader implements Reader {
     }
 
     private byte[] getValueFromCurrentRowData(AttributeDescriptor<?> attribute) {
-      // @FIXME
-      return (byte[]) record.get(attributeNamesPrefix + attribute.toAttributePrefix(false));
+
+      final String attributeKeyName = attributeNamesPrefix + attribute.toAttributePrefix(false);
+
+      final GenericTypeDescriptor<?> attributeSchema = attribute.getSchemaTypeDescriptor();
+      Object value;
+      if (attributeSchema.isStructureType()) {
+        @SuppressWarnings("unchecked") final StructureValueAccessor<Object> valueAccessor =
+            (StructureValueAccessor<Object>)
+                attributeSchema.asStructureTypeDescriptor().getValueAccessor();
+        value = valueAccessor.createFrom(record.get(attributeKeyName));
+      } else if (attributeSchema.isArrayType()) {
+        @SuppressWarnings("unchecked") final ArrayValueAccessor<Object> valueAccessor = (ArrayValueAccessor<Object>) attributeSchema
+            .asArrayTypeDescriptor().getValueAccessor();
+        // FIXME after bytes is resolved
+        value = record.get(attributeKeyName);
+        //value = valueAccessor.createFrom(record.get(attributeKeyName));
+      } else {
+        throw new UnsupportedOperationException("Fixme");
+      }
+      @SuppressWarnings("unchecked") final ValueSerializer<Object> serializer = (ValueSerializer<Object>) attribute
+          .getValueSerializer();
+      return serializer.serialize(value);
     }
 
     private Object getRequiredValueFromCurrentRowData(String column) {

@@ -18,7 +18,7 @@ package cz.o2.proxima.direct.bulk.fs.parquet;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.AttributeFamilyDescriptor;
 import cz.o2.proxima.scheme.AttributeValueType;
-import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
+import cz.o2.proxima.scheme.SchemaDescriptors.GenericTypeDescriptor;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -52,7 +52,7 @@ public class ParquetUtils {
 
   public static <T> Type createParquetSchema(
       AttributeDescriptor<T> attribute, String attributeNamesPrefix) {
-    final SchemaTypeDescriptor<T> schema = attribute.getSchemaTypeDescriptor();
+    final GenericTypeDescriptor<T> schema = attribute.getSchemaTypeDescriptor();
     String attributeName = attributeNamesPrefix + attribute.getName();
     if (attribute.isWildcard()) {
       attributeName = attributeNamesPrefix + attribute.toAttributePrefix(false);
@@ -64,19 +64,19 @@ public class ParquetUtils {
               .named(attributeName)
               .withNewFields(
                   schema
-                      .getStructureTypeDescriptor()
+                      .asStructureTypeDescriptor()
                       .getFields()
                       .entrySet()
                       .stream()
-                      .map(e -> mapSchemaTypeToParquet(e.getValue().toTypeDescriptor(), e.getKey()))
+                      .map(e -> mapSchemaTypeToParquet(e.getValue(), e.getKey()))
                       .collect(Collectors.toList()));
     } else {
-      parquet = mapSchemaTypeToParquet(schema.toTypeDescriptor(), attributeName);
+      parquet = mapSchemaTypeToParquet(schema, attributeName);
     }
     return parquet;
   }
 
-  public static Type mapSchemaTypeToParquet(SchemaTypeDescriptor<?> descriptor, String name) {
+  public static Type mapSchemaTypeToParquet(GenericTypeDescriptor<?> descriptor, String name) {
     switch (descriptor.getType()) {
       case INT:
         return Types.optional(PrimitiveTypeName.INT32).named(name);
@@ -99,8 +99,8 @@ public class ParquetUtils {
       case BYTE:
         return Types.optional(PrimitiveTypeName.BINARY).named(name);
       case ARRAY:
-        SchemaTypeDescriptor<?> valueTypeDescriptor =
-            descriptor.getArrayTypeDescriptor().getValueDescriptor();
+        GenericTypeDescriptor<?> valueTypeDescriptor =
+            descriptor.asArrayTypeDescriptor().getValueDescriptor();
         Type valueType = mapSchemaTypeToParquet(valueTypeDescriptor, name);
 
         // proxima byte array should be encoded as binary
@@ -119,11 +119,10 @@ public class ParquetUtils {
       case STRUCTURE:
         GroupBuilder<GroupType> structure = Types.optionalGroup();
         descriptor
-            .getStructureTypeDescriptor()
+            .asStructureTypeDescriptor()
             .getFields()
             .forEach(
-                (fieldName, des) ->
-                    structure.addField(mapSchemaTypeToParquet(des.toTypeDescriptor(), fieldName)));
+                (fieldName, des) -> structure.addField(mapSchemaTypeToParquet(des, fieldName)));
 
         return structure.named(name);
       default:
