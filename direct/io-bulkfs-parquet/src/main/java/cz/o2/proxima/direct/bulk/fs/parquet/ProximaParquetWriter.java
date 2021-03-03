@@ -34,6 +34,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.parquet.hadoop.ParquetFileWriter.Mode;
 import org.apache.parquet.hadoop.ParquetWriter;
 import org.apache.parquet.hadoop.api.WriteSupport;
+import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 import org.apache.parquet.io.InvalidRecordException;
 import org.apache.parquet.io.OutputFile;
 import org.apache.parquet.io.PositionOutputStream;
@@ -50,7 +51,11 @@ public class ProximaParquetWriter implements Writer {
   private final ParquetWriter<StreamElement> writer;
 
   public ProximaParquetWriter(
-      Path path, MessageType schema, String attributeNamesPrefix, Configuration config)
+      Path path,
+      MessageType schema,
+      String attributeNamesPrefix,
+      CompressionCodecName compressionCodecName,
+      Configuration config)
       throws IOException {
     this.path = path;
     this.writer =
@@ -58,6 +63,7 @@ public class ProximaParquetWriter implements Writer {
             .withConf(config)
             .withWriteMode(Mode.OVERWRITE)
             // For some reason Writer ignores settings this via withConf()
+            .withCompressionCodec(compressionCodecName)
             .withRowGroupSize(
                 config.getInt(
                     ParquetFileFormat.PARQUET_CONFIG_PAGE_SIZE_KEY_NAME,

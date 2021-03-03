@@ -90,7 +90,11 @@ public class ParquetFileFormat implements FileFormat {
         path,
         getParquetSchema());
     return new ProximaParquetWriter(
-        path, getParquetSchema(), attributeNamesPrefix, createWriterConfiguration());
+        path,
+        getParquetSchema(),
+        attributeNamesPrefix,
+        parquetCompressionCodec,
+        createWriterConfiguration());
   }
 
   Configuration createWriterConfiguration() {

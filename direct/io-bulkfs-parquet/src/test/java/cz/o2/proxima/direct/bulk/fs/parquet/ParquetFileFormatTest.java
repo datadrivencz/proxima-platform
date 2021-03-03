@@ -258,8 +258,7 @@ public class ParquetFileFormatTest extends AbstractFileFormatTest {
   }
 
   @Test
-  @Ignore
-  // TODO: remove
+  @Ignore(value = "to be deleted")
   public void x() throws IOException {
     File file = new File("/tmp/file.parquet");
     Path path =
@@ -270,6 +269,7 @@ public class ParquetFileFormatTest extends AbstractFileFormatTest {
                     Duration.ofHours(1), "prefix", getFileFormat().fileSuffix())),
             file);
     try (Writer writer = getFileFormat().openWriter(path, entity)) {
+      /*
       writer.write(
           StreamElement.upsert(
               entity,
@@ -279,6 +279,8 @@ public class ParquetFileFormatTest extends AbstractFileFormatTest {
               notFromFamilyAttribute.toAttributePrefix(),
               now,
               new byte[] {69}));
+
+       */
       writer.write(upsert());
     }
   }
