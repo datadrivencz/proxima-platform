@@ -25,12 +25,10 @@ import cz.o2.proxima.scheme.AttributeValueAccessors.ArrayValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.EnumValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.PrimitiveValueAccessor;
 import cz.o2.proxima.scheme.SchemaDescriptors;
-import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
+import cz.o2.proxima.scheme.SchemaDescriptors.GenericTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.StructureTypeDescriptor;
-import cz.o2.proxima.scheme.SchemaDescriptors.TypeDescriptor;
 import cz.o2.proxima.scheme.proto.ProtoMessageValueAccessor;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -41,15 +39,16 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class ProtoUtils {
 
-  private static final Map<String, SchemaTypeDescriptor<?>> structCache = new ConcurrentHashMap<>();
+  private static final Map<String, GenericTypeDescriptor<?>> structCache =
+      new ConcurrentHashMap<>();
 
   private ProtoUtils() {
     // no-op
   }
 
-  public static <T extends Message> SchemaTypeDescriptor<T> convertProtoToSchema(
+  public static <T extends Message> StructureTypeDescriptor<T> convertProtoToSchema(
       Descriptor proto, T defaultValue) {
-    final Map<String, TypeDescriptor<?>> fields =
+    final Map<String, GenericTypeDescriptor<?>> fields =
         proto
             .getFields()
             .stream()
@@ -61,62 +60,61 @@ public class ProtoUtils {
     StructureTypeDescriptor<T> schema =
         SchemaDescriptors.structures(
             proto.getName(),
-            Collections.emptyMap(),
+            fields,
             new ProtoMessageValueAccessor<>(fields, () -> proto, () -> defaultValue));
-    fields.forEach(schema::addField);
-    return schema.toTypeDescriptor();
+    // fields.forEach(schema::addField);
+    return schema;
   }
 
   @SuppressWarnings("unchecked")
-  protected static <T> SchemaTypeDescriptor<T> convertField(
+  protected static <T> GenericTypeDescriptor<T> convertField(
       FieldDescriptor proto, Builder builder) {
-    SchemaTypeDescriptor<T> descriptor;
+    GenericTypeDescriptor<T> descriptor;
 
     switch (proto.getJavaType()) {
       case STRING:
-        descriptor = (SchemaTypeDescriptor<T>) SchemaDescriptors.strings().toTypeDescriptor();
+        descriptor = (GenericTypeDescriptor<T>) SchemaDescriptors.strings();
         break;
       case BOOLEAN:
-        descriptor = (SchemaTypeDescriptor<T>) SchemaDescriptors.booleans().toTypeDescriptor();
+        descriptor = (GenericTypeDescriptor<T>) SchemaDescriptors.booleans();
         break;
       case BYTE_STRING:
         descriptor =
-            (SchemaTypeDescriptor<T>)
+            (GenericTypeDescriptor<T>)
                 SchemaDescriptors.bytes(
-                        new PrimitiveValueAccessor<byte[]>() {
-                          @Override
-                          public byte[] createFrom(Object object) {
-                            return ((ByteString) object).toByteArray();
-                          }
+                    new PrimitiveValueAccessor<byte[]>() {
+                      @Override
+                      public byte[] createFrom(Object object) {
+                        return ((ByteString) object).toByteArray();
+                      }
 
-                          @Override
-                          public Object valueOf(byte[] value) {
-                            return ByteString.copyFrom(value);
-                          }
+                      @Override
+                      public Object valueOf(byte[] value) {
+                        return ByteString.copyFrom(value);
+                      }
 
-                          @Override
-                          public byte[] asBytes(Object object) {
-                            return ((ByteString) object).toByteArray();
-                          }
+                      @Override
+                      public byte[] asBytes(Object object) {
+                        return ((ByteString) object).toByteArray();
+                      }
 
-                          @Override
-                          public Object fromBytes(byte[] bytes) {
-                            return ByteString.copyFrom(bytes);
-                          }
-                        })
-                    .toTypeDescriptor();
+                      @Override
+                      public Object fromBytes(byte[] bytes) {
+                        return ByteString.copyFrom(bytes);
+                      }
+                    });
         break;
       case FLOAT:
-        descriptor = (SchemaTypeDescriptor<T>) SchemaDescriptors.floats().toTypeDescriptor();
+        descriptor = (GenericTypeDescriptor<T>) SchemaDescriptors.floats();
         break;
       case DOUBLE:
-        descriptor = (SchemaTypeDescriptor<T>) SchemaDescriptors.doubles().toTypeDescriptor();
+        descriptor = (GenericTypeDescriptor<T>) SchemaDescriptors.doubles();
         break;
       case LONG:
-        descriptor = (SchemaTypeDescriptor<T>) SchemaDescriptors.longs().toTypeDescriptor();
+        descriptor = (GenericTypeDescriptor<T>) SchemaDescriptors.longs();
         break;
       case INT:
-        descriptor = (SchemaTypeDescriptor<T>) SchemaDescriptors.integers().toTypeDescriptor();
+        descriptor = (GenericTypeDescriptor<T>) SchemaDescriptors.integers();
         break;
       case ENUM:
         final Map<String, EnumValueDescriptor> enumValues =
@@ -127,41 +125,40 @@ public class ProtoUtils {
                 .collect(Collectors.toMap(EnumValueDescriptor::getName, Function.identity()));
 
         descriptor =
-            (SchemaTypeDescriptor<T>)
+            (GenericTypeDescriptor<T>)
                 SchemaDescriptors.enums(
-                        new ArrayList<>(enumValues.keySet()),
-                        new EnumValueAccessor<String>() {
-                          @Override
-                          public String createFrom(Object object) {
-                            return enumValues
-                                .keySet()
-                                .stream()
-                                .filter(e -> e.equals(object.toString()))
-                                .findFirst()
-                                .orElseThrow(
-                                    () ->
-                                        new IllegalArgumentException(
-                                            String.format(
-                                                "Unknown value [%s] for enum type. Values: %s",
-                                                object, enumValues.keySet())));
-                          }
+                    new ArrayList<>(enumValues.keySet()),
+                    new EnumValueAccessor<String>() {
+                      @Override
+                      public String createFrom(Object object) {
+                        return enumValues
+                            .keySet()
+                            .stream()
+                            .filter(e -> e.equals(object.toString()))
+                            .findFirst()
+                            .orElseThrow(
+                                () ->
+                                    new IllegalArgumentException(
+                                        String.format(
+                                            "Unknown value [%s] for enum type. Values: %s",
+                                            object, enumValues.keySet())));
+                      }
 
-                          @Override
-                          public Object valueOf(String value) {
-                            return enumValues
-                                .values()
-                                .stream()
-                                .filter(v -> v.getName().equals(value))
-                                .findFirst()
-                                .orElseThrow(
-                                    () ->
-                                        new IllegalArgumentException(
-                                            String.format(
-                                                "Unknown value [%s] for enum type. Values: %s",
-                                                value, enumValues.keySet())));
-                          }
-                        })
-                    .toTypeDescriptor();
+                      @Override
+                      public Object valueOf(String value) {
+                        return enumValues
+                            .values()
+                            .stream()
+                            .filter(v -> v.getName().equals(value))
+                            .findFirst()
+                            .orElseThrow(
+                                () ->
+                                    new IllegalArgumentException(
+                                        String.format(
+                                            "Unknown value [%s] for enum type. Values: %s",
+                                            value, enumValues.keySet())));
+                      }
+                    });
         break;
       case MESSAGE:
         final String messageTypeName = proto.getMessageType().toProto().getName();
@@ -171,11 +168,8 @@ public class ProtoUtils {
             name ->
                 convertProtoToSchema(
                     proto.getMessageType(),
-                    proto
-                        .getMessageType()
-                        .toProto()
-                        .getDefaultInstanceForType()));
-        descriptor = (SchemaTypeDescriptor<T>) structCache.get(messageTypeName).toTypeDescriptor();
+                    proto.getMessageType().toProto().getDefaultInstanceForType()));
+        descriptor = (GenericTypeDescriptor<T>) structCache.get(messageTypeName);
 
         break;
       default:
@@ -186,23 +180,22 @@ public class ProtoUtils {
     if (proto.isRepeated()) {
 
       return SchemaDescriptors.arrays(
-              descriptor,
-              new ArrayValueAccessor<T>() {
-                @Override
-                public <V> List<T> values(V object) {
-                  @SuppressWarnings({"unchecked", "rawtypes"})
-                  List<T> cast = (List) object;
-                  return cast;
-                }
+          descriptor,
+          new ArrayValueAccessor<T>() {
+            @Override
+            public <V> List<T> values(V object) {
+              @SuppressWarnings({"unchecked", "rawtypes"})
+              List<T> cast = (List) object;
+              return cast;
+            }
 
-                @Override
-                public T createFrom(Object object) {
-                  @SuppressWarnings({"unchecked", "rawtypes"})
-                  List<T> cast = (List) object;
-                  return (T) cast; // @TODO: WTF?
-                }
-              })
-          .toTypeDescriptor();
+            @Override
+            public T createFrom(Object object) {
+              @SuppressWarnings({"unchecked", "rawtypes"})
+              List<T> cast = (List) object;
+              return (T) cast; // @TODO: WTF?
+            }
+          });
     } else {
       return descriptor;
     }

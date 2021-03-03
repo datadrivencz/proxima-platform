@@ -17,7 +17,7 @@ package cz.o2.proxima.scheme;
 
 import com.google.common.base.Preconditions;
 import cz.o2.proxima.annotations.Stable;
-import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
+import cz.o2.proxima.scheme.SchemaDescriptors.GenericTypeDescriptor;
 import java.net.URI;
 import java.util.Base64;
 import java.util.Optional;
@@ -75,8 +75,8 @@ public class BytesSerializer implements ValueSerializerFactory {
           }
 
           @Override
-          public SchemaTypeDescriptor<byte[]> getValueSchemaDescriptor() {
-            return SchemaDescriptors.bytes().toTypeDescriptor();
+          public GenericTypeDescriptor<byte[]> getValueSchemaDescriptor() {
+            return SchemaDescriptors.bytes();
           }
         };
   }

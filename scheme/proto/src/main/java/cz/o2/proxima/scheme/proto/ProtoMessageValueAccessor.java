@@ -22,10 +22,9 @@ import com.google.protobuf.Message;
 import com.google.protobuf.Message.Builder;
 import cz.o2.proxima.functional.Factory;
 import cz.o2.proxima.scheme.AttributeValueAccessors.EnumValueAccessor;
-import cz.o2.proxima.scheme.AttributeValueAccessors.StructureValueAccessorImpl;
+import cz.o2.proxima.scheme.AttributeValueAccessors.StructureValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueType;
-import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
-import cz.o2.proxima.scheme.SchemaDescriptors.TypeDescriptor;
+import cz.o2.proxima.scheme.SchemaDescriptors.GenericTypeDescriptor;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,16 +33,16 @@ import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
-public class ProtoMessageValueAccessor<T extends Message> extends StructureValueAccessorImpl<T> {
+public class ProtoMessageValueAccessor<T extends Message> implements StructureValueAccessor<T> {
 
-  private final Map<String, TypeDescriptor<?>> fields;
+  private final Map<String, GenericTypeDescriptor<?>> fields;
   private final Factory<Descriptor> protoDescriptorFactory;
   private final Factory<T> defaultValueFactory;
   private transient Descriptor proto;
   private transient T defaultValue;
 
   public ProtoMessageValueAccessor(
-      Map<String, TypeDescriptor<?>> fields,
+      Map<String, GenericTypeDescriptor<?>> fields,
       Factory<Descriptor> protoDescriptorFactory,
       Factory<T> defaultValueFactory) {
     this.fields = fields;
@@ -61,8 +60,8 @@ public class ProtoMessageValueAccessor<T extends Message> extends StructureValue
   @Override
   public <V> V readField(String name, T value) {
     @SuppressWarnings("unchecked")
-    final SchemaTypeDescriptor<Object> valueSchema =
-        (SchemaTypeDescriptor<Object>) getFieldSchemaTypeDescriptor(fields, name);
+    final GenericTypeDescriptor<Object> valueSchema =
+        (GenericTypeDescriptor<Object>) getFieldSchemaTypeDescriptor(fields, name);
     return readField(name, value, valueSchema, value.getDescriptorForType());
   }
 
@@ -77,36 +76,33 @@ public class ProtoMessageValueAccessor<T extends Message> extends StructureValue
   private <V> V readField(
       String name,
       Message value,
-      SchemaTypeDescriptor<Object> valueSchema,
+      GenericTypeDescriptor<Object> valueSchema,
       Descriptor protoDescriptor) {
     final FieldDescriptor fieldProtoDescriptor = protoDescriptor.findFieldByName(name);
     final Object fieldValue = value.getField(fieldProtoDescriptor);
 
     if (valueSchema.isPrimitiveType()) {
-      return (V) valueSchema.getPrimitiveTypeDescriptor().getValueAccessor().valueOf(fieldValue);
+      return (V) valueSchema.asPrimitiveTypeDescriptor().getValueAccessor().valueOf(fieldValue);
     } else if (valueSchema.isArrayType()) {
-      return (V) valueSchema.getArrayTypeDescriptor().getValueAccessor().values(fieldValue);
+      return (V) valueSchema.asArrayTypeDescriptor().getValueAccessor().values(fieldValue);
     } else if (valueSchema.isStructureType()) {
       final Map<String, Object> messageValue = new HashMap<>();
       valueSchema
-          .getStructureTypeDescriptor()
+          .asStructureTypeDescriptor()
           .getFields()
           .forEach(
               (innerFieldName, innerType) -> {
-                final SchemaTypeDescriptor<Object> innerSchema =
-                    (SchemaTypeDescriptor<Object>) innerType.toTypeDescriptor();
                 final Object innerValue =
                     readField(
                         innerFieldName,
                         (Message) fieldValue,
-                        innerSchema,
+                        (GenericTypeDescriptor<Object>) innerType,
                         fieldProtoDescriptor.getMessageType());
                 messageValue.put(innerFieldName, innerValue);
               });
       return (V) messageValue;
     } else if (valueSchema.isEnumType()) {
-      EnumValueAccessor<String> accessor =
-          (EnumValueAccessor<String>) valueSchema.getEnumTypeDescriptor().getValueAccessor();
+      EnumValueAccessor<Object> accessor = valueSchema.asEnumTypeDescriptor().getValueAccessor();
       return (V) accessor.createFrom(fieldValue.toString());
     } else {
       throw new UnsupportedOperationException(
@@ -117,15 +113,15 @@ public class ProtoMessageValueAccessor<T extends Message> extends StructureValue
   @SuppressWarnings("unchecked")
   private Message buildMessage(
       Map<String, Object> map,
-      Map<String, TypeDescriptor<?>> fieldsDescriptors,
+      Map<String, GenericTypeDescriptor<?>> fieldsDescriptors,
       Descriptor protoDescriptor,
       Builder builder) {
     for (Entry<String, Object> entry : map.entrySet()) {
       final String field = entry.getKey();
       final Object value = entry.getValue();
       @SuppressWarnings("unchecked")
-      final SchemaTypeDescriptor<Object> valueSchema =
-          (SchemaTypeDescriptor<Object>) getFieldSchemaTypeDescriptor(fieldsDescriptors, field);
+      final GenericTypeDescriptor<Object> valueSchema =
+          (GenericTypeDescriptor<Object>) getFieldSchemaTypeDescriptor(fieldsDescriptors, field);
       final FieldDescriptor protoFieldDescriptor = protoDescriptor.findFieldByName(field);
       Preconditions.checkNotNull(
           protoFieldDescriptor,
@@ -136,19 +132,19 @@ public class ProtoMessageValueAccessor<T extends Message> extends StructureValue
       if (valueSchema.isPrimitiveType()) {
         builder.setField(
             protoFieldDescriptor,
-            valueSchema.getPrimitiveTypeDescriptor().getValueAccessor().createFrom(value));
+            valueSchema.asPrimitiveTypeDescriptor().getValueAccessor().createFrom(value));
       } else if (valueSchema.isArrayType()) {
-        final SchemaTypeDescriptor<Object> arrayValueDescriptor =
-            valueSchema.getArrayTypeDescriptor().getValueDescriptor();
-        if (valueSchema.getArrayTypeDescriptor().getValueType().equals(AttributeValueType.BYTE)) {
+        final GenericTypeDescriptor<Object> arrayValueDescriptor =
+            valueSchema.asArrayTypeDescriptor().getValueDescriptor();
+        if (valueSchema.asArrayTypeDescriptor().getValueType().equals(AttributeValueType.BYTE)) {
           // Bytes needs to be converted as PrimitiveValue of String
           builder.setField(
               protoFieldDescriptor,
-              arrayValueDescriptor.getPrimitiveTypeDescriptor().getValueAccessor().valueOf(value));
+              arrayValueDescriptor.asPrimitiveTypeDescriptor().getValueAccessor().valueOf(value));
 
         } else {
           final List<Object> values =
-              valueSchema.getArrayTypeDescriptor().getValueAccessor().values(value);
+              valueSchema.asArrayTypeDescriptor().getValueAccessor().values(value);
           values.forEach(
               v -> {
                 Object arrayValue = v;
@@ -157,7 +153,7 @@ public class ProtoMessageValueAccessor<T extends Message> extends StructureValue
                   arrayValue =
                       buildMessage(
                           (Map<String, Object>) v,
-                          arrayValueDescriptor.getStructureTypeDescriptor().getFields(),
+                          arrayValueDescriptor.asStructureTypeDescriptor().getFields(),
                           protoFieldDescriptor.getMessageType(),
                           builder.newBuilderForField(protoFieldDescriptor));
                 }
@@ -169,13 +165,13 @@ public class ProtoMessageValueAccessor<T extends Message> extends StructureValue
         final Message message =
             buildMessage(
                 (Map<String, Object>) value,
-                valueSchema.getStructureTypeDescriptor().getFields(),
+                valueSchema.asStructureTypeDescriptor().getFields(),
                 fieldBuilder.getDescriptorForType(),
                 fieldBuilder);
         builder.setField(protoFieldDescriptor, message);
       } else if (valueSchema.isEnumType()) {
         final EnumValueAccessor<Object> enumValueAccessor =
-            (EnumValueAccessor<Object>) valueSchema.getEnumTypeDescriptor().getValueAccessor();
+            valueSchema.asEnumTypeDescriptor().getValueAccessor();
         builder.setField(protoFieldDescriptor, enumValueAccessor.valueOf(value));
       } else {
         throw new UnsupportedOperationException(
@@ -185,10 +181,9 @@ public class ProtoMessageValueAccessor<T extends Message> extends StructureValue
     return builder.build();
   }
 
-  private SchemaTypeDescriptor<?> getFieldSchemaTypeDescriptor(
-      Map<String, TypeDescriptor<?>> from, String name) {
+  private GenericTypeDescriptor<?> getFieldSchemaTypeDescriptor(
+      Map<String, GenericTypeDescriptor<?>> from, String name) {
     return Optional.ofNullable(from.getOrDefault(name, null))
-        .map(TypeDescriptor::toTypeDescriptor)
         .orElseThrow(
             () ->
                 new IllegalArgumentException(

@@ -25,7 +25,6 @@ import cz.o2.proxima.scheme.AttributeValueAccessors.PrimitiveValueAccessor;
 import cz.o2.proxima.scheme.SchemaDescriptors.ArrayTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.EnumTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.PrimitiveTypeDescriptor;
-import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.StructureTypeDescriptor;
 import cz.o2.proxima.util.TestUtils;
 import java.io.IOException;
@@ -80,11 +79,11 @@ public class SchemaDescriptorsTest {
   public void testStringDescriptor() {
     PrimitiveTypeDescriptor<String> string = SchemaDescriptors.strings();
     assertEquals(AttributeValueType.STRING, string.getType());
-    SchemaTypeDescriptor<String> descriptor = string.toTypeDescriptor();
-    assertEquals(string, descriptor.getPrimitiveTypeDescriptor());
-    assertThrows(IllegalStateException.class, descriptor::getArrayTypeDescriptor);
-    assertThrows(IllegalStateException.class, descriptor::getStructureTypeDescriptor);
-    assertThrows(IllegalStateException.class, descriptor::getEnumTypeDescriptor);
+    assertEquals("STRING", string.toString());
+    assertTrue(string.isPrimitiveType());
+    assertThrows(IllegalStateException.class, string::asArrayTypeDescriptor);
+    assertThrows(IllegalStateException.class, string::asStructureTypeDescriptor);
+    assertThrows(IllegalStateException.class, string::asEnumTypeDescriptor);
     assertEquals("10", string.getValueAccessor().createFrom(10));
     assertEquals("20", string.getValueAccessor().valueOf("20"));
   }
@@ -94,27 +93,25 @@ public class SchemaDescriptorsTest {
     ArrayTypeDescriptor<String> desc = SchemaDescriptors.arrays(SchemaDescriptors.strings());
     assertEquals(AttributeValueType.ARRAY, desc.getType());
     assertEquals(AttributeValueType.STRING, desc.getValueType());
-    SchemaTypeDescriptor<String> d = desc.toTypeDescriptor();
-    assertThrows(IllegalStateException.class, d::getPrimitiveTypeDescriptor);
-    assertThrows(IllegalStateException.class, d::getStructureTypeDescriptor);
-    assertThrows(IllegalStateException.class, d::getEnumTypeDescriptor);
+    assertEquals("ARRAY[STRING]", desc.toString());
+    assertThrows(IllegalStateException.class, desc::asStructureTypeDescriptor);
+    assertThrows(IllegalStateException.class, desc::asEnumTypeDescriptor);
   }
 
   @Test
   public void testStructureDescriptorWithoutFields() {
-    StructureTypeDescriptor<Object> s = SchemaDescriptors.structures("structure");
-    assertEquals("structure", s.getName());
-    assertTrue(s.getFields().isEmpty());
-    SchemaTypeDescriptor<Object> desc = s.toTypeDescriptor();
-    assertEquals(s, desc.getStructureTypeDescriptor());
-    assertThrows(IllegalArgumentException.class, () -> s.getField("something"));
-    assertFalse(s.hasField("something"));
+    StructureTypeDescriptor<Object> desc = SchemaDescriptors.structures("structure");
+    assertEquals("structure", desc.getName());
+    assertTrue(desc.getFields().isEmpty());
+    assertEquals("STRUCTURE structure", desc.toString());
+    assertThrows(IllegalArgumentException.class, () -> desc.getField("something"));
+    assertFalse(desc.hasField("something"));
     assertFalse(desc.isArrayType());
     assertFalse(desc.isPrimitiveType());
     assertTrue(desc.isStructureType());
-    assertThrows(IllegalStateException.class, desc::getArrayTypeDescriptor);
-    assertThrows(IllegalStateException.class, desc::getPrimitiveTypeDescriptor);
-    assertThrows(IllegalStateException.class, desc::getEnumTypeDescriptor);
+    assertThrows(IllegalStateException.class, desc::asArrayTypeDescriptor);
+    assertThrows(IllegalStateException.class, desc::asPrimitiveTypeDescriptor);
+    assertThrows(IllegalStateException.class, desc::asEnumTypeDescriptor);
   }
 
   @Test
@@ -140,28 +137,24 @@ public class SchemaDescriptorsTest {
     assertEquals(AttributeValueType.ARRAY, s.getField("array_of_string_field").getType());
     assertEquals(
         AttributeValueType.STRING,
-        s.getField("array_of_string_field").getArrayTypeDescriptor().getValueType());
+        s.getField("array_of_string_field").asArrayTypeDescriptor().getValueType());
     assertEquals(AttributeValueType.STRUCTURE, s.getField("inner_structure").getType());
     assertEquals(
         AttributeValueType.STRUCTURE,
-        s.getField("inner_structure").toTypeDescriptor().getStructureTypeDescriptor().getType());
+        s.getField("inner_structure").asStructureTypeDescriptor().getType());
 
     assertEquals(
-        "inner_message",
-        s.getField("inner_structure").toTypeDescriptor().getStructureTypeDescriptor().getName());
+        "inner_message", s.getField("inner_structure").asStructureTypeDescriptor().getName());
 
     assertEquals(
         AttributeValueType.ARRAY,
-        s.getField("inner_structure")
-            .getStructureTypeDescriptor()
-            .getField("byte_array")
-            .getType());
+        s.getField("inner_structure").asStructureTypeDescriptor().getField("byte_array").getType());
     assertEquals(
         AttributeValueType.BYTE,
         s.getField("inner_structure")
-            .getStructureTypeDescriptor()
+            .asStructureTypeDescriptor()
             .getField("byte_array")
-            .getArrayTypeDescriptor()
+            .asArrayTypeDescriptor()
             .getValueType());
   }
 
@@ -181,10 +174,9 @@ public class SchemaDescriptorsTest {
                 .addField("field2", SchemaDescriptors.longs()));
     assertEquals(AttributeValueType.ARRAY, d.getType());
     assertEquals(AttributeValueType.STRUCTURE, d.getValueType());
-    assertEquals(AttributeValueType.ARRAY, d.toTypeDescriptor().getType());
     assertEquals(AttributeValueType.STRUCTURE, d.getValueDescriptor().getType());
-    assertEquals("structure", d.getValueDescriptor().getStructureTypeDescriptor().getName());
-    assertEquals(2, d.getValueDescriptor().getStructureTypeDescriptor().getFields().size());
+    assertEquals("structure", d.getValueDescriptor().asStructureTypeDescriptor().getName());
+    assertEquals(2, d.getValueDescriptor().asStructureTypeDescriptor().getFields().size());
   }
 
   @Test
@@ -220,8 +212,7 @@ public class SchemaDescriptorsTest {
     EnumTypeDescriptor<String> desc = SchemaDescriptors.enums(values);
     assertEquals(AttributeValueType.ENUM, desc.getType());
     assertEquals(values, desc.getValues());
-
-    assertEquals(desc, desc.toTypeDescriptor().getEnumTypeDescriptor());
+    assertEquals("ENUM[LEFT, RIGHT]", desc.toString());
 
     assertEquals(desc, SchemaDescriptors.enums(values));
   }
