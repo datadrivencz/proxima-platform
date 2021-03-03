@@ -19,16 +19,35 @@ import java.io.Serializable;
 import java.util.Arrays;
 import java.util.Map;
 
+/** Classes providing access to Attribute values */
 public class AttributeValueAccessors {
 
   private AttributeValueAccessors() {}
 
+  /**
+   * Generic value accessor
+   *
+   * @param <T> value type
+   */
   public interface GenericValueAccessor<T> extends Serializable {
 
+    /**
+     * Create value from object
+     *
+     * @param object
+     * @return value
+     */
     default T createFrom(Object object) {
       throw new UnsupportedOperationException("Method createFrom() is not implemented.");
     }
 
+    /**
+     * Get value @TODO: this is a little bit weird
+     *
+     * @param value value
+     * @param <V> expected type
+     * @return value
+     */
     @SuppressWarnings("unchecked")
     default <V> V valueOf(T value) {
       return (V) value;
@@ -37,8 +56,11 @@ public class AttributeValueAccessors {
 
   public interface PrimitiveValueAccessor<T> extends GenericValueAccessor<T> {}
 
-  public static class PrimitiveValueAccessorImpl<T> implements PrimitiveValueAccessor<T> {}
-
+  /**
+   * Array value accessor
+   *
+   * @param <T>
+   */
   public interface ArrayValueAccessor<T> extends GenericValueAccessor<T> {
 
     default <V> T[] createFrom(V[] object) {
