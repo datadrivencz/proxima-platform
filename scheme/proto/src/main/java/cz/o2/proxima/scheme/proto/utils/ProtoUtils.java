@@ -20,7 +20,6 @@ import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.Descriptors.EnumValueDescriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor;
 import com.google.protobuf.Message;
-import com.google.protobuf.Message.Builder;
 import cz.o2.proxima.scheme.AttributeValueAccessors.ArrayValueAccessorImpl;
 import cz.o2.proxima.scheme.AttributeValueAccessors.EnumValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.GenericValueAccessor;
@@ -47,29 +46,37 @@ public class ProtoUtils {
     // no-op
   }
 
+  /**
+   * Covert proto object to proxima schema.
+   *
+   * @param proto proto message descriptor
+   * @param defaultValue default value
+   * @param <T> message type
+   * @return structure type descriptor
+   */
   public static <T extends Message> StructureTypeDescriptor<T> convertProtoToSchema(
       Descriptor proto, T defaultValue) {
     final Map<String, GenericTypeDescriptor<?>> fields =
         proto
             .getFields()
             .stream()
-            .collect(
-                Collectors.toMap(
-                    FieldDescriptor::getName,
-                    f -> convertField(f, defaultValue.newBuilderForType())));
+            .collect(Collectors.toMap(FieldDescriptor::getName, ProtoUtils::convertField));
 
-    StructureTypeDescriptor<T> schema =
-        SchemaDescriptors.structures(
-            proto.getName(),
-            fields,
-            new ProtoMessageValueAccessor<>(fields, () -> proto, () -> defaultValue));
-    // fields.forEach(schema::addField);
-    return schema;
+    return SchemaDescriptors.structures(
+        proto.getName(),
+        fields,
+        new ProtoMessageValueAccessor<>(fields, () -> proto, () -> defaultValue));
   }
 
+  /**
+   * Convert field of proto message to type descriptor
+   *
+   * @param proto field proto descriptor
+   * @param <T> field type
+   * @return schema type descriptor
+   */
   @SuppressWarnings("unchecked")
-  protected static <T> GenericTypeDescriptor<T> convertField(
-      FieldDescriptor proto, Builder builder) {
+  protected static <T> GenericTypeDescriptor<T> convertField(FieldDescriptor proto) {
     GenericTypeDescriptor<T> descriptor;
 
     switch (proto.getJavaType()) {
@@ -87,8 +94,6 @@ public class ProtoUtils {
                       @Override
                       public ByteString createFrom(Object object) {
                         return ByteString.copyFromUtf8(new String((byte[]) object));
-                        // return
-                        // ByteString.copyFrom(object.toString().getBytes(StandardCharsets.UTF_8));
                       }
 
                       @Override
@@ -192,42 +197,6 @@ public class ProtoUtils {
               return (T[]) Arrays.stream(object).map(valueAccessor::createFrom).toArray();
             }
           });
-      /*
-      return SchemaDescriptors.arrays(
-          descriptor,
-          new ArrayValueAccessor<T>() {
-            @Override
-            public <V> T[] createFrom(V[] object) {
-              if (descriptor.isPrimitiveType()) {
-
-              }
-              Arrays.stream(object).map(v -> descriptor.)
-              @SuppressWarnings({"unchecked", "rawtypes"})
-              List<T> cast = (List) object;
-              return (T[]) cast.toArray();
-            }
-
-            @Override
-            public <V> V[] valuesOf(T[] object) {
-              return null;
-            }
-
-            @Override
-            public <V> List<T> values(V object) {
-              @SuppressWarnings({"unchecked", "rawtypes"})
-              List<T> cast = (List) object;
-              return cast;
-            }
-
-            @Override
-            public T createFrom(Object object) {
-              @SuppressWarnings({"unchecked", "rawtypes"})
-              List<T> cast = (List) object;
-              return (T) cast; // @TODO: WTF?
-            }
-          });
-
-       */
     } else {
       return descriptor;
     }

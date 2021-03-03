@@ -83,9 +83,9 @@ public class SchemaDescriptorsTest {
     assertEquals(AttributeValueType.STRING, string.getType());
     assertEquals("STRING", string.toString());
     assertTrue(string.isPrimitiveType());
-    assertThrows(IllegalStateException.class, string::asArrayTypeDescriptor);
-    assertThrows(IllegalStateException.class, string::asStructureTypeDescriptor);
-    assertThrows(IllegalStateException.class, string::asEnumTypeDescriptor);
+    assertThrows(UnsupportedOperationException.class, string::asArrayTypeDescriptor);
+    assertThrows(UnsupportedOperationException.class, string::asStructureTypeDescriptor);
+    assertThrows(UnsupportedOperationException.class, string::asEnumTypeDescriptor);
     assertEquals("10", string.getValueAccessor().createFrom(10));
     assertEquals("20", string.getValueAccessor().valueOf("20"));
   }
@@ -96,8 +96,8 @@ public class SchemaDescriptorsTest {
     assertEquals(AttributeValueType.ARRAY, desc.getType());
     assertEquals(AttributeValueType.STRING, desc.getValueType());
     assertEquals("ARRAY[STRING]", desc.toString());
-    assertThrows(IllegalStateException.class, desc::asStructureTypeDescriptor);
-    assertThrows(IllegalStateException.class, desc::asEnumTypeDescriptor);
+    assertThrows(UnsupportedOperationException.class, desc::asStructureTypeDescriptor);
+    assertThrows(UnsupportedOperationException.class, desc::asEnumTypeDescriptor);
   }
 
   @Test
@@ -111,9 +111,9 @@ public class SchemaDescriptorsTest {
     assertFalse(desc.isArrayType());
     assertFalse(desc.isPrimitiveType());
     assertTrue(desc.isStructureType());
-    assertThrows(IllegalStateException.class, desc::asArrayTypeDescriptor);
-    assertThrows(IllegalStateException.class, desc::asPrimitiveTypeDescriptor);
-    assertThrows(IllegalStateException.class, desc::asEnumTypeDescriptor);
+    assertThrows(UnsupportedOperationException.class, desc::asArrayTypeDescriptor);
+    assertThrows(UnsupportedOperationException.class, desc::asPrimitiveTypeDescriptor);
+    assertThrows(UnsupportedOperationException.class, desc::asEnumTypeDescriptor);
   }
 
   @Test

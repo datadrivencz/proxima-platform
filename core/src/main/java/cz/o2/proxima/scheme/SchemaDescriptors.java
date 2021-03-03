@@ -21,7 +21,6 @@ import cz.o2.proxima.scheme.AttributeValueAccessors.ArrayValueAccessorImpl;
 import cz.o2.proxima.scheme.AttributeValueAccessors.EnumValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.GenericValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.PrimitiveValueAccessor;
-import cz.o2.proxima.scheme.AttributeValueAccessors.PrimitiveValueAccessorImpl;
 import cz.o2.proxima.scheme.AttributeValueAccessors.StructureValueAccessor;
 import java.io.Serializable;
 import java.nio.charset.StandardCharsets;
@@ -63,6 +62,14 @@ public class SchemaDescriptors {
     return enums(values, new EnumValueAccessor<T>() {});
   }
 
+  /**
+   * Create {@link EnumTypeDescriptor} with {@link EnumValueAccessor}.
+   *
+   * @param values possible values
+   * @param valueAccessor value accessor
+   * @param <T> type of descriptor
+   * @return enum type descriptor
+   */
   public static <T> EnumTypeDescriptor<T> enums(
       List<T> values, EnumValueAccessor<T> valueAccessor) {
     return new EnumTypeDescriptor<>(values, valueAccessor);
@@ -83,6 +90,13 @@ public class SchemaDescriptors {
         });
   }
 
+  /**
+   * Create {@link PrimitiveTypeDescriptor} for {@code String} with given {@link
+   * PrimitiveValueAccessor}.
+   *
+   * @param valueProvider string value provider
+   * @return String type descriptor
+   */
   public static PrimitiveTypeDescriptor<String> strings(
       PrimitiveValueAccessor<String> valueProvider) {
     return primitives(AttributeValueType.STRING, valueProvider);
@@ -110,13 +124,16 @@ public class SchemaDescriptors {
         });
   }
 
+  // @FIXME
   public static <V> ArrayTypeDescriptor<V> bytes(PrimitiveValueAccessor<V> valueProvider) {
     return arrays(primitives(AttributeValueType.BYTE, valueProvider));
   }
 
+  // @FIXME
   public static ArrayTypeDescriptor<byte[]> bytes(ArrayValueAccessor<byte[]> valueProvider) {
     return arrays(
-        primitives(AttributeValueType.BYTE, new PrimitiveValueAccessorImpl<>()), valueProvider);
+        primitives(AttributeValueType.BYTE, new PrimitiveValueAccessor<byte[]>() {}),
+        valueProvider);
   }
 
   /**
@@ -134,6 +151,13 @@ public class SchemaDescriptors {
         });
   }
 
+  /**
+   * Create {@link PrimitiveTypeDescriptor} for {@code Integer} with give {@link
+   * PrimitiveValueAccessor}.
+   *
+   * @param valueProvider value provider
+   * @return Primitive type descriptor
+   */
   public static PrimitiveTypeDescriptor<Integer> integers(
       PrimitiveValueAccessor<Integer> valueProvider) {
     return primitives(AttributeValueType.INT, valueProvider);
@@ -157,6 +181,13 @@ public class SchemaDescriptors {
         });
   }
 
+  /**
+   * Create {@link PrimitiveTypeDescriptor} for {@code Long} with given {@link
+   * PrimitiveValueAccessor}.
+   *
+   * @param valueProvider value provider
+   * @return Primitive type descriptor
+   */
   public static PrimitiveTypeDescriptor<Long> longs(PrimitiveValueAccessor<Long> valueProvider) {
     return primitives(AttributeValueType.LONG, valueProvider);
   }
@@ -176,6 +207,13 @@ public class SchemaDescriptors {
         });
   }
 
+  /**
+   * Create {@link PrimitiveTypeDescriptor} for {@code Double} with given {@link
+   * PrimitiveValueAccessor}.
+   *
+   * @param valueProvider value accessor
+   * @return Primitive type descriptor
+   */
   public static PrimitiveTypeDescriptor<Double> doubles(
       PrimitiveValueAccessor<Double> valueProvider) {
     return primitives(AttributeValueType.DOUBLE, valueProvider);
@@ -196,6 +234,13 @@ public class SchemaDescriptors {
         });
   }
 
+  /**
+   * Crate {@link PrimitiveTypeDescriptor} for {@code Float} with given {@link
+   * PrimitiveValueAccessor}.
+   *
+   * @param valueProvider value accessor
+   * @return Primitive type descriptor
+   */
   public static PrimitiveTypeDescriptor<Float> floats(PrimitiveValueAccessor<Float> valueProvider) {
     return primitives(AttributeValueType.FLOAT, valueProvider);
   }
@@ -215,6 +260,13 @@ public class SchemaDescriptors {
         });
   }
 
+  /**
+   * Create {@link PrimitiveTypeDescriptor} for {@code Boolean} with given {@link
+   * PrimitiveValueAccessor}.
+   *
+   * @param valueProvider value accessor
+   * @return Primitive type descriptor
+   */
   public static PrimitiveTypeDescriptor<Boolean> booleans(
       PrimitiveValueAccessor<Boolean> valueProvider) {
     return primitives(AttributeValueType.BOOLEAN, valueProvider);
@@ -239,6 +291,14 @@ public class SchemaDescriptors {
     return arrays(valueDescriptor, new ArrayValueAccessorImpl<>(valueAccessor));
   }
 
+  /**
+   * Create {@link ArrayTypeDescriptor} with given {@link ArrayValueAccessor}.
+   *
+   * @param valueDescriptor inner type
+   * @param valueAccessor value accessor
+   * @param <T> value type
+   * @return Array type descriptor
+   */
   public static <T> ArrayTypeDescriptor<T> arrays(
       GenericTypeDescriptor<T> valueDescriptor, ArrayValueAccessor<T> valueAccessor) {
     return new ArrayTypeDescriptor<>(valueDescriptor, valueAccessor);
@@ -255,11 +315,28 @@ public class SchemaDescriptors {
     return structures(name, Collections.emptyMap());
   }
 
+  /**
+   * Create {@link StructureTypeDescriptor} with fields.
+   *
+   * @param name structure name
+   * @param fields fields
+   * @param <T> structure type
+   * @return Structure type descriptor
+   */
   public static <T> StructureTypeDescriptor<T> structures(
       String name, Map<String, GenericTypeDescriptor<?>> fields) {
     return structures(name, fields, new StructureValueAccessor<T>() {});
   }
 
+  /**
+   * Create {@link StructureTypeDescriptor} with fields and {@link StructureValueAccessor}.
+   *
+   * @param name structure name
+   * @param fields fields
+   * @param valueProvider value accessor
+   * @param <T> structure type
+   * @return Structure type descriptor
+   */
   public static <T> StructureTypeDescriptor<T> structures(
       String name,
       Map<String, GenericTypeDescriptor<?>> fields,
@@ -268,14 +345,14 @@ public class SchemaDescriptors {
   }
 
   /**
-   * Generic type descriptor. Parent class for other types
+   * Generic type descriptor. Parent class for other types.
    *
    * @param <T> value type
    */
   public abstract static class GenericTypeDescriptor<T> implements Serializable {
 
     private static final String TYPE_CHECK_ERROR_MESSAGE_TEMPLATE =
-        "TYPE_CHECK_ERROR_MESSAGE_TEMPLATE";
+        "Conversion to type %s is not supported. Give type: %s";
 
     /** Value type */
     @Getter protected final AttributeValueType type;
@@ -284,60 +361,81 @@ public class SchemaDescriptors {
       this.type = type;
     }
 
+    /**
+     * Return {@code true} if type is primitive.
+     *
+     * @return boolean
+     */
     public boolean isPrimitiveType() {
       return this instanceof PrimitiveTypeDescriptor;
     }
 
+    /**
+     * Return current type descriptor as {@link PrimitiveTypeDescriptor}
+     *
+     * @return primitive type descriptor
+     */
     public PrimitiveTypeDescriptor<T> asPrimitiveTypeDescriptor() {
-      Preconditions.checkState(
-          isPrimitiveType(),
-          TYPE_CHECK_ERROR_MESSAGE_TEMPLATE,
-          getClass(),
-          AttributeValueType.ENUM,
-          getType());
-      return (PrimitiveTypeDescriptor<T>) this;
+      throw new UnsupportedOperationException(
+          String.format(TYPE_CHECK_ERROR_MESSAGE_TEMPLATE, "primitive", getType()));
     }
 
+    /**
+     * Return {@code true} if type is an Array
+     *
+     * @return boolean
+     */
     public boolean isArrayType() {
       return getType().equals(AttributeValueType.ARRAY);
     }
 
+    /**
+     * Return current type descriptor as {@link ArrayTypeDescriptor}.
+     *
+     * @return array type descriptor
+     */
     public ArrayTypeDescriptor<T> asArrayTypeDescriptor() {
-      Preconditions.checkState(
-          isArrayType(),
-          TYPE_CHECK_ERROR_MESSAGE_TEMPLATE,
-          getClass(),
-          AttributeValueType.ENUM,
-          getType());
-      return (ArrayTypeDescriptor<T>) this;
+      throw new UnsupportedOperationException(
+          String.format(TYPE_CHECK_ERROR_MESSAGE_TEMPLATE, AttributeValueType.ARRAY, getType()));
     }
 
+    /**
+     * Return {@code true} if type is an structure
+     *
+     * @return boolean
+     */
     public boolean isStructureType() {
       return getType().equals(AttributeValueType.STRUCTURE);
     }
 
+    /**
+     * Return current type descriptor as {@link StructureTypeDescriptor}.
+     *
+     * @return Structure type descriptor
+     */
     public StructureTypeDescriptor<T> asStructureTypeDescriptor() {
-      Preconditions.checkState(
-          isStructureType(),
-          TYPE_CHECK_ERROR_MESSAGE_TEMPLATE,
-          getClass(),
-          AttributeValueType.STRUCTURE,
-          getType());
-      return (StructureTypeDescriptor<T>) this;
+      throw new UnsupportedOperationException(
+          String.format(
+              TYPE_CHECK_ERROR_MESSAGE_TEMPLATE, AttributeValueType.STRUCTURE, getType()));
     }
 
+    /**
+     * Return {@code True} if type is an Enum
+     *
+     * @return boolean
+     */
     public boolean isEnumType() {
       return getType().equals(AttributeValueType.ENUM);
     }
 
+    /**
+     * Return current type as {@link EnumTypeDescriptor}.
+     *
+     * @return enum type descriptor
+     */
     public EnumTypeDescriptor<T> asEnumTypeDescriptor() {
-      Preconditions.checkState(
-          isEnumType(),
-          TYPE_CHECK_ERROR_MESSAGE_TEMPLATE,
-          getClass(),
-          AttributeValueType.ENUM,
-          getType());
-      return (EnumTypeDescriptor<T>) this;
+      throw new UnsupportedOperationException(
+          String.format(TYPE_CHECK_ERROR_MESSAGE_TEMPLATE, AttributeValueType.ENUM, getType()));
     }
 
     @Override
@@ -421,6 +519,11 @@ public class SchemaDescriptors {
     }
 
     @Override
+    public ArrayTypeDescriptor<T> asArrayTypeDescriptor() {
+      return this;
+    }
+
+    @Override
     public boolean equals(Object o) {
       if (this == o) {
         return true;
@@ -451,7 +554,7 @@ public class SchemaDescriptors {
   public static class StructureTypeDescriptor<T> extends GenericTypeDescriptor<T> {
 
     @Getter final String name;
-    @Getter private final Map<String, GenericTypeDescriptor<?>> fields = new HashMap<>();
+    private final Map<String, GenericTypeDescriptor<?>> fields = new HashMap<>();
     @Getter private final StructureValueAccessor<T> valueAccessor;
 
     public StructureTypeDescriptor(
@@ -463,6 +566,16 @@ public class SchemaDescriptors {
       Preconditions.checkNotNull(valueAccessor, "ValueProvider is not provided.");
       this.valueAccessor = valueAccessor;
       fields.forEach(this::addField);
+    }
+
+    /**
+     * Get fields in structure type.
+     *
+     * @return map of field and type descriptor.
+     */
+    @SuppressWarnings("squid:S1452")
+    public Map<String, GenericTypeDescriptor<?>> getFields() {
+      return Collections.unmodifiableMap(fields);
     }
 
     @Override
@@ -493,6 +606,12 @@ public class SchemaDescriptors {
       return fields.containsKey(name);
     }
 
+    /**
+     * Get field descriptor for given field name.
+     *
+     * @param name field name
+     * @return field type descriptor
+     */
     @SuppressWarnings("squid:S1452")
     public GenericTypeDescriptor<?> getField(String name) {
       return Optional.ofNullable(fields.getOrDefault(name, null))
@@ -500,11 +619,6 @@ public class SchemaDescriptors {
               () ->
                   new IllegalArgumentException(
                       "Field " + name + " not found in structure " + getName()));
-    }
-
-    @Override
-    public boolean isPrimitiveType() {
-      return false;
     }
 
     @Override
@@ -554,6 +668,11 @@ public class SchemaDescriptors {
       super(AttributeValueType.ENUM);
       this.values = values;
       this.valueAccessor = valueAccessor;
+    }
+
+    @Override
+    public EnumTypeDescriptor<T> asEnumTypeDescriptor() {
+      return this;
     }
 
     @Override
