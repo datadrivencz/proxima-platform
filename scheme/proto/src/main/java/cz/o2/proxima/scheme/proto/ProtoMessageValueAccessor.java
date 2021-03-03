@@ -67,6 +67,12 @@ public class ProtoMessageValueAccessor<T extends Message> implements StructureVa
 
   @Override
   @SuppressWarnings("unchecked")
+  public T createFrom(Object object) {
+    return createFrom((Map<String, Object>) object);
+  }
+
+  @Override
+  @SuppressWarnings("unchecked")
   public T createFrom(Map<String, Object> map) {
     return (T)
         buildMessage(map, fields, getProtoDescriptor(), getDefaultValue().newBuilderForType());
@@ -84,7 +90,25 @@ public class ProtoMessageValueAccessor<T extends Message> implements StructureVa
     if (valueSchema.isPrimitiveType()) {
       return (V) valueSchema.asPrimitiveTypeDescriptor().getValueAccessor().valueOf(fieldValue);
     } else if (valueSchema.isArrayType()) {
-      return (V) valueSchema.asArrayTypeDescriptor().getValueAccessor().values(fieldValue);
+      if (valueSchema
+          .asArrayTypeDescriptor()
+          .getValueDescriptor()
+          .getType()
+          .equals(AttributeValueType.BYTE)) {
+        return (V)
+            valueSchema
+                .asArrayTypeDescriptor()
+                .getValueDescriptor()
+                .asPrimitiveTypeDescriptor()
+                .getValueAccessor()
+                .valueOf(fieldValue);
+      } else {
+        return (V)
+            valueSchema
+                .asArrayTypeDescriptor()
+                .getValueAccessor()
+                .valuesOf(((List<Object>) fieldValue).toArray());
+      }
     } else if (valueSchema.isStructureType()) {
       final Map<String, Object> messageValue = new HashMap<>();
       valueSchema
@@ -140,25 +164,34 @@ public class ProtoMessageValueAccessor<T extends Message> implements StructureVa
           // Bytes needs to be converted as PrimitiveValue of String
           builder.setField(
               protoFieldDescriptor,
-              arrayValueDescriptor.asPrimitiveTypeDescriptor().getValueAccessor().valueOf(value));
+              arrayValueDescriptor
+                  .asPrimitiveTypeDescriptor()
+                  .getValueAccessor()
+                  .createFrom(value));
 
         } else {
-          final List<Object> values =
-              valueSchema.asArrayTypeDescriptor().getValueAccessor().values(value);
-          values.forEach(
-              v -> {
-                Object arrayValue = v;
-                if (arrayValueDescriptor.isStructureType()) {
-                  // Array<Structure> needs to be created via builder
-                  arrayValue =
-                      buildMessage(
-                          (Map<String, Object>) v,
-                          arrayValueDescriptor.asStructureTypeDescriptor().getFields(),
-                          protoFieldDescriptor.getMessageType(),
-                          builder.newBuilderForField(protoFieldDescriptor));
-                }
-                builder.addRepeatedField(protoFieldDescriptor, arrayValue);
-              });
+          for (Object v : (List<Object>) value) {
+            Object arrayValue;
+            if (arrayValueDescriptor.isStructureType()) {
+              // Array<Structure> needs to be created via builder
+              arrayValue =
+                  buildMessage(
+                      (Map<String, Object>) v,
+                      arrayValueDescriptor.asStructureTypeDescriptor().getFields(),
+                      protoFieldDescriptor.getMessageType(),
+                      builder.newBuilderForField(protoFieldDescriptor));
+            } else if (arrayValueDescriptor.isPrimitiveType()) {
+              arrayValue =
+                  arrayValueDescriptor.asPrimitiveTypeDescriptor().getValueAccessor().createFrom(v);
+            } else if (arrayValueDescriptor.isEnumType()) {
+              arrayValue =
+                  arrayValueDescriptor.asEnumTypeDescriptor().getValueAccessor().createFrom(v);
+            } else {
+              throw new UnsupportedOperationException(
+                  String.format("Unknown Array value type %s", arrayValueDescriptor.getType()));
+            }
+            builder.addRepeatedField(protoFieldDescriptor, arrayValue);
+          }
         }
       } else if (valueSchema.isStructureType()) {
         final Builder fieldBuilder = builder.getFieldBuilder(protoFieldDescriptor);

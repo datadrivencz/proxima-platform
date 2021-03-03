@@ -21,6 +21,7 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
+import cz.o2.proxima.scheme.AttributeValueAccessors.ArrayValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.PrimitiveValueAccessor;
 import cz.o2.proxima.scheme.SchemaDescriptors.ArrayTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.EnumTypeDescriptor;
@@ -160,9 +161,25 @@ public class SchemaDescriptorsTest {
 
   @Test
   public void testArrayTypeWithPrimitiveValue() {
-    ArrayTypeDescriptor<Long> d = SchemaDescriptors.arrays(SchemaDescriptors.longs());
-    assertEquals(AttributeValueType.ARRAY, d.getType());
-    assertEquals(AttributeValueType.LONG, d.getValueType());
+    final ArrayTypeDescriptor<Long> desc = SchemaDescriptors.arrays(SchemaDescriptors.longs());
+    assertEquals(AttributeValueType.ARRAY, desc.getType());
+    assertEquals(AttributeValueType.LONG, desc.getValueType());
+    final ArrayValueAccessor<Long> accessor = desc.getValueAccessor();
+    assertEquals(
+        Arrays.asList(22L, 33L), Arrays.asList(accessor.createFrom(new Long[] {22L, 33L})));
+    assertEquals(
+        Arrays.asList(22L, 33L), Arrays.asList(accessor.createFrom(new String[] {"22", "33"})));
+    assertEquals(Arrays.asList(22L, 33L), Arrays.asList(accessor.valuesOf(new Long[] {22L, 33L})));
+  }
+
+  @Test
+  public void testBytes() {
+    final ArrayTypeDescriptor<byte[]> bytes = SchemaDescriptors.bytes();
+    assertEquals(AttributeValueType.ARRAY, bytes.getType());
+    assertEquals(AttributeValueType.BYTE, bytes.getValueType());
+    final ArrayValueAccessor<byte[]> accessor = bytes.getValueAccessor();
+    // @TODO: FIX later
+    // assertEquals("foo".getBytes(StandardCharsets.UTF_8), accessor.createFrom("foo"));
   }
 
   @Test
@@ -177,6 +194,16 @@ public class SchemaDescriptorsTest {
     assertEquals(AttributeValueType.STRUCTURE, d.getValueDescriptor().getType());
     assertEquals("structure", d.getValueDescriptor().asStructureTypeDescriptor().getName());
     assertEquals(2, d.getValueDescriptor().asStructureTypeDescriptor().getFields().size());
+  }
+
+  @Test
+  public void testLongType() {
+    PrimitiveTypeDescriptor<Long> desc = SchemaDescriptors.longs();
+    assertEquals(AttributeValueType.LONG, desc.getType());
+    PrimitiveValueAccessor<Long> accessor = desc.getValueAccessor();
+    assertEquals((Long) 33L, accessor.createFrom(33L));
+    assertEquals(33L, accessor.valueOf(33L));
+    assertEquals((Long) 33L, accessor.createFrom("33"));
   }
 
   @Test

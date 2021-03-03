@@ -116,15 +116,17 @@ public class ProtoUtilsTest {
 
     final StructureValueAccessor<ValueSchemeMessage> valueProvider = descriptor.getValueAccessor();
 
-    assertEquals(
-        Arrays.asList("repeated_string_value_1", "repeated_string_value_2"),
-        valueProvider.readField("repeated_string", object));
+    Object[] repeatedStringValue = valueProvider.readField("repeated_string", object);
+    assertArrayEquals(
+        Arrays.asList("repeated_string_value_1", "repeated_string_value_2").toArray(new String[0]),
+        repeatedStringValue);
 
     Map<String, Object> innerMessage = valueProvider.readField("inner_message", object);
 
-    assertEquals(
-        Arrays.asList("repeated_inner_string_value1", "repeated_inner_string_value2"),
-        innerMessage.get("repeated_inner_string"));
+    assertArrayEquals(
+        Arrays.asList("repeated_inner_string_value1", "repeated_inner_string_value2")
+            .toArray(new Object[0]),
+        (Object[]) innerMessage.get("repeated_inner_string"));
     assertEquals(38D, innerMessage.get("inner_double_type"));
 
     assertEquals(Directions.LEFT.name(), innerMessage.get("inner_enum"));
