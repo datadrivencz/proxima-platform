@@ -29,8 +29,9 @@ public class AttributeValueAccessors {
       throw new UnsupportedOperationException("Method createFrom() is not implemented.");
     }
 
-    default Object valueOf(T value) {
-      return value;
+    @SuppressWarnings("unchecked")
+    default <V> V valueOf(T value) {
+      return (V) value;
     }
   }
 
@@ -88,8 +89,6 @@ public class AttributeValueAccessors {
       throw new UnsupportedOperationException("Method createFrom is not implemented.");
     }
   }
-
-  public static class StructureValueAccessorImpl<T> implements StructureValueAccessor<T> {}
 
   public interface EnumValueAccessor<T> extends GenericValueAccessor<T> {}
 }

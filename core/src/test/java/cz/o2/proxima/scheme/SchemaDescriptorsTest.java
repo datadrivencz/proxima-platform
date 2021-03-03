@@ -15,6 +15,7 @@
  */
 package cz.o2.proxima.scheme;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
@@ -178,8 +179,14 @@ public class SchemaDescriptorsTest {
     assertEquals(AttributeValueType.ARRAY, bytes.getType());
     assertEquals(AttributeValueType.BYTE, bytes.getValueType());
     final ArrayValueAccessor<byte[]> accessor = bytes.getValueAccessor();
+    final byte[] testBytes = new byte[] {1, 2, 3};
+    byte[] valuesOf = accessor.valueOf(testBytes);
+    assertArrayEquals(testBytes, valuesOf);
     // @TODO: FIX later
-    // assertEquals("foo".getBytes(StandardCharsets.UTF_8), accessor.createFrom("foo"));
+    // byte[] from = accessor.createFrom(valuesOf);
+    // assertArrayEquals("foo".getBytes(StandardCharsets.UTF_8), accessor.createFrom("foo".getBytes(
+    //    StandardCharsets.UTF_8)));
+
   }
 
   @Test
@@ -202,7 +209,7 @@ public class SchemaDescriptorsTest {
     assertEquals(AttributeValueType.LONG, desc.getType());
     PrimitiveValueAccessor<Long> accessor = desc.getValueAccessor();
     assertEquals((Long) 33L, accessor.createFrom(33L));
-    assertEquals(33L, accessor.valueOf(33L));
+    assertEquals((Long) 33L, accessor.valueOf(33L));
     assertEquals((Long) 33L, accessor.createFrom("33"));
   }
 
@@ -211,7 +218,7 @@ public class SchemaDescriptorsTest {
     PrimitiveTypeDescriptor<Double> descriptor = SchemaDescriptors.doubles();
     assertEquals(AttributeValueType.DOUBLE, descriptor.getType());
     final PrimitiveValueAccessor<Double> valueProvider = descriptor.getValueAccessor();
-    assertEquals(20.08D, valueProvider.valueOf(20.08));
+    assertEquals(20.08D, valueProvider.valueOf(20.08), 0.0001);
     assertEquals(20.08D, valueProvider.createFrom("20.08"), 0.0001);
   }
 
@@ -220,7 +227,7 @@ public class SchemaDescriptorsTest {
     PrimitiveTypeDescriptor<Float> descriptor = SchemaDescriptors.floats();
     assertEquals(AttributeValueType.FLOAT, descriptor.getType());
     final PrimitiveValueAccessor<Float> valueProvider = descriptor.getValueAccessor();
-    assertEquals(13.37F, valueProvider.valueOf(13.37F));
+    assertEquals(13.37F, valueProvider.valueOf(13.37F), 0.0001F);
     assertEquals(13.37F, valueProvider.createFrom("13.37"), 0.0001);
   }
 
