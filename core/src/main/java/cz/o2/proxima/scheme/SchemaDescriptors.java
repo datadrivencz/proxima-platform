@@ -649,7 +649,7 @@ public class SchemaDescriptors {
           .forEach(
               (field, type) ->
                   builder.append(
-                      String.format("\n\t%s: %s", field, type.toString().replace("\t", "\t\t"))));
+                      String.format("%n\t%s: %s", field, type.toString().replace("\t", "\t\t"))));
       return builder.toString();
     }
   }
