@@ -380,25 +380,16 @@ public class KafkaLogReader extends AbstractStorage implements CommitLogReader {
 
             consumerRef.set(kafka);
 
-            // we need to poll first to initialize kafka assignments and rebalance listener
-            ConsumerRecords<Object, Object> poll;
-            Map<TopicPartition, Long> endOffsets;
+            waitTillSubscriptionAssigned(kafka);
 
-            int numPolls = 0;
-            do {
-              poll = kafka.poll(pollDuration);
-              endOffsets = stopAtCurrent ? findNonEmptyEndOffsets(kafka) : null;
+            ConsumerRecords<Object, Object> poll = ConsumerRecords.EMPTY;
+            @Nullable
+            Map<TopicPartition, Long> endOffsets =
+                stopAtCurrent ? findNonEmptyEndOffsets(kafka) : null;
 
-              if (log.isDebugEnabled()) {
-                log.debug(
-                    "End offsets of current assignment {}: {}", kafka.assignment(), endOffsets);
-              }
-            } while (poll.isEmpty()
-                && numPolls++ < 3
-                && accessor.isTopicRegex()
-                && kafka.assignment().isEmpty()
-                && !shutdown.get()
-                && !Thread.currentThread().isInterrupted());
+            if (log.isDebugEnabled()) {
+              log.debug("End offsets of current assignment {}: {}", kafka.assignment(), endOffsets);
+            }
 
             if (name == null) {
               listener.onPartitionsAssigned(kafka.assignment());
@@ -488,6 +479,14 @@ public class KafkaLogReader extends AbstractStorage implements CommitLogReader {
           }
         });
     latch.await();
+  }
+
+  @VisibleForTesting
+  void waitTillSubscriptionAssigned(KafkaConsumer<Object, Object> consumer) {
+    Preconditions.checkArgument(
+        KafkaUtils.waitForAssignment(
+            consumer, Duration.ofMillis(accessor.getAssignmentTimeoutMillis())),
+        "Timeout while waiting for assignment to proceed");
   }
 
   private ConsumerRecords<Object, Object> seekToNewOffsetsIfNeeded(

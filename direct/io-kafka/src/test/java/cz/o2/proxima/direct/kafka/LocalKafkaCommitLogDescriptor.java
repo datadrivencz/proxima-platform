@@ -700,6 +700,11 @@ public class LocalKafkaCommitLogDescriptor implements DataAccessorFactory {
       final Context context = getContext();
       return repo -> new LocalKafkaLogReader(accessor, context);
     }
+
+    @Override
+    void waitTillSubscriptionAssigned(KafkaConsumer<Object, Object> consumer) {
+      consumer.poll(Duration.ZERO);
+    }
   }
 
   public static class LocalKafkaWriter extends KafkaWriter {
