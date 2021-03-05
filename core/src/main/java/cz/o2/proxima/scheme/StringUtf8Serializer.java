@@ -15,7 +15,7 @@
  */
 package cz.o2.proxima.scheme;
 
-import cz.o2.proxima.scheme.SchemaDescriptors.GenericTypeDescriptor;
+import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
@@ -58,7 +58,7 @@ public class StringUtf8Serializer implements ValueSerializerFactory {
     }
 
     @Override
-    public GenericTypeDescriptor<String> getValueSchemaDescriptor() {
+    public SchemaTypeDescriptor<String> getValueSchemaDescriptor() {
       return SchemaDescriptors.strings();
     }
 

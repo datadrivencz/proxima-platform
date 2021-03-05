@@ -15,7 +15,7 @@
  */
 package cz.o2.proxima.scheme;
 
-import cz.o2.proxima.scheme.SchemaDescriptors.GenericTypeDescriptor;
+import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
 import java.net.URI;
 import java.util.Optional;
 
@@ -57,7 +57,7 @@ public class AlwaysFailSchemeParser implements ValueSerializerFactory {
       }
 
       @Override
-      public GenericTypeDescriptor<byte[]> getValueSchemaDescriptor() {
+      public SchemaTypeDescriptor<byte[]> getValueSchemaDescriptor() {
         return SchemaDescriptors.bytes();
       }
     };

@@ -16,7 +16,7 @@
 package cz.o2.proxima.repository;
 
 import cz.o2.proxima.annotations.Stable;
-import cz.o2.proxima.scheme.SchemaDescriptors.GenericTypeDescriptor;
+import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
 import cz.o2.proxima.scheme.ValueSerializer;
 import cz.o2.proxima.scheme.ValueSerializerFactory;
 import cz.o2.proxima.storage.StreamElement;
@@ -206,11 +206,11 @@ public interface AttributeDescriptor<T> extends Serializable {
   }
 
   /**
-   * Return {@link GenericTypeDescriptor} for given attribute value.
+   * Return {@link SchemaTypeDescriptor} for given attribute value.
    *
    * @return value descriptor
    */
-  default GenericTypeDescriptor<T> getSchemaTypeDescriptor() {
+  default SchemaTypeDescriptor<T> getSchemaTypeDescriptor() {
     return getValueSerializer().getValueSchemaDescriptor();
   }
 }

@@ -279,7 +279,7 @@ public class SchemaDescriptors {
    * @param <T> value type
    * @return Array type descriptor
    */
-  public static <T> ArrayTypeDescriptor<T> arrays(GenericTypeDescriptor<T> valueDescriptor) {
+  public static <T> ArrayTypeDescriptor<T> arrays(SchemaTypeDescriptor<T> valueDescriptor) {
     GenericValueAccessor<T> valueAccessor;
     if (valueDescriptor.isPrimitiveType()) {
       valueAccessor = valueDescriptor.asPrimitiveTypeDescriptor().getValueAccessor();
@@ -300,7 +300,7 @@ public class SchemaDescriptors {
    * @return Array type descriptor
    */
   public static <T> ArrayTypeDescriptor<T> arrays(
-      GenericTypeDescriptor<T> valueDescriptor, ArrayValueAccessor<T> valueAccessor) {
+      SchemaTypeDescriptor<T> valueDescriptor, ArrayValueAccessor<T> valueAccessor) {
     return new ArrayTypeDescriptor<>(valueDescriptor, valueAccessor);
   }
 
@@ -324,7 +324,7 @@ public class SchemaDescriptors {
    * @return Structure type descriptor
    */
   public static <T> StructureTypeDescriptor<T> structures(
-      String name, Map<String, GenericTypeDescriptor<?>> fields) {
+      String name, Map<String, SchemaTypeDescriptor<?>> fields) {
     return structures(name, fields, new StructureValueAccessor<T>() {});
   }
 
@@ -339,7 +339,7 @@ public class SchemaDescriptors {
    */
   public static <T> StructureTypeDescriptor<T> structures(
       String name,
-      Map<String, GenericTypeDescriptor<?>> fields,
+      Map<String, SchemaTypeDescriptor<?>> fields,
       StructureValueAccessor<T> valueProvider) {
     return new StructureTypeDescriptor<>(name, fields, valueProvider);
   }
@@ -349,15 +349,15 @@ public class SchemaDescriptors {
    *
    * @param <T> value type
    */
-  public abstract static class GenericTypeDescriptor<T> implements Serializable {
+  public abstract static class SchemaTypeDescriptor<T> implements Serializable {
 
     private static final String TYPE_CHECK_ERROR_MESSAGE_TEMPLATE =
-        "Conversion to type %s is not supported. Give type: %s";
+        "Conversion to type %s is not supported. Given type: %s";
 
     /** Value type */
     @Getter protected final AttributeValueType type;
 
-    protected GenericTypeDescriptor(AttributeValueType type) {
+    protected SchemaTypeDescriptor(AttributeValueType type) {
       this.type = type;
     }
 
@@ -377,7 +377,10 @@ public class SchemaDescriptors {
      */
     public PrimitiveTypeDescriptor<T> asPrimitiveTypeDescriptor() {
       throw new UnsupportedOperationException(
-          String.format(TYPE_CHECK_ERROR_MESSAGE_TEMPLATE, "primitive", getType()));
+          String.format(
+              TYPE_CHECK_ERROR_MESSAGE_TEMPLATE,
+              PrimitiveTypeDescriptor.class.getSimpleName(),
+              getType()));
     }
 
     /**
@@ -443,8 +446,8 @@ public class SchemaDescriptors {
       if (this == o) {
         return true;
       }
-      if (o instanceof GenericTypeDescriptor) {
-        return type.equals(((GenericTypeDescriptor<?>) o).getType());
+      if (o instanceof SchemaTypeDescriptor) {
+        return type.equals(((SchemaTypeDescriptor<?>) o).getType());
       }
       return false;
     }
@@ -460,7 +463,7 @@ public class SchemaDescriptors {
    *
    * @param <T> value type
    */
-  public static class PrimitiveTypeDescriptor<T> extends GenericTypeDescriptor<T> {
+  public static class PrimitiveTypeDescriptor<T> extends SchemaTypeDescriptor<T> {
 
     @Getter private final PrimitiveValueAccessor<T> valueAccessor;
 
@@ -497,13 +500,13 @@ public class SchemaDescriptors {
    *
    * @param <T> value type
    */
-  public static class ArrayTypeDescriptor<T> extends GenericTypeDescriptor<T> {
+  public static class ArrayTypeDescriptor<T> extends SchemaTypeDescriptor<T> {
 
-    @Getter final GenericTypeDescriptor<T> valueDescriptor;
+    @Getter final SchemaTypeDescriptor<T> valueDescriptor;
     @Getter final ArrayValueAccessor<T> valueAccessor;
 
     public ArrayTypeDescriptor(
-        GenericTypeDescriptor<T> valueDescriptor, ArrayValueAccessor<T> valueAccessor) {
+        SchemaTypeDescriptor<T> valueDescriptor, ArrayValueAccessor<T> valueAccessor) {
       super(AttributeValueType.ARRAY);
       this.valueDescriptor = valueDescriptor;
       this.valueAccessor = valueAccessor;
@@ -551,15 +554,15 @@ public class SchemaDescriptors {
    *
    * @param <T> structure type
    */
-  public static class StructureTypeDescriptor<T> extends GenericTypeDescriptor<T> {
+  public static class StructureTypeDescriptor<T> extends SchemaTypeDescriptor<T> {
 
     @Getter final String name;
-    private final Map<String, GenericTypeDescriptor<?>> fields = new HashMap<>();
+    private final Map<String, SchemaTypeDescriptor<?>> fields = new HashMap<>();
     @Getter private final StructureValueAccessor<T> valueAccessor;
 
     public StructureTypeDescriptor(
         String name,
-        Map<String, GenericTypeDescriptor<?>> fields,
+        Map<String, SchemaTypeDescriptor<?>> fields,
         StructureValueAccessor<T> valueAccessor) {
       super(AttributeValueType.STRUCTURE);
       this.name = name;
@@ -574,7 +577,7 @@ public class SchemaDescriptors {
      * @return map of field and type descriptor.
      */
     @SuppressWarnings("squid:S1452")
-    public Map<String, GenericTypeDescriptor<?>> getFields() {
+    public Map<String, SchemaTypeDescriptor<?>> getFields() {
       return Collections.unmodifiableMap(fields);
     }
 
@@ -590,7 +593,7 @@ public class SchemaDescriptors {
      * @param descriptor value descriptor
      * @return this
      */
-    public StructureTypeDescriptor<T> addField(String name, GenericTypeDescriptor<?> descriptor) {
+    public StructureTypeDescriptor<T> addField(String name, SchemaTypeDescriptor<?> descriptor) {
       Preconditions.checkArgument(!fields.containsKey(name), "Duplicate field " + name);
       fields.put(name, descriptor);
       return this;
@@ -613,7 +616,7 @@ public class SchemaDescriptors {
      * @return field type descriptor
      */
     @SuppressWarnings("squid:S1452")
-    public GenericTypeDescriptor<?> getField(String name) {
+    public SchemaTypeDescriptor<?> getField(String name) {
       return Optional.ofNullable(fields.getOrDefault(name, null))
           .orElseThrow(
               () ->
@@ -659,7 +662,7 @@ public class SchemaDescriptors {
    *
    * @param <T> value type
    */
-  public static class EnumTypeDescriptor<T> extends GenericTypeDescriptor<T> {
+  public static class EnumTypeDescriptor<T> extends SchemaTypeDescriptor<T> {
 
     @Getter private final List<T> values;
     @Getter private final EnumValueAccessor<T> valueAccessor;

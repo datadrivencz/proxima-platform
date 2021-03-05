@@ -16,7 +16,7 @@
 package cz.o2.proxima.scheme;
 
 import cz.o2.proxima.annotations.Stable;
-import cz.o2.proxima.scheme.SchemaDescriptors.GenericTypeDescriptor;
+import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
 import java.io.Serializable;
 import java.util.Optional;
 
@@ -102,11 +102,11 @@ public interface ValueSerializer<T> extends Serializable {
   }
 
   /**
-   * Provide {@link GenericTypeDescriptor} for given attribute value.
+   * Provide {@link SchemaTypeDescriptor} for given attribute value.
    *
    * @return value descriptor
    */
-  default GenericTypeDescriptor<T> getValueSchemaDescriptor() {
+  default SchemaTypeDescriptor<T> getValueSchemaDescriptor() {
     throw new UnsupportedOperationException(
         getClass() + " is not ported to provide a ValueSchemaDescriptor. " + "Please fill issue.");
   }
