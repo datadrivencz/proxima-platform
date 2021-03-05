@@ -25,7 +25,7 @@ import cz.o2.proxima.scheme.AttributeValueAccessors.EnumValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.GenericValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.PrimitiveValueAccessor;
 import cz.o2.proxima.scheme.SchemaDescriptors;
-import cz.o2.proxima.scheme.SchemaDescriptors.GenericTypeDescriptor;
+import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.StructureTypeDescriptor;
 import cz.o2.proxima.scheme.proto.ProtoMessageValueAccessor;
 import java.util.ArrayList;
@@ -39,8 +39,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class ProtoUtils {
 
-  private static final Map<String, GenericTypeDescriptor<?>> structCache =
-      new ConcurrentHashMap<>();
+  private static final Map<String, SchemaTypeDescriptor<?>> structCache = new ConcurrentHashMap<>();
 
   private ProtoUtils() {
     // no-op
@@ -56,7 +55,7 @@ public class ProtoUtils {
    */
   public static <T extends Message> StructureTypeDescriptor<T> convertProtoToSchema(
       Descriptor proto, T defaultValue) {
-    final Map<String, GenericTypeDescriptor<?>> fields =
+    final Map<String, SchemaTypeDescriptor<?>> fields =
         proto
             .getFields()
             .stream()
@@ -76,19 +75,19 @@ public class ProtoUtils {
    * @return schema type descriptor
    */
   @SuppressWarnings("unchecked")
-  protected static <T> GenericTypeDescriptor<T> convertField(FieldDescriptor proto) {
-    GenericTypeDescriptor<T> descriptor;
+  protected static <T> SchemaTypeDescriptor<T> convertField(FieldDescriptor proto) {
+    SchemaTypeDescriptor<T> descriptor;
 
     switch (proto.getJavaType()) {
       case STRING:
-        descriptor = (GenericTypeDescriptor<T>) SchemaDescriptors.strings();
+        descriptor = (SchemaTypeDescriptor<T>) SchemaDescriptors.strings();
         break;
       case BOOLEAN:
-        descriptor = (GenericTypeDescriptor<T>) SchemaDescriptors.booleans();
+        descriptor = (SchemaTypeDescriptor<T>) SchemaDescriptors.booleans();
         break;
       case BYTE_STRING:
         descriptor =
-            (GenericTypeDescriptor<T>)
+            (SchemaTypeDescriptor<T>)
                 SchemaDescriptors.bytes(
                     new PrimitiveValueAccessor<ByteString>() {
                       @Override
@@ -103,16 +102,16 @@ public class ProtoUtils {
                     });
         break;
       case FLOAT:
-        descriptor = (GenericTypeDescriptor<T>) SchemaDescriptors.floats();
+        descriptor = (SchemaTypeDescriptor<T>) SchemaDescriptors.floats();
         break;
       case DOUBLE:
-        descriptor = (GenericTypeDescriptor<T>) SchemaDescriptors.doubles();
+        descriptor = (SchemaTypeDescriptor<T>) SchemaDescriptors.doubles();
         break;
       case LONG:
-        descriptor = (GenericTypeDescriptor<T>) SchemaDescriptors.longs();
+        descriptor = (SchemaTypeDescriptor<T>) SchemaDescriptors.longs();
         break;
       case INT:
-        descriptor = (GenericTypeDescriptor<T>) SchemaDescriptors.integers();
+        descriptor = (SchemaTypeDescriptor<T>) SchemaDescriptors.integers();
         break;
       case ENUM:
         final Map<String, EnumValueDescriptor> enumValues =
@@ -123,7 +122,7 @@ public class ProtoUtils {
                 .collect(Collectors.toMap(EnumValueDescriptor::getName, Function.identity()));
 
         descriptor =
-            (GenericTypeDescriptor<T>)
+            (SchemaTypeDescriptor<T>)
                 SchemaDescriptors.enums(
                     new ArrayList<>(enumValues.keySet()),
                     new EnumValueAccessor<String>() {
@@ -167,7 +166,7 @@ public class ProtoUtils {
                 convertProtoToSchema(
                     proto.getMessageType(),
                     proto.getMessageType().toProto().getDefaultInstanceForType()));
-        descriptor = (GenericTypeDescriptor<T>) structCache.get(messageTypeName);
+        descriptor = (SchemaTypeDescriptor<T>) structCache.get(messageTypeName);
 
         break;
       default:

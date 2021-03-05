@@ -17,7 +17,7 @@ package cz.o2.proxima.scheme;
 
 import static org.junit.Assert.*;
 
-import cz.o2.proxima.scheme.SchemaDescriptors.GenericTypeDescriptor;
+import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Optional;
@@ -70,7 +70,7 @@ public class BytesSerializerTest {
 
   @Test
   public void testGetValueSchemaDescriptor() {
-    GenericTypeDescriptor<byte[]> descriptor = serializer.getValueSchemaDescriptor();
+    SchemaTypeDescriptor<byte[]> descriptor = serializer.getValueSchemaDescriptor();
     assertEquals(AttributeValueType.BYTE, descriptor.asArrayTypeDescriptor().getValueType());
   }
 }

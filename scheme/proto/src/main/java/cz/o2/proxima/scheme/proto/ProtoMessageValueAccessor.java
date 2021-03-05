@@ -24,7 +24,7 @@ import cz.o2.proxima.functional.Factory;
 import cz.o2.proxima.scheme.AttributeValueAccessors.EnumValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.StructureValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueType;
-import cz.o2.proxima.scheme.SchemaDescriptors.GenericTypeDescriptor;
+import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -35,14 +35,14 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class ProtoMessageValueAccessor<T extends Message> implements StructureValueAccessor<T> {
 
-  private final Map<String, GenericTypeDescriptor<?>> fields;
+  private final Map<String, SchemaTypeDescriptor<?>> fields;
   private final Factory<Descriptor> protoDescriptorFactory;
   private final Factory<T> defaultValueFactory;
   private transient Descriptor proto;
   private transient T defaultValue;
 
   public ProtoMessageValueAccessor(
-      Map<String, GenericTypeDescriptor<?>> fields,
+      Map<String, SchemaTypeDescriptor<?>> fields,
       Factory<Descriptor> protoDescriptorFactory,
       Factory<T> defaultValueFactory) {
     this.fields = fields;
@@ -60,8 +60,8 @@ public class ProtoMessageValueAccessor<T extends Message> implements StructureVa
   @Override
   public <V> V readField(String name, T value) {
     @SuppressWarnings("unchecked")
-    final GenericTypeDescriptor<Object> valueSchema =
-        (GenericTypeDescriptor<Object>) getFieldSchemaTypeDescriptor(fields, name);
+    final SchemaTypeDescriptor<Object> valueSchema =
+        (SchemaTypeDescriptor<Object>) getFieldSchemaTypeDescriptor(fields, name);
     return readField(name, value, valueSchema, value.getDescriptorForType());
   }
 
@@ -82,7 +82,7 @@ public class ProtoMessageValueAccessor<T extends Message> implements StructureVa
   private <V> V readField(
       String name,
       Message value,
-      GenericTypeDescriptor<Object> valueSchema,
+      SchemaTypeDescriptor<Object> valueSchema,
       Descriptor protoDescriptor) {
     final FieldDescriptor fieldProtoDescriptor = protoDescriptor.findFieldByName(name);
     final Object fieldValue = value.getField(fieldProtoDescriptor);
@@ -120,7 +120,7 @@ public class ProtoMessageValueAccessor<T extends Message> implements StructureVa
                     readField(
                         innerFieldName,
                         (Message) fieldValue,
-                        (GenericTypeDescriptor<Object>) innerType,
+                        (SchemaTypeDescriptor<Object>) innerType,
                         fieldProtoDescriptor.getMessageType());
                 messageValue.put(innerFieldName, innerValue);
               });
@@ -137,15 +137,15 @@ public class ProtoMessageValueAccessor<T extends Message> implements StructureVa
   @SuppressWarnings("unchecked")
   private Message buildMessage(
       Map<String, Object> map,
-      Map<String, GenericTypeDescriptor<?>> fieldsDescriptors,
+      Map<String, SchemaTypeDescriptor<?>> fieldsDescriptors,
       Descriptor protoDescriptor,
       Builder builder) {
     for (Entry<String, Object> entry : map.entrySet()) {
       final String field = entry.getKey();
       final Object value = entry.getValue();
       @SuppressWarnings("unchecked")
-      final GenericTypeDescriptor<Object> valueSchema =
-          (GenericTypeDescriptor<Object>) getFieldSchemaTypeDescriptor(fieldsDescriptors, field);
+      final SchemaTypeDescriptor<Object> valueSchema =
+          (SchemaTypeDescriptor<Object>) getFieldSchemaTypeDescriptor(fieldsDescriptors, field);
       final FieldDescriptor protoFieldDescriptor = protoDescriptor.findFieldByName(field);
       Preconditions.checkNotNull(
           protoFieldDescriptor,
@@ -158,7 +158,7 @@ public class ProtoMessageValueAccessor<T extends Message> implements StructureVa
             protoFieldDescriptor,
             valueSchema.asPrimitiveTypeDescriptor().getValueAccessor().createFrom(value));
       } else if (valueSchema.isArrayType()) {
-        final GenericTypeDescriptor<Object> arrayValueDescriptor =
+        final SchemaTypeDescriptor<Object> arrayValueDescriptor =
             valueSchema.asArrayTypeDescriptor().getValueDescriptor();
         if (valueSchema.asArrayTypeDescriptor().getValueType().equals(AttributeValueType.BYTE)) {
           // Bytes needs to be converted as PrimitiveValue of String
@@ -214,8 +214,8 @@ public class ProtoMessageValueAccessor<T extends Message> implements StructureVa
     return builder.build();
   }
 
-  private GenericTypeDescriptor<?> getFieldSchemaTypeDescriptor(
-      Map<String, GenericTypeDescriptor<?>> from, String name) {
+  private SchemaTypeDescriptor<?> getFieldSchemaTypeDescriptor(
+      Map<String, SchemaTypeDescriptor<?>> from, String name) {
     return Optional.ofNullable(from.getOrDefault(name, null))
         .orElseThrow(
             () ->

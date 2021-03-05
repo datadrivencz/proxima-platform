@@ -16,7 +16,7 @@
 package cz.o2.proxima.scheme;
 
 import cz.o2.proxima.annotations.Stable;
-import cz.o2.proxima.scheme.SchemaDescriptors.GenericTypeDescriptor;
+import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
 import java.net.URI;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
@@ -77,7 +77,7 @@ public class FloatSerializer implements ValueSerializerFactory {
           }
 
           @Override
-          public GenericTypeDescriptor<Float> getValueSchemaDescriptor() {
+          public SchemaTypeDescriptor<Float> getValueSchemaDescriptor() {
             return SchemaDescriptors.floats();
           }
         };
