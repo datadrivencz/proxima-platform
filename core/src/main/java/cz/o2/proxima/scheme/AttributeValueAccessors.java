@@ -15,6 +15,7 @@
  */
 package cz.o2.proxima.scheme;
 
+import com.google.common.base.Preconditions;
 import java.io.Serializable;
 import java.util.Arrays;
 import java.util.Map;
@@ -76,11 +77,11 @@ public class AttributeValueAccessors {
     }
   }
 
-  public static class ArrayValueAccessorImpl<T> implements ArrayValueAccessor<T> {
+  public static class DefaultArrayValueAccessor<T> implements ArrayValueAccessor<T> {
 
     private final GenericValueAccessor<T> valueAccessor;
 
-    public ArrayValueAccessorImpl(GenericValueAccessor<T> valueAccessor) {
+    public DefaultArrayValueAccessor(GenericValueAccessor<T> valueAccessor) {
       this.valueAccessor = valueAccessor;
     }
 
@@ -99,18 +100,47 @@ public class AttributeValueAccessors {
 
   public interface StructureValueAccessor<T> extends GenericValueAccessor<T> {
 
-    default Map<String, Object> valuesOf(T value) {
-      throw new UnsupportedOperationException("Method valuesOf is not implemented.");
-    }
+    Map<String, Object> valuesOf(T value);
 
-    default <V> V readField(String name, T value) {
-      throw new UnsupportedOperationException("Method readField is not implemented.");
-    }
+    <V> V readField(String name, T value);
 
-    default T createFrom(Map<String, Object> map) {
-      throw new UnsupportedOperationException("Method createFrom is not implemented.");
-    }
+    T createFrom(Map<String, Object> map);
   }
 
   public interface EnumValueAccessor<T> extends GenericValueAccessor<T> {}
+
+  public static class DefaultStructureValueAccessor<T> implements StructureValueAccessor<T> {
+
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> valuesOf(T value) {
+      checkInputValue(value);
+      return (Map<String, Object>) value;
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public <V> V readField(String name, T value) {
+      checkInputValue(value);
+      return ((Map<String, V>) value).get(name);
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public T createFrom(Map<String, Object> map) {
+      return (T) map;
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public T createFrom(Object object) {
+      checkInputValue(object);
+      return createFrom((Map<String, Object>) object);
+    }
+
+    private void checkInputValue(Object object) {
+      Preconditions.checkArgument(
+          object instanceof Map,
+          "Input value must be instance of Map. Given " + object.getClass().getName());
+    }
+  }
 }

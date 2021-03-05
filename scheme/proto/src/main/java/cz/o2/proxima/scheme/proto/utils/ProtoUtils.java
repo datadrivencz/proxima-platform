@@ -20,7 +20,7 @@ import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.Descriptors.EnumValueDescriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor;
 import com.google.protobuf.Message;
-import cz.o2.proxima.scheme.AttributeValueAccessors.ArrayValueAccessorImpl;
+import cz.o2.proxima.scheme.AttributeValueAccessors.DefaultArrayValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.EnumValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.GenericValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.PrimitiveValueAccessor;
@@ -185,7 +185,7 @@ public class ProtoUtils {
       }
       return SchemaDescriptors.arrays(
           descriptor,
-          new ArrayValueAccessorImpl<T>(valueAccessor) {
+          new DefaultArrayValueAccessor<T>(valueAccessor) {
             @Override
             public <V> V[] valuesOf(T object) {
               return valuesOf((T[]) object);

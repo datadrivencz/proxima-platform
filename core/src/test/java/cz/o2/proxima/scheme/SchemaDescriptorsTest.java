@@ -104,12 +104,20 @@ public class SchemaDescriptorsTest {
 
   @Test
   public void testStructureDescriptorWithoutFields() {
-    StructureTypeDescriptor<Object> desc = SchemaDescriptors.structures("structure");
+    StructureTypeDescriptor<Map<String, Object>> desc = SchemaDescriptors.structures("structure");
     assertEquals("structure", desc.getName());
-    assertTrue(desc.getFields().isEmpty());
+    Map<String, SchemaTypeDescriptor<?>> fields = desc.getFields();
+    assertTrue(fields.isEmpty());
     assertEquals("STRUCTURE structure", desc.toString());
     assertThrows(IllegalArgumentException.class, () -> desc.getField("something"));
     assertFalse(desc.hasField("something"));
+    PrimitiveTypeDescriptor<String> stringTypeDescriptor = SchemaDescriptors.strings();
+    assertThrows(
+        UnsupportedOperationException.class,
+        () -> {
+          // Fields should be immutable
+          fields.put("field", stringTypeDescriptor);
+        });
     assertFalse(desc.isArrayType());
     assertFalse(desc.isPrimitiveType());
     assertTrue(desc.isStructureType());

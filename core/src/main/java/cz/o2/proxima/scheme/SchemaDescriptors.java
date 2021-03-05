@@ -17,7 +17,8 @@ package cz.o2.proxima.scheme;
 
 import com.google.common.base.Preconditions;
 import cz.o2.proxima.scheme.AttributeValueAccessors.ArrayValueAccessor;
-import cz.o2.proxima.scheme.AttributeValueAccessors.ArrayValueAccessorImpl;
+import cz.o2.proxima.scheme.AttributeValueAccessors.DefaultArrayValueAccessor;
+import cz.o2.proxima.scheme.AttributeValueAccessors.DefaultStructureValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.EnumValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.GenericValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.PrimitiveValueAccessor;
@@ -288,7 +289,7 @@ public class SchemaDescriptors {
     } else {
       throw new UnsupportedOperationException("Unable to create Array value accessor");
     }
-    return arrays(valueDescriptor, new ArrayValueAccessorImpl<>(valueAccessor));
+    return arrays(valueDescriptor, new DefaultArrayValueAccessor<>(valueAccessor));
   }
 
   /**
@@ -325,7 +326,7 @@ public class SchemaDescriptors {
    */
   public static <T> StructureTypeDescriptor<T> structures(
       String name, Map<String, SchemaTypeDescriptor<?>> fields) {
-    return structures(name, fields, new StructureValueAccessor<T>() {});
+    return structures(name, fields, new DefaultStructureValueAccessor<>());
   }
 
   /**
