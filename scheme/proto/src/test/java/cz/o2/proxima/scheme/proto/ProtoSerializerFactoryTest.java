@@ -15,17 +15,20 @@
  */
 package cz.o2.proxima.scheme.proto;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import com.google.protobuf.ByteString;
 import cz.o2.proxima.scheme.AttributeValueType;
+import cz.o2.proxima.scheme.SchemaDescriptors;
 import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
 import cz.o2.proxima.scheme.ValueSerializer;
 import cz.o2.proxima.scheme.ValueSerializerFactory;
 import cz.o2.proxima.scheme.proto.test.Scheme.Event;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import org.junit.Before;
 import org.junit.Test;
@@ -83,5 +86,18 @@ public class ProtoSerializerFactoryTest {
   public void testGetSchemaDescriptor() {
     SchemaTypeDescriptor<Event> descriptor = serializer.getValueSchemaDescriptor();
     assertEquals(AttributeValueType.STRUCTURE, descriptor.getType());
+
+    final Event event =
+        Event.newBuilder()
+            .setGatewayId("test-id")
+            .setPayload(ByteString.copyFromUtf8("test-payload"))
+            .build();
+
+    final SchemaDescriptors.StructureTypeDescriptor<Event> structureDescriptor =
+        descriptor.asStructureTypeDescriptor();
+
+    assertEquals("test-id", structureDescriptor.getValueAccessor().readField("gatewayId", event));
+    assertArrayEquals("test-payload".getBytes(StandardCharsets.UTF_8),
+        structureDescriptor.getValueAccessor().readField("payload", event));
   }
 }
