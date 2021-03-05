@@ -26,6 +26,7 @@ import cz.o2.proxima.scheme.AttributeValueAccessors.ArrayValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.PrimitiveValueAccessor;
 import cz.o2.proxima.scheme.SchemaDescriptors.ArrayTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.EnumTypeDescriptor;
+import cz.o2.proxima.scheme.SchemaDescriptors.GenericTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.PrimitiveTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.StructureTypeDescriptor;
 import cz.o2.proxima.util.TestUtils;
@@ -33,6 +34,7 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import org.junit.Test;
 
 public class SchemaDescriptorsTest {
@@ -166,11 +168,10 @@ public class SchemaDescriptorsTest {
     assertEquals(AttributeValueType.ARRAY, desc.getType());
     assertEquals(AttributeValueType.LONG, desc.getValueType());
     final ArrayValueAccessor<Long> accessor = desc.getValueAccessor();
-    assertEquals(
-        Arrays.asList(22L, 33L), Arrays.asList(accessor.createFrom(new Long[] {22L, 33L})));
-    assertEquals(
-        Arrays.asList(22L, 33L), Arrays.asList(accessor.createFrom(new String[] {"22", "33"})));
-    assertEquals(Arrays.asList(22L, 33L), Arrays.asList(accessor.valuesOf(new Long[] {22L, 33L})));
+    final Long[] expected = new Long[] {22L, 33L};
+    assertArrayEquals(expected, accessor.createFrom(expected));
+    assertArrayEquals(expected, accessor.createFrom(new String[] {"22", "33"}));
+    assertArrayEquals(expected, accessor.valuesOf(expected));
   }
 
   @Test
@@ -199,8 +200,16 @@ public class SchemaDescriptorsTest {
     assertEquals(AttributeValueType.ARRAY, d.getType());
     assertEquals(AttributeValueType.STRUCTURE, d.getValueType());
     assertEquals(AttributeValueType.STRUCTURE, d.getValueDescriptor().getType());
-    assertEquals("structure", d.getValueDescriptor().asStructureTypeDescriptor().getName());
-    assertEquals(2, d.getValueDescriptor().asStructureTypeDescriptor().getFields().size());
+    final StructureTypeDescriptor<Object> structureTypeDescriptor = d.getValueDescriptor()
+        .asStructureTypeDescriptor();
+    assertEquals("structure", structureTypeDescriptor.getName());
+    final Map<String, GenericTypeDescriptor<?>> fields = structureTypeDescriptor.getFields();
+    assertEquals(2, fields.size());
+    final PrimitiveTypeDescriptor<String> string = SchemaDescriptors.strings();
+    assertThrows(UnsupportedOperationException.class, () -> {
+      // fields should be always immutable
+      fields.put("foo", string);
+    });
   }
 
   @Test
