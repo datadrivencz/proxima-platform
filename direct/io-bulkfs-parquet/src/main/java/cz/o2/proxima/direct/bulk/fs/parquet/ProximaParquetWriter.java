@@ -19,7 +19,7 @@ import cz.o2.proxima.direct.bulk.Path;
 import cz.o2.proxima.direct.bulk.Writer;
 import cz.o2.proxima.direct.bulk.fs.parquet.ParquetFileFormat.OPERATION;
 import cz.o2.proxima.scheme.AttributeValueType;
-import cz.o2.proxima.scheme.SchemaDescriptors.GenericTypeDescriptor;
+import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.StructureTypeDescriptor;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.util.Optionals;
@@ -154,7 +154,7 @@ public class ProximaParquetWriter implements Writer {
     private final RecordConsumer recordConsumer;
     private final MessageType parquetSchema;
     private final String attributeNamesPrefix;
-    private final Map<String, GenericTypeDescriptor<?>> schemasCache = new HashMap<>();
+    private final Map<String, SchemaTypeDescriptor<?>> schemasCache = new HashMap<>();
 
     public StreamElementParquetWriter(
         RecordConsumer recordConsumer, MessageType parquetSchema, String attributeNamesPrefix) {
@@ -176,7 +176,7 @@ public class ProximaParquetWriter implements Writer {
       log.debug("Writing stream element {}", element);
       String attribute =
           attributeNamesPrefix + element.getAttributeDescriptor().toAttributePrefix(false);
-      GenericTypeDescriptor<?> attributeSchema =
+      SchemaTypeDescriptor<?> attributeSchema =
           schemasCache.computeIfAbsent(
               attribute,
               name ->
@@ -201,7 +201,7 @@ public class ProximaParquetWriter implements Writer {
 
     private <T> void writeValue(
         String name,
-        GenericTypeDescriptor<T> schema,
+        SchemaTypeDescriptor<T> schema,
         T value,
         GroupType currentParquetSchema,
         boolean writeStartAndEndField) {
@@ -243,15 +243,14 @@ public class ProximaParquetWriter implements Writer {
 
                     if (!isEmptyValue) {
                       @SuppressWarnings("unchecked")
-                      final GenericTypeDescriptor<Object> cast =
-                          (GenericTypeDescriptor<Object>) type;
+                      final SchemaTypeDescriptor<Object> cast = (SchemaTypeDescriptor<Object>) type;
                       writeValue(field, cast, fieldValue, innerSchema.asGroupType(), true);
                     }
                   });
           recordConsumer.endGroup();
           break;
         case ARRAY:
-          final GenericTypeDescriptor<T> valueDescriptor =
+          final SchemaTypeDescriptor<T> valueDescriptor =
               schema.asArrayTypeDescriptor().getValueDescriptor();
           if (valueDescriptor.getType().equals(AttributeValueType.BYTE)) {
             // Array of bytes should be encoded just as binary

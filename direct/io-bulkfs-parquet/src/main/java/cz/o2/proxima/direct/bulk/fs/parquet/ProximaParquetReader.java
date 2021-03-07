@@ -24,7 +24,7 @@ import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.ArrayValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.StructureValueAccessor;
-import cz.o2.proxima.scheme.SchemaDescriptors.GenericTypeDescriptor;
+import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
 import cz.o2.proxima.scheme.ValueSerializer;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.util.ExceptionUtils;
@@ -156,7 +156,6 @@ public class ProximaParquetReader implements Reader {
     private final String attributeNamesPrefix;
     private final Map<String, Object> record = new HashMap<>();
 
-
     public StreamElementRecordMaterializer(
         MessageType schema, EntityDescriptor entity, String attributeNamesPrefix) {
       this.entity = entity;
@@ -222,16 +221,13 @@ public class ProximaParquetReader implements Reader {
                         List<GroupType> path, GroupType groupType, List<Converter> converters) {
                       return new GroupConverter() {
 
-
                         public Converter getConverter(int fieldIndex) {
                           return converters.get(fieldIndex);
                         }
 
-                        public void start() {
-                        }
+                        public void start() {}
 
-                        public void end() {
-                        }
+                        public void end() {}
                       };
                     }
 
@@ -249,10 +245,7 @@ public class ProximaParquetReader implements Reader {
       if (path != null) {
         for (GroupType g : path) {
           if (!g.getName().equals("proxima-bulk")) {
-            res.computeIfAbsent(
-                g.getName(),
-                name ->
-                    new HashMap<String, Map<String, Object>>());
+            res.computeIfAbsent(g.getName(), name -> new HashMap<String, Map<String, Object>>());
             res = (Map<String, Object>) res.get(g.getName());
           }
         }
@@ -305,24 +298,27 @@ public class ProximaParquetReader implements Reader {
 
       final String attributeKeyName = attributeNamesPrefix + attribute.toAttributePrefix(false);
 
-      final GenericTypeDescriptor<?> attributeSchema = attribute.getSchemaTypeDescriptor();
+      final SchemaTypeDescriptor<?> attributeSchema = attribute.getSchemaTypeDescriptor();
       Object value;
       if (attributeSchema.isStructureType()) {
-        @SuppressWarnings("unchecked") final StructureValueAccessor<Object> valueAccessor =
+        @SuppressWarnings("unchecked")
+        final StructureValueAccessor<Object> valueAccessor =
             (StructureValueAccessor<Object>)
                 attributeSchema.asStructureTypeDescriptor().getValueAccessor();
         value = valueAccessor.createFrom(record.get(attributeKeyName));
       } else if (attributeSchema.isArrayType()) {
-        @SuppressWarnings("unchecked") final ArrayValueAccessor<Object> valueAccessor = (ArrayValueAccessor<Object>) attributeSchema
-            .asArrayTypeDescriptor().getValueAccessor();
+        @SuppressWarnings("unchecked")
+        final ArrayValueAccessor<Object> valueAccessor =
+            (ArrayValueAccessor<Object>) attributeSchema.asArrayTypeDescriptor().getValueAccessor();
         // FIXME after bytes is resolved
         value = record.get(attributeKeyName);
-        //value = valueAccessor.createFrom(record.get(attributeKeyName));
+        // value = valueAccessor.createFrom(record.get(attributeKeyName));
       } else {
         throw new UnsupportedOperationException("Fixme");
       }
-      @SuppressWarnings("unchecked") final ValueSerializer<Object> serializer = (ValueSerializer<Object>) attribute
-          .getValueSerializer();
+      @SuppressWarnings("unchecked")
+      final ValueSerializer<Object> serializer =
+          (ValueSerializer<Object>) attribute.getValueSerializer();
       return serializer.serialize(value);
     }
 

@@ -18,7 +18,7 @@ package cz.o2.proxima.direct.bulk.fs.parquet;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.AttributeFamilyDescriptor;
 import cz.o2.proxima.scheme.AttributeValueType;
-import cz.o2.proxima.scheme.SchemaDescriptors.GenericTypeDescriptor;
+import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -52,7 +52,7 @@ public class ParquetUtils {
 
   public static <T> Type createParquetSchema(
       AttributeDescriptor<T> attribute, String attributeNamesPrefix) {
-    final GenericTypeDescriptor<T> schema = attribute.getSchemaTypeDescriptor();
+    final SchemaTypeDescriptor<T> schema = attribute.getSchemaTypeDescriptor();
     String attributeName = attributeNamesPrefix + attribute.getName();
     if (attribute.isWildcard()) {
       attributeName = attributeNamesPrefix + attribute.toAttributePrefix(false);
@@ -76,7 +76,7 @@ public class ParquetUtils {
     return parquet;
   }
 
-  public static Type mapSchemaTypeToParquet(GenericTypeDescriptor<?> descriptor, String name) {
+  public static Type mapSchemaTypeToParquet(SchemaTypeDescriptor<?> descriptor, String name) {
     switch (descriptor.getType()) {
       case INT:
         return Types.optional(PrimitiveTypeName.INT32).named(name);
@@ -99,7 +99,7 @@ public class ParquetUtils {
       case BYTE:
         return Types.optional(PrimitiveTypeName.BINARY).named(name);
       case ARRAY:
-        GenericTypeDescriptor<?> valueTypeDescriptor =
+        SchemaTypeDescriptor<?> valueTypeDescriptor =
             descriptor.asArrayTypeDescriptor().getValueDescriptor();
         Type valueType = mapSchemaTypeToParquet(valueTypeDescriptor, name);
 

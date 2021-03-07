@@ -228,28 +228,31 @@ public class ParquetFileFormatTest extends AbstractFileFormatTest {
             Collections.singletonList(complexAttr),
             Collections.emptyMap()));
 
-    assertWriteAndReadElements(fileFormat, event, Collections.singletonList(
-        StreamElement.upsert(
-            event,
-            complexAttr,
-            UUID.randomUUID().toString(),
-            "key1",
-            complexAttr.getName(),
-            now,
-            complexAttr
-                .getValueSerializer()
-                .serialize(
-                    ValueSchemeMessage.newBuilder()
-                        .addRepeatedString("repeated_string_value_1")
-                        .addRepeatedString("repeated_string_value_2")
-                        .setInnerMessage(
-                            InnerMessage.newBuilder()
-                                .setInnerEnum(Directions.LEFT)
-                                .setInnerDoubleType(69)
-                                .build())
-                        .setIntType(10)
-                        .setBooleanType(false)
-                        .build()))));
+    assertWriteAndReadElements(
+        fileFormat,
+        event,
+        Collections.singletonList(
+            StreamElement.upsert(
+                event,
+                complexAttr,
+                UUID.randomUUID().toString(),
+                "key1",
+                complexAttr.getName(),
+                now,
+                complexAttr
+                    .getValueSerializer()
+                    .serialize(
+                        ValueSchemeMessage.newBuilder()
+                            .addRepeatedString("repeated_string_value_1")
+                            .addRepeatedString("repeated_string_value_2")
+                            .setInnerMessage(
+                                InnerMessage.newBuilder()
+                                    .setInnerEnum(Directions.LEFT)
+                                    .setInnerDoubleType(69)
+                                    .build())
+                            .setIntType(10)
+                            .setBooleanType(false)
+                            .build()))));
   }
 
   @Test
@@ -274,7 +277,6 @@ public class ParquetFileFormatTest extends AbstractFileFormatTest {
               notFromFamilyAttribute.toAttributePrefix(),
               now,
               new byte[] {69}));
-
 
       writer.write(upsert());
     }
