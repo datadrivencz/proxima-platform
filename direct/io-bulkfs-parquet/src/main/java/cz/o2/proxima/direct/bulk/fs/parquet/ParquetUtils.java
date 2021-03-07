@@ -40,13 +40,22 @@ public class ParquetUtils {
     // no-op
   }
 
-  public static MessageType createParquetSchema(
-      AttributeFamilyDescriptor family, String attributeNamesPrefix) {
+  public static MessageType createParquetSchema(AttributeFamilyDescriptor family) {
+
     return ParquetUtils.createMessageWithFields(
         family
             .getAttributes()
             .stream()
-            .map(a -> createParquetSchema(a, attributeNamesPrefix))
+            .map(
+                a ->
+                    createParquetSchema(
+                        a,
+                        family
+                            .getCfg()
+                            .getOrDefault(
+                                ParquetFileFormat.PARQUET_CONFIG_VALUES_PREFIX_KEY_NAME,
+                                ParquetFileFormat.PARQUET_DEFAULT_VALUES_NAME_PREFIX)
+                            .toString()))
             .collect(Collectors.toList()));
   }
 
@@ -57,6 +66,7 @@ public class ParquetUtils {
     if (attribute.isWildcard()) {
       attributeName = attributeNamesPrefix + attribute.toAttributePrefix(false);
     }
+    validateAttributeName(attributeName);
     Type parquet;
     if (schema.isStructureType()) {
       parquet =
@@ -157,5 +167,27 @@ public class ParquetUtils {
                     .named(ParquetFileFormat.PARQUET_COLUMN_NAME_ATTRIBUTE_PREFIX)));
     fields.addAll(fieldsToAdd);
     return new MessageType("proxima-bulk", fields);
+  }
+
+  /**
+   * Validate attribute name.
+   *
+   * @param attributeName attribute name
+   * @throws IllegalArgumentException for reserved names
+   */
+  private static void validateAttributeName(String attributeName) {
+    if (Arrays.asList(
+            ParquetFileFormat.PARQUET_COLUMN_NAME_KEY,
+            ParquetFileFormat.PARQUET_COLUMN_NAME_UUID,
+            ParquetFileFormat.PARQUET_COLUMN_NAME_OPERATION,
+            ParquetFileFormat.PARQUET_COLUMN_NAME_TIMESTAMP,
+            ParquetFileFormat.PARQUET_COLUMN_NAME_ATTRIBUTE,
+            ParquetFileFormat.PARQUET_COLUMN_NAME_ATTRIBUTE_PREFIX)
+        .contains(attributeName)) {
+      throw new IllegalArgumentException(
+          String.format(
+              "Attribute [%s] collides with reserved keyword. Please specify %s.",
+              attributeName, ParquetFileFormat.PARQUET_CONFIG_VALUES_PREFIX_KEY_NAME));
+    }
   }
 }

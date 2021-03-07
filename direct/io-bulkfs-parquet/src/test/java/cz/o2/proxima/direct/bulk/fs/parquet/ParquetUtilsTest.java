@@ -18,6 +18,7 @@ package cz.o2.proxima.direct.bulk.fs.parquet;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import com.typesafe.config.ConfigFactory;
@@ -28,6 +29,7 @@ import cz.o2.proxima.repository.Repository;
 import cz.o2.proxima.scheme.SchemaDescriptors;
 import cz.o2.proxima.scheme.proto.test.Scheme.ValueSchemeMessage;
 import cz.o2.proxima.scheme.proto.utils.ProtoUtils;
+import java.net.URI;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -52,7 +54,7 @@ public class ParquetUtilsTest {
   @Test
   public void testCreateParquetSchemaForAttributeDescriptor() {
     AttributeDescriptor<byte[]> attr = gateway.getAttribute("armed");
-    String prefix = ParquetFileFormat.PARQUET_DEFAULT_VALUES_NAME_PREFIX;
+    String prefix = "prefix_";
     Type parquet = ParquetUtils.createParquetSchema(attr, prefix);
     log.debug("Parquet schema: {}", parquet);
     assertEquals(prefix + attr.getName(), parquet.getName());
@@ -81,9 +83,7 @@ public class ParquetUtilsTest {
             .findFirst()
             .orElseThrow(() -> new IllegalStateException("Unable to find attribute family."));
 
-    MessageType parquet =
-        ParquetUtils.createParquetSchema(
-            family, ParquetFileFormat.PARQUET_DEFAULT_VALUES_NAME_PREFIX);
+    MessageType parquet = ParquetUtils.createParquetSchema(family);
     log.debug("Parquet schema: {}", parquet);
     assertProximaFieldsInParquetSchema(parquet, false);
   }
@@ -169,6 +169,18 @@ public class ParquetUtilsTest {
   public void testCreateProximaSchemaForStreamElement() {
     assertProximaFieldsInParquetSchema(
         ParquetUtils.createMessageWithFields(Collections.emptyList()), true);
+  }
+
+  @Test
+  public void testCreateSchemaWitReservedAttributeShouldThrowsException() {
+    AttributeDescriptor<byte[]> key =
+        AttributeDescriptor.newBuilder(repo)
+            .setEntity(gateway.getName())
+            .setName("key")
+            .setSchemeUri(URI.create("bytes:///"))
+            .build();
+    assertThrows(IllegalArgumentException.class, () -> ParquetUtils.createParquetSchema(key, ""));
+    assertNotNull(ParquetUtils.createParquetSchema(key, "prefix"));
   }
 
   @Test

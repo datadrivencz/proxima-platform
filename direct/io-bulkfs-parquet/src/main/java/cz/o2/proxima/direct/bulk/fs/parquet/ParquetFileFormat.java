@@ -79,7 +79,7 @@ public class ParquetFileFormat implements FileFormat {
 
   @Override
   public Reader openReader(Path path, EntityDescriptor entity) throws IOException {
-    return new ProximaParquetReader(path, entity, attributeNamesPrefix);
+    return new ProximaParquetReader(path, entity);
   }
 
   @Override
@@ -118,7 +118,7 @@ public class ParquetFileFormat implements FileFormat {
 
   private MessageType getParquetSchema() {
     if (parquetSchema == null) {
-      parquetSchema = ParquetUtils.createParquetSchema(familyDescriptor, attributeNamesPrefix);
+      parquetSchema = ParquetUtils.createParquetSchema(familyDescriptor);
     }
     return parquetSchema;
   }

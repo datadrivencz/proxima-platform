@@ -61,12 +61,11 @@ public class ProximaParquetReader implements Reader {
   private final Path path;
   private final ParquetReader<StreamElement> reader;
 
-  public ProximaParquetReader(Path path, EntityDescriptor entity, String attributeNamesPrefix)
-      throws IOException {
+  public ProximaParquetReader(Path path, EntityDescriptor entity) throws IOException {
     final SeekableByteChannel channel = (SeekableByteChannel) path.read();
     final Configuration configuration = new Configuration(false);
     this.reader =
-        new ParquetReadBuilder(new BulkInputFile(channel), entity, attributeNamesPrefix)
+        new ParquetReadBuilder(new BulkInputFile(channel), entity)
             .withConf(configuration)
             /**
              * Currently we can not use push down filter for attributes See
@@ -109,29 +108,25 @@ public class ProximaParquetReader implements Reader {
   private static class ParquetReadBuilder extends ParquetReader.Builder<StreamElement> {
 
     private final EntityDescriptor entity;
-    private final String attributeNamesPrefix;
 
-    ParquetReadBuilder(InputFile file, EntityDescriptor entity, String attributeNamesPrefix) {
+    ParquetReadBuilder(InputFile file, EntityDescriptor entity) {
       super(file);
       this.entity = entity;
-      this.attributeNamesPrefix = attributeNamesPrefix;
     }
 
     @Override
     protected ReadSupport<StreamElement> getReadSupport() {
       Preconditions.checkNotNull(entity, "Entity must be specified.");
-      return new StreamElementReadSupport(entity, attributeNamesPrefix);
+      return new StreamElementReadSupport(entity);
     }
   }
 
   private static class StreamElementReadSupport extends ReadSupport<StreamElement> {
 
     private final EntityDescriptor entity;
-    private final String attributeNamesPrefix;
 
-    public StreamElementReadSupport(EntityDescriptor entity, String attributeNamesPrefix) {
+    public StreamElementReadSupport(EntityDescriptor entity) {
       this.entity = entity;
-      this.attributeNamesPrefix = attributeNamesPrefix;
     }
 
     @Override
@@ -145,6 +140,9 @@ public class ProximaParquetReader implements Reader {
         Map<String, String> keyValueMetaData,
         MessageType fileSchema,
         ReadContext readContext) {
+      final String attributeNamesPrefix =
+          keyValueMetaData.getOrDefault(
+              ParquetFileFormat.PARQUET_CONFIG_VALUES_PREFIX_KEY_NAME, "");
       return new StreamElementRecordMaterializer(fileSchema, entity, attributeNamesPrefix);
     }
   }

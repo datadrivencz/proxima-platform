@@ -134,7 +134,10 @@ public class ProximaParquetWriter implements Writer {
 
     @Override
     public WriteContext init(Configuration configuration) {
-      return new WriteContext(parquetSchema, Collections.emptyMap());
+      return new WriteContext(
+          parquetSchema,
+          Collections.singletonMap(
+              ParquetFileFormat.PARQUET_CONFIG_VALUES_PREFIX_KEY_NAME, attributeNamesPrefix));
     }
 
     @Override
