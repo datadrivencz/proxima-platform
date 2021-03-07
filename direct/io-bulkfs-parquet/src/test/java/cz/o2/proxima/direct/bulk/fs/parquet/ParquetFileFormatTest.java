@@ -250,6 +250,9 @@ public class ParquetFileFormatTest extends AbstractFileFormatTest {
                                     .setInnerEnum(Directions.LEFT)
                                     .setInnerDoubleType(69)
                                     .build())
+                            .addRepeatedInnerMessage(InnerMessage.newBuilder()
+                                .setInnerDoubleType(33)
+                                .build())
                             .setIntType(10)
                             .setBooleanType(false)
                             .build()))));

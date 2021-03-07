@@ -111,28 +111,18 @@ public class ParquetUtils {
       case ARRAY:
         SchemaTypeDescriptor<?> valueTypeDescriptor =
             descriptor.asArrayTypeDescriptor().getValueDescriptor();
-        Type valueType = mapSchemaTypeToParquet(valueTypeDescriptor, name);
 
         // proxima byte array should be encoded as binary
         if (valueTypeDescriptor.isPrimitiveType()
             && valueTypeDescriptor.getType().equals(AttributeValueType.BYTE)) {
-          return valueType;
+          return mapSchemaTypeToParquet(valueTypeDescriptor, name);
         }
 
         return Types.optionalList()
-            .element(valueType)
+            .setElementType(mapSchemaTypeToParquet(valueTypeDescriptor,"element"))
+            //.element(mapSchemaTypeToParquet(valueTypeDescriptor, "element"))
             .named(name);
 
-        /*
-        if (valueTypeDescriptor.isPrimitiveType() || valueTypeDescriptor.isEnumType()) {
-          return Types.repeated(valueType.asPrimitiveType().getPrimitiveTypeName())
-              .as(valueType.getLogicalTypeAnnotation())
-              .named(name);
-        } else {
-          return Types.repeatedGroup().named(name).withNewFields(valueType).asGroupType();
-        }
-
-         */
       case STRUCTURE:
         GroupBuilder<GroupType> structure = Types.optionalGroup();
         descriptor
