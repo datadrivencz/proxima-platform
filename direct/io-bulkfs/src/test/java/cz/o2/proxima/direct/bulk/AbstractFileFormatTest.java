@@ -167,6 +167,7 @@ public abstract class AbstractFileFormatTest {
           StreamElement gets = elementsByUuid.get(e.getUuid());
           assertEquals(e, gets);
           assertEquals(e.getStamp(), gets.getStamp());
+          assertArrayEquals(e.getValue(), gets.getValue());
         });
   }
 

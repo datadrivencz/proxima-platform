@@ -119,6 +119,11 @@ public class ParquetUtils {
           return valueType;
         }
 
+        return Types.optionalList()
+            .element(valueType)
+            .named(name);
+
+        /*
         if (valueTypeDescriptor.isPrimitiveType() || valueTypeDescriptor.isEnumType()) {
           return Types.repeated(valueType.asPrimitiveType().getPrimitiveTypeName())
               .as(valueType.getLogicalTypeAnnotation())
@@ -126,6 +131,8 @@ public class ParquetUtils {
         } else {
           return Types.repeatedGroup().named(name).withNewFields(valueType).asGroupType();
         }
+
+         */
       case STRUCTURE:
         GroupBuilder<GroupType> structure = Types.optionalGroup();
         descriptor
