@@ -191,6 +191,10 @@
               <pattern>com.fasterxml.</pattern>
               <shadedPattern>${shadePattern}.com.fasterxml.</shadedPattern>
             </relocation>
+            <relocation>
+              <pattern>com.google.gson.</pattern>
+              <shadedPattern>${coreShade}.com.google.gson.</shadedPattern>
+            </relocation>
           </relocations>
         </configuration>
         <executions>

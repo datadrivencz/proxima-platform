@@ -62,6 +62,10 @@
               <pattern>com.google.common.</pattern>
               <shadedPattern>${coreShade}.com.google.common.</shadedPattern>
             </relocation>
+            <relocation>
+              <pattern>com.google.gson.</pattern>
+              <shadedPattern>${coreShade}.com.google.gson.</shadedPattern>
+            </relocation>
           </relocations>
         </configuration>
         <executions>
