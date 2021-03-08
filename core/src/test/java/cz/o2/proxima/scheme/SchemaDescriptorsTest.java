@@ -24,6 +24,7 @@ import static org.junit.Assert.assertTrue;
 
 import cz.o2.proxima.scheme.AttributeValueAccessors.ArrayValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.PrimitiveValueAccessor;
+import cz.o2.proxima.scheme.AttributeValueAccessors.StructureValueAccessor;
 import cz.o2.proxima.scheme.SchemaDescriptors.ArrayTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.EnumTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.PrimitiveTypeDescriptor;
@@ -31,8 +32,10 @@ import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.StructureTypeDescriptor;
 import cz.o2.proxima.util.TestUtils;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.Test;
@@ -168,6 +171,27 @@ public class SchemaDescriptorsTest {
             .getField("byte_array")
             .asArrayTypeDescriptor()
             .getValueType());
+    final Map<String, Object> expected =
+        new HashMap<String, Object>() {
+          {
+            put("string_field", "string_field_value");
+            put("array_of_string_field", Arrays.asList("value1", "value2").toArray());
+            put(
+                "inner_structure",
+                new HashMap<String, Object>() {
+                  {
+                    put("byte_array", "byte array value".getBytes(StandardCharsets.UTF_8));
+                    put("int", 8);
+                    put("long", 22L);
+                  }
+                });
+          }
+        };
+    StructureValueAccessor<Object> accessor = s.getValueAccessor();
+    assertEquals(expected, accessor.createFrom(expected));
+    assertEquals("string_field_value", accessor.readField("string_field", expected));
+    assertEquals(expected.get("inner_structure"), accessor.readField("inner_structure", expected));
+    assertEquals(expected, accessor.valuesOf(expected));
   }
 
   @Test
