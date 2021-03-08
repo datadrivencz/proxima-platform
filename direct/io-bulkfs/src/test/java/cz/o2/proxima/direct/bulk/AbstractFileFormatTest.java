@@ -40,6 +40,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.After;
@@ -156,18 +157,17 @@ public abstract class AbstractFileFormatTest {
     List<StreamElement> read = readElements(file, format, entityDescriptor);
     assertTrue(elements.containsAll(read));
     assertEquals(elements.size(), read.size());
-    Map<String, StreamElement> elementsByUuid =
+    Map<String, StreamElement> inputElementByUuid =
         elements
             .stream()
-            .map(e -> new SimpleEntry<>(e.getUuid(), e))
-            .collect(Collectors.toMap(Entry::getKey, Entry::getValue));
+            .collect(Collectors.toMap(StreamElement::getUuid, Function.identity()));
     read.forEach(
         e -> {
-          assertTrue(elementsByUuid.containsKey(e.getUuid()));
-          StreamElement gets = elementsByUuid.get(e.getUuid());
-          assertEquals(e, gets);
-          assertEquals(e.getStamp(), gets.getStamp());
-          assertArrayEquals(e.getValue(), gets.getValue());
+          assertTrue(inputElementByUuid.containsKey(e.getUuid()));
+          StreamElement gets = inputElementByUuid.get(e.getUuid());
+          assertEquals(gets, e);
+          assertEquals(gets.getStamp(), e.getStamp());
+          assertArrayEquals(gets.getValue(), e.getValue());
         });
   }
 

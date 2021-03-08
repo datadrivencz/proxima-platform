@@ -25,6 +25,7 @@ import cz.o2.proxima.direct.bulk.FileFormat;
 import cz.o2.proxima.direct.bulk.FileSystem;
 import cz.o2.proxima.direct.bulk.NamingConvention;
 import cz.o2.proxima.direct.bulk.Path;
+import cz.o2.proxima.direct.bulk.Reader;
 import cz.o2.proxima.direct.bulk.Writer;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.ConfigRepository;
@@ -249,13 +250,33 @@ public class ParquetFileFormatTest extends AbstractFileFormatTest {
                                 InnerMessage.newBuilder()
                                     .setInnerEnum(Directions.LEFT)
                                     .setInnerDoubleType(69)
+                                    .addRepeatedInnerString("bar")
                                     .build())
                             .addRepeatedInnerMessage(InnerMessage.newBuilder()
+                                .addRepeatedInnerString("foo")
                                 .setInnerDoubleType(33)
                                 .build())
                             .setIntType(10)
                             .setBooleanType(false)
                             .build()))));
+  }
+
+  @Test
+  public void testReadComplex() throws IOException {
+    File file = new File("/tmp/complex-object.parquet");
+    Path path =
+        Path.local(
+            FileSystem.local(
+                file,
+                NamingConvention.defaultConvention(
+                    Duration.ofHours(1), "prefix", getFileFormat().fileSuffix())),
+            file);
+    try (Reader reader = getFileFormat().openReader(path, entity)) {
+
+      for (StreamElement e : reader) {
+        log.warn("Get: {}", e);
+      }
+    }
   }
 
   @Test

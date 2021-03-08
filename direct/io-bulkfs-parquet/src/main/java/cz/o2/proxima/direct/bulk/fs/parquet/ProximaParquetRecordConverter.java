@@ -7,6 +7,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.parquet.io.ParquetDecodingException;
 import org.apache.parquet.io.api.Binary;
 import org.apache.parquet.io.api.Converter;
@@ -20,6 +21,7 @@ import org.apache.parquet.schema.LogicalTypeAnnotation.LogicalTypeAnnotationVisi
 import org.apache.parquet.schema.LogicalTypeAnnotation.StringLogicalTypeAnnotation;
 import org.apache.parquet.schema.Type;
 
+@Slf4j
 class ProximaParquetRecordConverter extends GroupConverter {
 
   private final Converter[] converters;
@@ -46,6 +48,7 @@ class ProximaParquetRecordConverter extends GroupConverter {
         return new ScalarConverter(parentValueContainer, parquetType.getName());
       } else {
         // its structure
+        log.warn("XXXXX {} ", parquetType.getName());
         parentValueContainer.add(parquetType.getName(), new HashMap<>());
         ParentValueContainer structureParent =
             new ParentValueContainer() {
@@ -168,7 +171,7 @@ class ProximaParquetRecordConverter extends GroupConverter {
       GroupType rootWrapperType = parquetType.asGroupType();
       if (!rootWrapperType.containsField("list") || rootWrapperType.getType("list").isPrimitive()) {
         throw new ParquetDecodingException(
-            "Expected repeated 'list' group inside LIST wrapperr but got: " + rootWrapperType);
+            "Expected repeated 'list' group inside LIST wrapper but got: " + rootWrapperType);
       }
 
       GroupType listType = rootWrapperType.getType("list").asGroupType();
@@ -179,7 +182,7 @@ class ProximaParquetRecordConverter extends GroupConverter {
 
       final Type elementType = listType.getType("element");
       parentValueContainer.add(parquetType.getName(), new ArrayList<>());
-      final ParentValueContainer parent =
+      final ParentValueContainer listParent =
           new ParentValueContainer() {
             @Override
             public void add(String name, Object value) {
@@ -191,7 +194,7 @@ class ProximaParquetRecordConverter extends GroupConverter {
               throw new UnsupportedOperationException("XXX");
             }
           };
-      elementConverter = newConverter(parent, elementType);
+      elementConverter = newConverter(listParent, elementType);
     }
 
     @Override

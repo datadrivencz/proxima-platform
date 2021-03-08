@@ -263,7 +263,7 @@ public class ProximaParquetWriter implements Writer {
       }
     }
 
-    class ArrayWriter<T> extends GenericFieldWriter<List<T>> {
+    class ArrayWriter<T> extends GenericFieldWriter<T[]> {
 
       final FieldWriter<T> fieldWriter;
 
@@ -273,21 +273,24 @@ public class ProximaParquetWriter implements Writer {
       }
 
       @Override
-      public void writeField(List<T> value) {
-        recordConsumer.startGroup();
-        recordConsumer.startField("list", 0); // This is the wrapper group for the array field
-        value.forEach(val -> {
+      public void writeField(T[] value) {
+        if (value.length > 0) {
           recordConsumer.startGroup();
-          recordConsumer.startField("element", 0); // This is the mandatory inner field
+          recordConsumer.startField("list", 0); // This is the wrapper group for the array field
+          for (T val : value) {
+            recordConsumer.startGroup();
+            recordConsumer.startField("element", 0); // This is the mandatory inner field
 
-          fieldWriter.writeRawValue(val);
+            fieldWriter.writeRawValue(val);
 
-          recordConsumer.endField("element", 0);
+            recordConsumer.endField("element", 0);
+            recordConsumer.endGroup();
+          }
+          ;
+          recordConsumer.endField("list", 0);
           recordConsumer.endGroup();
-        });
-        recordConsumer.endField("list", 0);
-        recordConsumer.endGroup();
-      }
+        }
+        }
     }
 
     class StructureWriter<T> extends GenericFieldWriter<T> {
@@ -295,7 +298,7 @@ public class ProximaParquetWriter implements Writer {
       final FieldWriter<?>[] fieldWriters;
 
       public StructureWriter(StructureTypeDescriptor<T> schema) {
-        Map<String, SchemaTypeDescriptor<?>> fields = schema.getFields();
+        final Map<String, SchemaTypeDescriptor<?>> fields = schema.getFields();
         fieldWriters = (FieldWriter<?>[]) Array
             .newInstance(GenericFieldWriter.class, fields.size());
         int index = 0;
@@ -314,7 +317,6 @@ public class ProximaParquetWriter implements Writer {
         recordConsumer.startGroup();
         writeFields(value);
         recordConsumer.endGroup();
-        ;
       }
 
       private void writeFields(T value) {
@@ -414,6 +416,7 @@ public class ProximaParquetWriter implements Writer {
                         && ((Object[]) structureValues.get(field)).length > 0)) {
 
                      */
+                    log.warn("writing field {} val {}", field, structureValues.get(field));
                       writeValue(
                           field,
                           (SchemaTypeDescriptor<Object>) type,
