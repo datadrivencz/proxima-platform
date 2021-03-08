@@ -216,9 +216,7 @@ public class SchemaDescriptorsTest {
     byte[] valuesOf = accessor.valueOf(testBytes);
     assertArrayEquals(testBytes, valuesOf);
     // @TODO: FIX later
-    // byte[] from = accessor.createFrom(valuesOf);
-    // assertArrayEquals("foo".getBytes(StandardCharsets.UTF_8), accessor.createFrom("foo".getBytes(
-    //    StandardCharsets.UTF_8)));
+    // assertArrayEquals(testBytes, accessor.createFrom(testBytes));
 
   }
 

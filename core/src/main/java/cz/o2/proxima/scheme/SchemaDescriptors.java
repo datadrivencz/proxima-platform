@@ -125,7 +125,13 @@ public class SchemaDescriptors {
         });
   }
 
-  // @FIXME
+  /**
+   * Create {@link ArrayTypeDescriptor} with primitive value and value accessor
+   *
+   * @param valueProvider value accessor
+   * @param <V> array value type
+   * @return Array type descriptor
+   */
   public static <V> ArrayTypeDescriptor<V> bytes(PrimitiveValueAccessor<V> valueProvider) {
     return arrays(primitives(AttributeValueType.BYTE, valueProvider));
   }

@@ -16,11 +16,13 @@
 package cz.o2.proxima.scheme;
 
 import com.google.common.base.Preconditions;
+import cz.o2.proxima.annotations.Experimental;
 import java.io.Serializable;
 import java.util.Arrays;
 import java.util.Map;
 
 /** Classes providing access to Attribute values */
+@Experimental
 public class AttributeValueAccessors {
 
   private AttributeValueAccessors() {}
@@ -35,7 +37,7 @@ public class AttributeValueAccessors {
     /**
      * Create value from object
      *
-     * @param object
+     * @param object create from
      * @return value
      */
     default T createFrom(Object object) {
