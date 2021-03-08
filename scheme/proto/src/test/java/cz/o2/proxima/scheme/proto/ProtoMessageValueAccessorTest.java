@@ -154,37 +154,39 @@ public class ProtoMessageValueAccessorTest {
             put(
                 "repeated_string",
                 Arrays.asList(
-                    "top_level_repeated_string_value_1", "top_level_repeated_string_value_2"));
+                        "top_level_repeated_string_value_1", "top_level_repeated_string_value_2")
+                    .toArray());
 
             put(
                 "repeated_inner_message",
                 Arrays.asList(
-                    new HashMap<String, Object>() {
-                      {
-                        put("inner_double_type", 40);
-                        put("inner_enum", "LEFT");
-                        put(
-                            "inner_inner_message",
-                            new HashMap<String, Object>() {
-                              {
-                                put("inner_float_type", 20);
-                              }
-                            });
-                      }
-                    },
-                    new HashMap<String, Object>() {
-                      {
-                        put("inner_double_type", 20);
-                        put("inner_enum", "RIGHT");
-                        put(
-                            "inner_inner_message",
-                            new HashMap<String, Object>() {
-                              {
-                                put("inner_float_type", 40);
-                              }
-                            });
-                      }
-                    }));
+                        new HashMap<String, Object>() {
+                          {
+                            put("inner_double_type", 40);
+                            put("inner_enum", Directions.LEFT.name());
+                            put(
+                                "inner_inner_message",
+                                new HashMap<String, Object>() {
+                                  {
+                                    put("inner_float_type", 20);
+                                  }
+                                });
+                          }
+                        },
+                        new HashMap<String, Object>() {
+                          {
+                            put("inner_double_type", 20);
+                            put("inner_enum", Directions.RIGHT.name());
+                            put(
+                                "inner_inner_message",
+                                new HashMap<String, Object>() {
+                                  {
+                                    put("inner_float_type", 40);
+                                  }
+                                });
+                          }
+                        })
+                    .toArray());
             put(
                 "inner_message",
                 new HashMap<String, Object>() {
@@ -192,8 +194,9 @@ public class ProtoMessageValueAccessorTest {
                     put(
                         "repeated_inner_string",
                         Arrays.asList(
-                            "inner_repeated_string_value1", "inner_repeated_string_value2"));
-                    put("inner_enum", "LEFT");
+                                "inner_repeated_string_value1", "inner_repeated_string_value2")
+                            .toArray());
+                    put("inner_enum", Directions.LEFT.name());
                     put("inner_double_type", 100);
                     put(
                         "inner_inner_message",

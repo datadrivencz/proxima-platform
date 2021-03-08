@@ -146,7 +146,7 @@ public class ProtoUtilsTest {
           {
             put(
                 "repeated_string",
-                Arrays.asList("repeated_string_value_1", "repeated_string_value_2"));
+                Arrays.asList("repeated_string_value_1", "repeated_string_value_2").toArray());
             put(
                 "inner_message",
                 new HashMap<String, Object>() {
@@ -154,7 +154,8 @@ public class ProtoUtilsTest {
                     put(
                         "repeated_inner_string",
                         Arrays.asList(
-                            "repeated_inner_string_value1", "repeated_inner_string_value2"));
+                                "repeated_inner_string_value1", "repeated_inner_string_value2")
+                            .toArray());
                     put("inner_double_type", 38);
                     put("inner_enum", Directions.LEFT.name());
                   }
