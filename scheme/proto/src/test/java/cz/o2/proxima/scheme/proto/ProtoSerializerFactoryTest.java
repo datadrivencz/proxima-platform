@@ -97,7 +97,8 @@ public class ProtoSerializerFactoryTest {
         descriptor.asStructureTypeDescriptor();
 
     assertEquals("test-id", structureDescriptor.getValueAccessor().readField("gatewayId", event));
-    assertArrayEquals("test-payload".getBytes(StandardCharsets.UTF_8),
+    assertArrayEquals(
+        "test-payload".getBytes(StandardCharsets.UTF_8),
         structureDescriptor.getValueAccessor().readField("payload", event));
   }
 }
