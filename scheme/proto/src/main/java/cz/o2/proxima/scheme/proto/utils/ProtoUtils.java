@@ -30,9 +30,10 @@ import cz.o2.proxima.scheme.SchemaDescriptors.StructureTypeDescriptor;
 import cz.o2.proxima.scheme.proto.ProtoMessageValueAccessor;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 
@@ -114,46 +115,40 @@ public class ProtoUtils {
         descriptor = (SchemaTypeDescriptor<T>) SchemaDescriptors.integers();
         break;
       case ENUM:
-        final Map<String, EnumValueDescriptor> enumValues =
+        final List<String> enumValues =
             proto
                 .getEnumType()
                 .getValues()
                 .stream()
-                .collect(Collectors.toMap(EnumValueDescriptor::getName, Function.identity()));
-
+                .map(EnumValueDescriptor::getName)
+                .collect(Collectors.toList());
         descriptor =
             (SchemaTypeDescriptor<T>)
                 SchemaDescriptors.enums(
-                    new ArrayList<>(enumValues.keySet()),
+                    new ArrayList<>(enumValues),
                     new EnumValueAccessor<String>() {
                       @Override
                       public String createFrom(Object object) {
-                        return enumValues
-                            .keySet()
-                            .stream()
-                            .filter(e -> e.equals(object.toString()))
-                            .findFirst()
+                        return Optional.ofNullable(
+                                proto.getEnumType().findValueByName(object.toString()))
+                            .map(EnumValueDescriptor::getName)
                             .orElseThrow(
                                 () ->
                                     new IllegalArgumentException(
                                         String.format(
                                             "Unknown value [%s] for enum type. Values: %s",
-                                            object, enumValues.keySet())));
+                                            object, proto.getEnumType().getValues())));
                       }
 
                       @Override
                       public Object valueOf(String value) {
-                        return enumValues
-                            .values()
-                            .stream()
-                            .filter(v -> v.getName().equals(value))
-                            .findFirst()
+                        return Optional.ofNullable(proto.getEnumType().findValueByName(value))
                             .orElseThrow(
                                 () ->
                                     new IllegalArgumentException(
                                         String.format(
                                             "Unknown value [%s] for enum type. Values: %s",
-                                            value, enumValues.keySet())));
+                                            value, proto.getEnumType().getValues())));
                       }
                     });
         break;
@@ -178,10 +173,8 @@ public class ProtoUtils {
       GenericValueAccessor<T> valueAccessor;
       if (descriptor.isPrimitiveType()) {
         valueAccessor = descriptor.asPrimitiveTypeDescriptor().getValueAccessor();
-      } else if (descriptor.isStructureType()) {
-        valueAccessor = descriptor.asStructureTypeDescriptor().getValueAccessor();
       } else {
-        throw new UnsupportedOperationException("xxx");
+        valueAccessor = descriptor.asStructureTypeDescriptor().getValueAccessor();
       }
       return SchemaDescriptors.arrays(
           descriptor,

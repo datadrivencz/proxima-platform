@@ -21,8 +21,12 @@ import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import com.google.protobuf.ByteString;
+import cz.o2.proxima.scheme.AttributeValueAccessors.ArrayValueAccessor;
+import cz.o2.proxima.scheme.AttributeValueAccessors.EnumValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.StructureValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueType;
+import cz.o2.proxima.scheme.SchemaDescriptors.ArrayTypeDescriptor;
+import cz.o2.proxima.scheme.SchemaDescriptors.EnumTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.StructureTypeDescriptor;
 import cz.o2.proxima.scheme.proto.test.Scheme.Device;
 import cz.o2.proxima.scheme.proto.test.Scheme.ValueSchemeMessage;
@@ -164,5 +168,47 @@ public class ProtoUtilsTest {
     ValueSchemeMessage created = valueProvider.createFrom(createFrom);
     log.debug("New created message {}", created);
     assertEquals(object, created);
+  }
+
+  @Test
+  public void testEnumProtoDescriptor() {
+    StructureTypeDescriptor<ValueSchemeMessage> descriptor =
+        ProtoUtils.convertProtoToSchema(
+            ValueSchemeMessage.getDescriptor(), ValueSchemeMessage.getDefaultInstance());
+
+    @SuppressWarnings("unchecked")
+    EnumTypeDescriptor<String> enumTypeDescriptor =
+        (EnumTypeDescriptor<String>)
+            descriptor
+                .getField("inner_message")
+                .asStructureTypeDescriptor()
+                .getField("inner_enum")
+                .asEnumTypeDescriptor();
+
+    EnumValueAccessor<String> accessor = enumTypeDescriptor.getValueAccessor();
+    // proto enum fields contains +1 value UNRECOGNIZED
+    assertEquals(Directions.values().length - 1, enumTypeDescriptor.getValues().size());
+    assertEquals(Directions.LEFT.getValueDescriptor(), accessor.valueOf(Directions.LEFT.name()));
+    assertEquals(Directions.LEFT.name(), accessor.createFrom(Directions.LEFT));
+    assertThrows(IllegalArgumentException.class, () -> accessor.valueOf("NOT_IN_VALUES"));
+    assertThrows(IllegalArgumentException.class, () -> accessor.createFrom("NOT_IN_VALUES"));
+  }
+
+  @Test
+  public void testArrayDescriptor() {
+    StructureTypeDescriptor<ValueSchemeMessage> descriptor =
+        ProtoUtils.convertProtoToSchema(
+            ValueSchemeMessage.getDescriptor(), ValueSchemeMessage.getDefaultInstance());
+    @SuppressWarnings("unchecked")
+    ArrayTypeDescriptor<String> arrayOfString =
+        ((ArrayTypeDescriptor<String>) descriptor.getField("repeated_string"))
+            .asArrayTypeDescriptor();
+    ArrayValueAccessor<String> accessor = arrayOfString.getValueAccessor();
+    assertArrayEquals(
+        Arrays.asList("foo", "bar").toArray(new String[0]),
+        accessor.valuesOf(new String[] {"foo", "bar"}));
+    assertArrayEquals(
+        Arrays.asList("foo", "bar").toArray(new String[0]),
+        accessor.createFrom(new String[] {"foo", "bar"}));
   }
 }
