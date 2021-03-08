@@ -15,7 +15,6 @@
  */
 package cz.o2.proxima.scheme.proto;
 
-import com.google.common.base.Preconditions;
 import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor;
 import com.google.protobuf.Message;
@@ -24,6 +23,8 @@ import cz.o2.proxima.functional.Factory;
 import cz.o2.proxima.scheme.AttributeValueAccessors.EnumValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.StructureValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueType;
+import cz.o2.proxima.scheme.SchemaDescriptors.ArrayTypeDescriptor;
+import cz.o2.proxima.scheme.SchemaDescriptors.PrimitiveTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
 import java.util.HashMap;
 import java.util.List;
@@ -143,56 +144,16 @@ public class ProtoMessageValueAccessor<T extends Message> implements StructureVa
     for (Entry<String, Object> entry : map.entrySet()) {
       final String field = entry.getKey();
       final Object value = entry.getValue();
-      @SuppressWarnings("unchecked")
       final SchemaTypeDescriptor<Object> valueSchema =
           (SchemaTypeDescriptor<Object>) getFieldSchemaTypeDescriptor(fieldsDescriptors, field);
-      final FieldDescriptor protoFieldDescriptor = protoDescriptor.findFieldByName(field);
-      Preconditions.checkNotNull(
-          protoFieldDescriptor,
-          "Unable to find field [%s] in descriptor [%s]",
-          field,
-          protoDescriptor.getName());
+      final FieldDescriptor protoFieldDescriptor = getProtoFieldDescriptor(protoDescriptor, field);
 
       if (valueSchema.isPrimitiveType()) {
         builder.setField(
             protoFieldDescriptor,
-            valueSchema.asPrimitiveTypeDescriptor().getValueAccessor().createFrom(value));
+            buildPrimitiveValue(valueSchema.asPrimitiveTypeDescriptor(), value));
       } else if (valueSchema.isArrayType()) {
-        final SchemaTypeDescriptor<Object> arrayValueDescriptor =
-            valueSchema.asArrayTypeDescriptor().getValueDescriptor();
-        if (valueSchema.asArrayTypeDescriptor().getValueType().equals(AttributeValueType.BYTE)) {
-          // Bytes needs to be converted as PrimitiveValue of String
-          builder.setField(
-              protoFieldDescriptor,
-              arrayValueDescriptor
-                  .asPrimitiveTypeDescriptor()
-                  .getValueAccessor()
-                  .createFrom(value));
-
-        } else {
-          for (Object v : (List<Object>) value) {
-            Object arrayValue;
-            if (arrayValueDescriptor.isStructureType()) {
-              // Array<Structure> needs to be created via builder
-              arrayValue =
-                  buildMessage(
-                      (Map<String, Object>) v,
-                      arrayValueDescriptor.asStructureTypeDescriptor().getFields(),
-                      protoFieldDescriptor.getMessageType(),
-                      builder.newBuilderForField(protoFieldDescriptor));
-            } else if (arrayValueDescriptor.isPrimitiveType()) {
-              arrayValue =
-                  arrayValueDescriptor.asPrimitiveTypeDescriptor().getValueAccessor().createFrom(v);
-            } else if (arrayValueDescriptor.isEnumType()) {
-              arrayValue =
-                  arrayValueDescriptor.asEnumTypeDescriptor().getValueAccessor().createFrom(v);
-            } else {
-              throw new UnsupportedOperationException(
-                  String.format("Unknown Array value type %s", arrayValueDescriptor.getType()));
-            }
-            builder.addRepeatedField(protoFieldDescriptor, arrayValue);
-          }
-        }
+        setArrayValue(valueSchema.asArrayTypeDescriptor(), value, protoFieldDescriptor, builder);
       } else if (valueSchema.isStructureType()) {
         final Builder fieldBuilder = builder.getFieldBuilder(protoFieldDescriptor);
         final Message message =
@@ -203,15 +164,68 @@ public class ProtoMessageValueAccessor<T extends Message> implements StructureVa
                 fieldBuilder);
         builder.setField(protoFieldDescriptor, message);
       } else if (valueSchema.isEnumType()) {
-        final EnumValueAccessor<Object> enumValueAccessor =
-            valueSchema.asEnumTypeDescriptor().getValueAccessor();
-        builder.setField(protoFieldDescriptor, enumValueAccessor.valueOf(value));
+        builder.setField(
+            protoFieldDescriptor,
+            valueSchema.asEnumTypeDescriptor().getValueAccessor().valueOf(value));
       } else {
         throw new UnsupportedOperationException(
-            String.format("Unknown value type [%s]", valueSchema.getType()));
+            String.format("Unknown value type [%s] for field [%s]", valueSchema.getType(), field));
       }
     }
     return builder.build();
+  }
+
+  private Object buildPrimitiveValue(PrimitiveTypeDescriptor<Object> type, Object value) {
+    return type.getValueAccessor().createFrom(value);
+  }
+
+  private void setArrayValue(
+      ArrayTypeDescriptor<Object> type,
+      Object values,
+      FieldDescriptor protoFieldDescriptor,
+      Builder builder) {
+    final SchemaTypeDescriptor<Object> valueType = type.getValueDescriptor();
+    if (valueType.isPrimitiveType()
+        && valueType.asPrimitiveTypeDescriptor().getType().equals(AttributeValueType.BYTE)) {
+      // Bytes needs to be converted as PrimitiveValue of String
+      builder.setField(
+          protoFieldDescriptor,
+          buildPrimitiveValue(type.getValueDescriptor().asPrimitiveTypeDescriptor(), values));
+    } else {
+      for (Object value : (Object[]) values) {
+        builder.addRepeatedField(
+            protoFieldDescriptor, buildArrayValue(type, protoFieldDescriptor, value, builder));
+      }
+    }
+  }
+
+  @SuppressWarnings("unchecked")
+  private Object buildArrayValue(
+      ArrayTypeDescriptor<Object> type,
+      FieldDescriptor protoFieldDescriptor,
+      Object value,
+      Builder builder) {
+    if (type.getValueDescriptor().isStructureType()) {
+      // Array<Structure> needs to be created via builder
+      return buildMessage(
+          (Map<String, Object>) value,
+          type.getValueDescriptor().asStructureTypeDescriptor().getFields(),
+          protoFieldDescriptor.getMessageType(),
+          builder.newBuilderForField(protoFieldDescriptor));
+    } else if (type.getValueDescriptor().isPrimitiveType()) {
+      return buildPrimitiveValue(type.getValueDescriptor().asPrimitiveTypeDescriptor(), value);
+    } else {
+      throw new UnsupportedOperationException(
+          String.format("Unknown Array value type %s", type.getValueDescriptor().getType()));
+    }
+  }
+
+  private FieldDescriptor getProtoFieldDescriptor(Descriptor proto, String name) {
+    return Optional.ofNullable(proto.findFieldByName(name))
+        .orElseThrow(
+            () ->
+                new IllegalArgumentException(
+                    String.format("Unknown field [%s] in structure [%s]", name, proto.getName())));
   }
 
   private SchemaTypeDescriptor<?> getFieldSchemaTypeDescriptor(

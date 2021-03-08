@@ -30,7 +30,6 @@ import cz.o2.proxima.scheme.SchemaDescriptors.StructureTypeDescriptor;
 import cz.o2.proxima.scheme.proto.ProtoMessageValueAccessor;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -93,7 +92,7 @@ public class ProtoUtils {
                     new PrimitiveValueAccessor<ByteString>() {
                       @Override
                       public ByteString createFrom(Object object) {
-                        return ByteString.copyFromUtf8(new String((byte[]) object));
+                        return ByteString.copyFrom((byte[]) object);
                       }
 
                       @Override
@@ -115,17 +114,16 @@ public class ProtoUtils {
         descriptor = (SchemaTypeDescriptor<T>) SchemaDescriptors.integers();
         break;
       case ENUM:
-        final List<String> enumValues =
-            proto
-                .getEnumType()
-                .getValues()
-                .stream()
-                .map(EnumValueDescriptor::getName)
-                .collect(Collectors.toList());
         descriptor =
             (SchemaTypeDescriptor<T>)
                 SchemaDescriptors.enums(
-                    new ArrayList<>(enumValues),
+                    new ArrayList<>(
+                        proto
+                            .getEnumType()
+                            .getValues()
+                            .stream()
+                            .map(EnumValueDescriptor::getName)
+                            .collect(Collectors.toList())),
                     new EnumValueAccessor<String>() {
                       @Override
                       public String createFrom(Object object) {
@@ -154,7 +152,6 @@ public class ProtoUtils {
         break;
       case MESSAGE:
         final String messageTypeName = proto.getMessageType().toProto().getName();
-        log.debug("Converting message {} with descriptor {}", messageTypeName, proto);
         structCache.computeIfAbsent(
             messageTypeName,
             name ->
