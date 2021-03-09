@@ -1,6 +1,7 @@
 package cz.o2.proxima.direct.bulk.fs.parquet;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.Iterables;
 import cz.o2.proxima.direct.bulk.fs.parquet.InternalProximaRecordMaterializer.ParentValueContainer;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -20,6 +21,7 @@ import org.apache.parquet.schema.LogicalTypeAnnotation.ListLogicalTypeAnnotation
 import org.apache.parquet.schema.LogicalTypeAnnotation.LogicalTypeAnnotationVisitor;
 import org.apache.parquet.schema.LogicalTypeAnnotation.StringLogicalTypeAnnotation;
 import org.apache.parquet.schema.Type;
+import org.apache.parquet.schema.Type.Repetition;
 
 @Slf4j
 class ProximaParquetRecordConverter extends GroupConverter {
@@ -36,32 +38,54 @@ class ProximaParquetRecordConverter extends GroupConverter {
 
     int parquetFieldIndex = 0;
     for (Type field : schema.getFields()) {
-      converters[parquetFieldIndex++] = newConverter(parent, field);
+      converters[parquetFieldIndex++] = newConverter(parent, field, field.getName());
     }
   }
 
-  private Converter newConverter(ParentValueContainer parentValueContainer, Type parquetType) {
+  private Converter newConverter(ParentValueContainer parentValueContainer, Type parquetType,
+      String targetFieldName) {
 
     final LogicalTypeAnnotation logicalTypeAnnotation = parquetType.getLogicalTypeAnnotation();
     if (logicalTypeAnnotation == null) {
       if (parquetType.isPrimitive()) {
-        return new ScalarConverter(parentValueContainer, parquetType.getName());
+        return new ScalarConverter(parentValueContainer, targetFieldName);
       } else {
         // its structure
-        log.warn("XXXXX {} ", parquetType.getName());
-        parentValueContainer.add(parquetType.getName(), new HashMap<>());
-        ParentValueContainer structureParent =
-            new ParentValueContainer() {
-              @Override
-              public void add(String name, Object value) {
-                ((HashMap<String, Object>) parent.get(parquetType.getName())).put(name, value);
-              }
+        log.warn("XXXXX {} {}", parquetType.getName(), targetFieldName);
+        ParentValueContainer structureParent = null;
+        if (parquetType.asGroupType().getRepetition().equals(Repetition.REPEATED)) {
+          throw new UnsupportedOperationException("Repeated!");
+        } else {
+          parentValueContainer.add(targetFieldName, new HashMap<>());
+          structureParent =
+              new ParentValueContainer() {
+                @Override
+                @SuppressWarnings("unchecked")
+                public void add(String name, Object value) {
+                  if (parent.get(targetFieldName) instanceof List) {
+                    // for repeated group set field into last
+                    List<Map<String, Object>> list =
+                        (List<Map<String, Object>>) parent.get(targetFieldName);
+                    Iterables.getLast(list).put(name, value);
+                  } else {
+                    ((HashMap<String, Object>) parent.get(targetFieldName)).put(name, value);
+                  }
+                }
 
-              @Override
-              public Object get(String name) {
-                return ((Map<String, Object>) parent.get(parquetType.getName())).get(name);
-              }
-            };
+                @Override
+                @SuppressWarnings("unchecked")
+                public Object get(String name) {
+                  if (parent.get(targetFieldName) instanceof List) {
+                    // for repeated group set field into last
+                    List<Map<String, Object>> list =
+                        (List<Map<String, Object>>) parent.get(targetFieldName);
+                    return Iterables.getLast(list);
+                  } else {
+                    return ((Map<String, Object>) parent.get(targetFieldName)).get(name);
+                  }
+                }
+              };
+        }
         return new ProximaParquetRecordConverter(structureParent, parquetType.asGroupType());
       }
     }
@@ -71,12 +95,12 @@ class ProximaParquetRecordConverter extends GroupConverter {
               @Override
               public Optional<Converter> visit(EnumLogicalTypeAnnotation enumLogicalType) {
                 // enums is converted as string
-                return Optional.of(new StringConverter(parent, parquetType.getName()));
+                return Optional.of(new StringConverter(parent, targetFieldName));
               }
 
               @Override
               public Optional<Converter> visit(StringLogicalTypeAnnotation stringLogicalType) {
-                return Optional.of(new StringConverter(parent, parquetType.getName()));
+                return Optional.of(new StringConverter(parent, targetFieldName));
               }
 
               @Override
@@ -194,7 +218,7 @@ class ProximaParquetRecordConverter extends GroupConverter {
               throw new UnsupportedOperationException("XXX");
             }
           };
-      elementConverter = newConverter(listParent, elementType);
+      elementConverter = newConverter(listParent, elementType, parquetType.getName());
     }
 
     @Override

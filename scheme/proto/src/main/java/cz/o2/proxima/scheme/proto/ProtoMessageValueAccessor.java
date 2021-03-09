@@ -179,6 +179,7 @@ public class ProtoMessageValueAccessor<T extends Message> implements StructureVa
     return type.getValueAccessor().createFrom(value);
   }
 
+  @SuppressWarnings("unchecked")
   private void setArrayValue(
       ArrayTypeDescriptor<Object> type,
       Object values,
@@ -192,6 +193,9 @@ public class ProtoMessageValueAccessor<T extends Message> implements StructureVa
           protoFieldDescriptor,
           buildPrimitiveValue(type.getValueDescriptor().asPrimitiveTypeDescriptor(), values));
     } else {
+      if (values instanceof List) {
+        values = ((List<Object>) values).toArray();
+      }
       for (Object value : (Object[]) values) {
         builder.addRepeatedField(
             protoFieldDescriptor, buildArrayValue(type, protoFieldDescriptor, value, builder));
