@@ -24,7 +24,6 @@ import com.typesafe.config.ConfigFactory;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.repository.Repository;
-import cz.o2.proxima.scheme.ValueSerializer;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.util.ExceptionUtils;
 import java.io.File;
@@ -32,13 +31,11 @@ import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.time.Duration;
-import java.util.AbstractMap.SimpleEntry;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -158,9 +155,7 @@ public abstract class AbstractFileFormatTest {
     assertTrue(elements.containsAll(read));
     assertEquals(elements.size(), read.size());
     Map<String, StreamElement> inputElementByUuid =
-        elements
-            .stream()
-            .collect(Collectors.toMap(StreamElement::getUuid, Function.identity()));
+        elements.stream().collect(Collectors.toMap(StreamElement::getUuid, Function.identity()));
     read.forEach(
         e -> {
           assertTrue(inputElementByUuid.containsKey(e.getUuid()));
