@@ -20,15 +20,12 @@ import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.Descriptors.EnumValueDescriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor;
 import com.google.protobuf.Message;
-import cz.o2.proxima.scheme.AttributeValueAccessors.DefaultArrayValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.EnumValueAccessor;
-import cz.o2.proxima.scheme.AttributeValueAccessors.GenericValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.PrimitiveValueAccessor;
 import cz.o2.proxima.scheme.SchemaDescriptors;
 import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.StructureTypeDescriptor;
 import cz.o2.proxima.scheme.proto.ProtoMessageValueAccessor;
-import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -82,7 +79,6 @@ public class ProtoUtils {
   static <T> SchemaTypeDescriptor<T> convertField(
       FieldDescriptor proto, Map<String, SchemaTypeDescriptor<?>> structCache) {
     SchemaTypeDescriptor<T> descriptor;
-
     switch (proto.getJavaType()) {
       case STRING:
         descriptor = (SchemaTypeDescriptor<T>) SchemaDescriptors.strings();
@@ -171,25 +167,7 @@ public class ProtoUtils {
     }
 
     if (proto.isRepeated()) {
-      GenericValueAccessor<T> valueAccessor;
-      if (descriptor.isPrimitiveType()) {
-        valueAccessor = descriptor.asPrimitiveTypeDescriptor().getValueAccessor();
-      } else {
-        valueAccessor = descriptor.asStructureTypeDescriptor().getValueAccessor();
-      }
-      return SchemaDescriptors.arrays(
-          descriptor,
-          new DefaultArrayValueAccessor<T>(valueAccessor) {
-            @Override
-            public <V> V[] valuesOf(T object) {
-              return valuesOf((T[]) object);
-            }
-
-            @Override
-            public <V> T[] createFrom(V[] object) {
-              return (T[]) Arrays.stream(object).map(valueAccessor::createFrom).toArray();
-            }
-          });
+      return SchemaDescriptors.arrays(descriptor);
     } else {
       return descriptor;
     }

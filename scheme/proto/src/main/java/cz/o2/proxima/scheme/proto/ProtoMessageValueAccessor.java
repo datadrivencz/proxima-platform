@@ -69,12 +69,6 @@ public class ProtoMessageValueAccessor<T extends Message> implements StructureVa
 
   @Override
   @SuppressWarnings("unchecked")
-  public T createFrom(Object object) {
-    return createFrom((Map<String, Object>) object);
-  }
-
-  @Override
-  @SuppressWarnings("unchecked")
   public T createFrom(Map<String, Object> map) {
     return (T)
         buildMessage(map, fields, getProtoDescriptor(), getDefaultValue().newBuilderForType());

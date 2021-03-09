@@ -20,9 +20,9 @@ import cz.o2.proxima.scheme.AttributeValueAccessors.ArrayValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.DefaultArrayValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.DefaultStructureValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.EnumValueAccessor;
-import cz.o2.proxima.scheme.AttributeValueAccessors.GenericValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.PrimitiveValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.StructureValueAccessor;
+import cz.o2.proxima.scheme.AttributeValueAccessors.ValueAccessor;
 import java.io.Serializable;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
@@ -137,7 +137,14 @@ public class SchemaDescriptors {
   // @FIXME
   public static ArrayTypeDescriptor<byte[]> bytes(ArrayValueAccessor<byte[]> valueProvider) {
     return arrays(
-        primitives(AttributeValueType.BYTE, new PrimitiveValueAccessor<byte[]>() {}),
+        primitives(
+            AttributeValueType.BYTE,
+            new PrimitiveValueAccessor<byte[]>() {
+              @Override
+              public byte[] createFrom(Object object) {
+                return object.toString().getBytes(StandardCharsets.UTF_8);
+              }
+            }),
         valueProvider);
   }
 
@@ -285,7 +292,7 @@ public class SchemaDescriptors {
    * @return Array type descriptor
    */
   public static <T> ArrayTypeDescriptor<T> arrays(SchemaTypeDescriptor<T> valueDescriptor) {
-    GenericValueAccessor<T> valueAccessor;
+    ValueAccessor valueAccessor;
     if (valueDescriptor.isPrimitiveType()) {
       valueAccessor = valueDescriptor.asPrimitiveTypeDescriptor().getValueAccessor();
     } else if (valueDescriptor.isStructureType()) {

@@ -130,18 +130,18 @@ public class ProtoMessageValueAccessorTest {
                 .asStructureTypeDescriptor()
                 .getValueAccessor();
 
-    Object repeated_inner_message = value.get("repeated_inner_message");
-    final Object[] values = repeatedMessageAccessor.valuesOf(repeated_inner_message);
+    Object[] values = (Object[]) value.get("repeated_inner_message");
     assertEquals(2, values.length);
 
-    assertEquals(
-        40.0,
-        Optional.ofNullable(arrayValueAccessor.valueOf("inner_double_type", values[0])).orElse(-1));
-    assertEquals(Directions.LEFT.name(), arrayValueAccessor.valueOf("inner_enum", values[0]));
-    assertEquals(
-        20.0,
-        Optional.ofNullable(arrayValueAccessor.valueOf("inner_double_type", values[1])).orElse(-1));
-    assertEquals(Directions.RIGHT.name(), arrayValueAccessor.valueOf("inner_enum", values[1]));
+    @SuppressWarnings("unchecked")
+    final Map<String, Object> first = (Map<String, Object>) values[0];
+    @SuppressWarnings("unchecked")
+    final Map<String, Object> second = (Map<String, Object>) values[1];
+
+    assertEquals(40.0, first.get("inner_double_type"));
+    assertEquals(Directions.LEFT.name(), first.get("inner_enum"));
+    assertEquals(20.0, second.get("inner_double_type"));
+    assertEquals(Directions.RIGHT.name(), second.get("inner_enum"));
   }
 
   @Test

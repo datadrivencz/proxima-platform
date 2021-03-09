@@ -24,37 +24,19 @@ import java.util.Map;
 /** Classes providing access to Attribute values */
 @Experimental
 public class AttributeValueAccessors {
+  public enum ValueAccessorType {
+    PRIMITIVE,
+    STRUCTURE,
+    ARRAY,
+    ENUM
+  }
 
   private AttributeValueAccessors() {}
 
-  /**
-   * Generic value accessor
-   *
-   * @param <T> value type
-   */
-  public interface GenericValueAccessor<T> extends Serializable {
+  /** Generic value accessor */
+  public interface ValueAccessor extends Serializable {
 
-    /**
-     * Create value from object
-     *
-     * @param object create from
-     * @return value
-     */
-    default T createFrom(Object object) {
-      throw new UnsupportedOperationException("Method createFrom() is not implemented.");
-    }
-
-    /**
-     * Get value @TODO: this is a little bit weird
-     *
-     * @param value value
-     * @param <V> expected type
-     * @return value
-     */
-    @SuppressWarnings("unchecked")
-    default <V> V valueOf(T value) {
-      return (V) value;
-    }
+    ValueAccessorType getType();
   }
 
   /**
@@ -62,25 +44,35 @@ public class AttributeValueAccessors {
    *
    * @param <T> primitive type
    */
-  public interface PrimitiveValueAccessor<T> extends GenericValueAccessor<T> {}
+  public interface PrimitiveValueAccessor<T> extends ValueAccessor {
+
+    T createFrom(Object object);
+
+    @SuppressWarnings("unchecked")
+    default <V> V valueOf(T value) {
+      return (V) value;
+    }
+
+    @Override
+    default ValueAccessorType getType() {
+      return ValueAccessorType.PRIMITIVE;
+    }
+  }
 
   /**
    * Array value accessor
    *
    * @param <T>
    */
-  public interface ArrayValueAccessor<T> extends GenericValueAccessor<T> {
+  public interface ArrayValueAccessor<T> extends ValueAccessor {
 
-    default <V> T[] createFrom(V[] object) {
-      throw new UnsupportedOperationException("Method createFrom() is not implemented.");
-    }
+    <V> T[] createFrom(V[] object);
 
-    default <V> V[] valuesOf(T[] object) {
-      throw new UnsupportedOperationException("Method valuesOf() is not implemented.");
-    }
+    <V> V[] valuesOf(T[] object);
 
-    default <V> V[] valuesOf(T object) {
-      throw new UnsupportedOperationException("Method valuesOf() is not implemented.");
+    @Override
+    default ValueAccessorType getType() {
+      return ValueAccessorType.ARRAY;
     }
   }
 
@@ -89,7 +81,7 @@ public class AttributeValueAccessors {
    *
    * @param <T> structure type
    */
-  public interface StructureValueAccessor<T> extends GenericValueAccessor<T> {
+  public interface StructureValueAccessor<T> extends ValueAccessor {
 
     /**
      * Return structure as {@link Map} with fields as keys
@@ -116,6 +108,11 @@ public class AttributeValueAccessors {
      * @return structure
      */
     T createFrom(Map<String, Object> map);
+
+    @Override
+    default ValueAccessorType getType() {
+      return ValueAccessorType.STRUCTURE;
+    }
   }
 
   /**
@@ -124,7 +121,7 @@ public class AttributeValueAccessors {
    *
    * @param <T> value input type
    */
-  public interface EnumValueAccessor<T> extends Serializable {
+  public interface EnumValueAccessor<T> extends ValueAccessor {
 
     /**
      * Return string representation of input value type.
@@ -146,6 +143,11 @@ public class AttributeValueAccessors {
     default T createFrom(String value) {
       return (T) value;
     }
+
+    @Override
+    default ValueAccessorType getType() {
+      return ValueAccessorType.ENUM;
+    }
   }
 
   /**
@@ -155,22 +157,83 @@ public class AttributeValueAccessors {
    */
   public static class DefaultArrayValueAccessor<T> implements ArrayValueAccessor<T> {
 
-    private final GenericValueAccessor<T> valueAccessor;
+    private final DelegateToAccessor<T> delegateToAccessor;
 
-    public DefaultArrayValueAccessor(GenericValueAccessor<T> valueAccessor) {
-      this.valueAccessor = valueAccessor;
+    public DefaultArrayValueAccessor(ValueAccessor valueAccessor) {
+      delegateToAccessor = createDelegates(valueAccessor);
+    }
+
+    private DelegateToAccessor<T> createDelegates(ValueAccessor accessor) {
+      switch (accessor.getType()) {
+        case PRIMITIVE:
+          return new DelegateToAccessor<T>() {
+            @SuppressWarnings("unchecked")
+            final PrimitiveValueAccessor<T> cast = (PrimitiveValueAccessor<T>) accessor;
+
+            @Override
+            public T createFrom(Object object) {
+              return cast.createFrom(object);
+            }
+
+            @Override
+            public <V> V valueOf(T object) {
+              return cast.valueOf(object);
+            }
+          };
+        case STRUCTURE:
+          return new DelegateToAccessor<T>() {
+            @SuppressWarnings("unchecked")
+            final StructureValueAccessor<T> cast = (StructureValueAccessor<T>) accessor;
+
+            @Override
+            @SuppressWarnings("unchecked")
+            public T createFrom(Object object) {
+              return cast.createFrom((Map<String, Object>) object);
+            }
+
+            @Override
+            @SuppressWarnings("unchecked")
+            public <V> V valueOf(T object) {
+              return (V) cast.valuesOf(object);
+            }
+          };
+        case ENUM:
+          return new DelegateToAccessor<T>() {
+            @SuppressWarnings("unchecked")
+            final EnumValueAccessor<T> cast = (EnumValueAccessor<T>) accessor;
+
+            @Override
+            public T createFrom(Object object) {
+              return cast.createFrom(object.toString());
+            }
+
+            @Override
+            @SuppressWarnings("unchecked")
+            public <V> V valueOf(T object) {
+              return (V) cast.valueOf(object);
+            }
+          };
+        default:
+          throw new UnsupportedOperationException("Unknown accessor type " + accessor.getType());
+      }
+    }
+
+    private interface DelegateToAccessor<T> extends Serializable {
+      T createFrom(Object object);
+
+      <V> V valueOf(T object);
     }
 
     @Override
     @SuppressWarnings("unchecked")
     public <V> T[] createFrom(V[] object) {
-      return (T[]) Arrays.stream(object).map(valueAccessor::createFrom).toArray();
+      return (T[]) Arrays.stream(object).map(delegateToAccessor::createFrom).toArray();
     }
 
     @Override
     @SuppressWarnings("unchecked")
     public <V> V[] valuesOf(T[] object) {
-      return (V[]) Arrays.stream(object).map(valueAccessor::valueOf).toArray();
+      return (V[]) Arrays.stream(object).map(delegateToAccessor::valueOf).toArray();
     }
   }
 
@@ -198,13 +261,6 @@ public class AttributeValueAccessors {
     @SuppressWarnings("unchecked")
     public T createFrom(Map<String, Object> map) {
       return (T) map;
-    }
-
-    @Override
-    @SuppressWarnings("unchecked")
-    public T createFrom(Object object) {
-      checkInputValue(object);
-      return createFrom((Map<String, Object>) object);
     }
 
     private void checkInputValue(Object object) {
