@@ -31,7 +31,6 @@ import java.io.OutputStream;
 import java.lang.reflect.Array;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import lombok.Setter;
@@ -58,8 +57,11 @@ public class ProximaParquetWriter implements Writer {
   private final ParquetWriter<StreamElement> writer;
 
   public ProximaParquetWriter(
-      Path path, MessageType schema, String attributeNamesPrefix,
-      CompressionCodecName compressionCodecName, Configuration config)
+      Path path,
+      MessageType schema,
+      String attributeNamesPrefix,
+      CompressionCodecName compressionCodecName,
+      Configuration config)
       throws IOException {
     this.path = path;
     this.writer =
@@ -203,10 +205,8 @@ public class ProximaParquetWriter implements Writer {
 
     abstract class GenericFieldWriter<T> implements FieldWriter<T> {
 
-      @Setter
-      String name;
-      @Setter
-      int index = -1;
+      @Setter String name;
+      @Setter int index = -1;
 
       public void writeField(T value) {
         recordConsumer.startField(name, index);
@@ -267,8 +267,7 @@ public class ProximaParquetWriter implements Writer {
 
       final FieldWriter<T> fieldWriter;
 
-      ArrayWriter(
-          FieldWriter<T> fieldWriter) {
+      ArrayWriter(FieldWriter<T> fieldWriter) {
         this.fieldWriter = fieldWriter;
       }
 
@@ -290,7 +289,7 @@ public class ProximaParquetWriter implements Writer {
           recordConsumer.endField("list", 0);
           recordConsumer.endGroup();
         }
-        }
+      }
     }
 
     class StructureWriter<T> extends GenericFieldWriter<T> {
@@ -299,8 +298,8 @@ public class ProximaParquetWriter implements Writer {
 
       public StructureWriter(StructureTypeDescriptor<T> schema) {
         final Map<String, SchemaTypeDescriptor<?>> fields = schema.getFields();
-        fieldWriters = (FieldWriter<?>[]) Array
-            .newInstance(GenericFieldWriter.class, fields.size());
+        fieldWriters =
+            (FieldWriter<?>[]) Array.newInstance(GenericFieldWriter.class, fields.size());
         int index = 0;
         for (Entry<String, SchemaTypeDescriptor<?>> field : fields.entrySet()) {
           final String name = field.getKey();
@@ -319,9 +318,7 @@ public class ProximaParquetWriter implements Writer {
         recordConsumer.endGroup();
       }
 
-      private void writeFields(T value) {
-
-      }
+      private void writeFields(T value) {}
     }
   }
 
@@ -374,9 +371,9 @@ public class ProximaParquetWriter implements Writer {
       log.debug("Writing field [{}] with schema [{}].", name, schema);
       switch (schema.getType()) {
         case STRUCTURE:
-          StructureValueAccessor<Object> valueAccessor = (StructureValueAccessor<Object>) schema
-              .asStructureTypeDescriptor()
-              .getValueAccessor();
+          StructureValueAccessor<Object> valueAccessor =
+              (StructureValueAccessor<Object>)
+                  schema.asStructureTypeDescriptor().getValueAccessor();
           GroupType innerSchema =
               currentParquetSchema
                   .getFields()
@@ -390,11 +387,15 @@ public class ProximaParquetWriter implements Writer {
                               String.format(
                                   "Unable to find attribute [%s] in parquet schema [%s].",
                                   name, currentParquetSchema)));
-          if (innerSchema.getLogicalTypeAnnotation() != null && innerSchema
-              .getLogicalTypeAnnotation().equals(
-                  LogicalTypeAnnotation.listType())) {
-            innerSchema = innerSchema.asGroupType().getType("list").asGroupType().getType("element")
-                .asGroupType();
+          if (innerSchema.getLogicalTypeAnnotation() != null
+              && innerSchema.getLogicalTypeAnnotation().equals(LogicalTypeAnnotation.listType())) {
+            innerSchema =
+                innerSchema
+                    .asGroupType()
+                    .getType("list")
+                    .asGroupType()
+                    .getType("element")
+                    .asGroupType();
           }
           final Map<String, Object> structureValues = new HashMap<>();
           try {
@@ -417,13 +418,13 @@ public class ProximaParquetWriter implements Writer {
 
                      */
                     log.warn("writing field {} val {}", field, structureValues.get(field));
-                      writeValue(
-                          field,
-                          (SchemaTypeDescriptor<Object>) type,
-                          structureValues.get(field),
-                          finalInnerSchema,
-                          true);
-                    //}
+                    writeValue(
+                        field,
+                        (SchemaTypeDescriptor<Object>) type,
+                        structureValues.get(field),
+                        finalInnerSchema,
+                        true);
+                    // }
                   });
           recordConsumer.endGroup();
           break;

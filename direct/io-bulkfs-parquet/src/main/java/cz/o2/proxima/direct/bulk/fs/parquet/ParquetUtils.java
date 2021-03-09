@@ -119,8 +119,8 @@ public class ParquetUtils {
         }
 
         return Types.optionalList()
-            .setElementType(mapSchemaTypeToParquet(valueTypeDescriptor,"element"))
-            //.element(mapSchemaTypeToParquet(valueTypeDescriptor, "element"))
+            .setElementType(mapSchemaTypeToParquet(valueTypeDescriptor, "element"))
+            // .element(mapSchemaTypeToParquet(valueTypeDescriptor, "element"))
             .named(name);
 
       case STRUCTURE:

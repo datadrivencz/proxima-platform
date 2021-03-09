@@ -144,7 +144,7 @@ public class ProximaParquetReader implements Reader {
           keyValueMetaData.getOrDefault(
               ParquetFileFormat.PARQUET_CONFIG_VALUES_PREFIX_KEY_NAME, "");
       return new InternalProximaRecordMaterializer(fileSchema, entity, attributeNamesPrefix);
-      //return new StreamElementRecordMaterializer(fileSchema, entity, attributeNamesPrefix);
+      // return new StreamElementRecordMaterializer(fileSchema, entity, attributeNamesPrefix);
     }
   }
 

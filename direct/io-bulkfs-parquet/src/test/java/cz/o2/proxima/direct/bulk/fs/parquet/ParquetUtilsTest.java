@@ -116,9 +116,9 @@ public class ParquetUtilsTest {
 
   @Test
   public void testCreateParquetSchemaForArrayOfStringsSchema() {
-    Type type = ParquetUtils.mapSchemaTypeToParquet(
-        SchemaDescriptors.arrays(SchemaDescriptors.strings()), "attribute"
-    );
+    Type type =
+        ParquetUtils.mapSchemaTypeToParquet(
+            SchemaDescriptors.arrays(SchemaDescriptors.strings()), "attribute");
     log.warn("Parquet schema: {}", type);
   }
 

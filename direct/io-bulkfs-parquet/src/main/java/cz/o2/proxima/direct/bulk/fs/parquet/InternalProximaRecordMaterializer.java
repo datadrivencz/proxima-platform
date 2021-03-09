@@ -1,3 +1,18 @@
+/**
+ * Copyright 2017-2021 O2 Czech Republic, a.s.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package cz.o2.proxima.direct.bulk.fs.parquet;
 
 import cz.o2.proxima.direct.bulk.fs.parquet.ParquetFileFormat.OPERATION;
@@ -26,18 +41,20 @@ class InternalProximaRecordMaterializer extends RecordMaterializer<StreamElement
   private final EntityDescriptor entity;
   private final String attributeNamesPrefix;
 
-  InternalProximaRecordMaterializer(MessageType schema, EntityDescriptor entity, String attributeNamesPrefix) {
-    ParentValueContainer parentValueContainer = new ParentValueContainer() {
-      @Override
-      public void add(String name, Object value) {
-        recordData.put(name, value);
-      }
+  InternalProximaRecordMaterializer(
+      MessageType schema, EntityDescriptor entity, String attributeNamesPrefix) {
+    ParentValueContainer parentValueContainer =
+        new ParentValueContainer() {
+          @Override
+          public void add(String name, Object value) {
+            recordData.put(name, value);
+          }
 
-      @Override
-      public Object get(String name) {
-        return recordData.get(name);
-      }
-    };
+          @Override
+          public Object get(String name) {
+            return recordData.get(name);
+          }
+        };
     this.root = new ProximaMessageConverter(parentValueContainer, schema);
     this.entity = entity;
     this.attributeNamesPrefix = attributeNamesPrefix;
@@ -56,15 +73,13 @@ class InternalProximaRecordMaterializer extends RecordMaterializer<StreamElement
     Optional<AttributeDescriptor<Object>> attribute = entity.findAttribute(attributeName);
     if (!attribute.isPresent()) {
       // current attribute is not in entity -> skip
-      log.info(
-          "Skipping attribute [{}] which is not in current attribute family.", attributeName);
+      log.info("Skipping attribute [{}] which is not in current attribute family.", attributeName);
       return null;
     }
     final String uuid =
         (String) getRequiredValueFromCurrentRowData(ParquetFileFormat.PARQUET_COLUMN_NAME_UUID);
     final long timestamp =
-        (long)
-            getRequiredValueFromCurrentRowData(ParquetFileFormat.PARQUET_COLUMN_NAME_TIMESTAMP);
+        (long) getRequiredValueFromCurrentRowData(ParquetFileFormat.PARQUET_COLUMN_NAME_TIMESTAMP);
     switch (OPERATION.of(operation)) {
       case DELETE:
         return StreamElement.delete(entity, attribute.get(), uuid, key, attributeName, timestamp);
@@ -116,14 +131,16 @@ class InternalProximaRecordMaterializer extends RecordMaterializer<StreamElement
         (ValueSerializer<Object>) attribute.getValueSerializer();
     return serializer.serialize(value);
   }
+
   private Object getRequiredValueFromCurrentRowData(String column) {
     return Optional.ofNullable(recordData.getOrDefault(column, null))
         .orElseThrow(
-            () ->
-                new IllegalStateException("Unable to read required value for column " + column));
+            () -> new IllegalStateException("Unable to read required value for column " + column));
   }
+
   interface ParentValueContainer {
     void add(String name, Object value);
+
     Object get(String name);
   }
 
