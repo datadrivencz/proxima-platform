@@ -19,6 +19,7 @@ import com.google.protobuf.ByteString;
 import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.Descriptors.EnumValueDescriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor;
+import com.google.protobuf.Descriptors.FieldDescriptor.JavaType;
 import com.google.protobuf.Message;
 import cz.o2.proxima.scheme.AttributeValueAccessors.EnumValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.PrimitiveValueAccessor;
@@ -60,7 +61,15 @@ public class ProtoUtils {
             .stream()
             .collect(
                 Collectors.toMap(
-                    FieldDescriptor::getName, field -> convertField(field, structCache)));
+                    FieldDescriptor::getName,
+                    field -> {
+                      if (field.getJavaType().equals(JavaType.MESSAGE)
+                          && field.getMessageType().equals(proto)) {
+                        throw new UnsupportedOperationException(
+                            "Recursion in field [" + field.getName() + "] is not supported");
+                      }
+                      return convertField(field, structCache);
+                    }));
 
     return SchemaDescriptors.structures(
         proto.getName(),

@@ -72,3 +72,7 @@ message ValueSchemeMessage {
   uint32 int_type = 7;
 
 }
+
+message RecursiveMessage {
+  RecursiveMessage recursion = 1;
+}

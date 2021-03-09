@@ -30,6 +30,7 @@ import cz.o2.proxima.scheme.SchemaDescriptors.ArrayTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.EnumTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.StructureTypeDescriptor;
 import cz.o2.proxima.scheme.proto.test.Scheme.Device;
+import cz.o2.proxima.scheme.proto.test.Scheme.RecursiveMessage;
 import cz.o2.proxima.scheme.proto.test.Scheme.ValueSchemeMessage;
 import cz.o2.proxima.scheme.proto.test.Scheme.ValueSchemeMessage.Directions;
 import cz.o2.proxima.scheme.proto.test.Scheme.ValueSchemeMessage.InnerMessage;
@@ -222,5 +223,13 @@ public class ProtoUtilsTest {
     assertArrayEquals(
         Arrays.asList("foo", "bar").toArray(new String[0]),
         accessor.createFrom(new String[] {"foo", "bar"}));
+  }
+
+  @Test(expected = UnsupportedOperationException.class)
+  public void testConvertMessageWithRecursion() {
+    StructureTypeDescriptor<RecursiveMessage> descriptor =
+        ProtoUtils.convertProtoToSchema(
+            RecursiveMessage.getDescriptor(), RecursiveMessage.getDefaultInstance());
+    log.debug("Schema: {}", descriptor);
   }
 }

@@ -83,21 +83,24 @@ public class ProtoMessageValueAccessor<T extends Message> implements StructureVa
     final FieldDescriptor fieldProtoDescriptor = protoDescriptor.findFieldByName(name);
     final Object fieldValue = value.getField(fieldProtoDescriptor);
 
-    if (valueSchema.isPrimitiveType()) {
-      return (V) valueSchema.asPrimitiveTypeDescriptor().getValueAccessor().valueOf(fieldValue);
-    } else if (valueSchema.isArrayType()) {
+    if (valueSchema.isArrayType()) {
       if (valueSchema
           .asArrayTypeDescriptor()
           .getValueDescriptor()
           .getType()
           .equals(AttributeValueType.BYTE)) {
-        return (V)
+        final Object val =
             valueSchema
                 .asArrayTypeDescriptor()
                 .getValueDescriptor()
                 .asPrimitiveTypeDescriptor()
                 .getValueAccessor()
                 .valueOf(fieldValue);
+        if (val instanceof List) {
+          return (V) ((List<Object>) val).toArray();
+        } else {
+          return (V) val;
+        }
       } else {
         return (V)
             valueSchema
@@ -105,6 +108,8 @@ public class ProtoMessageValueAccessor<T extends Message> implements StructureVa
                 .getValueAccessor()
                 .valuesOf(((List<Object>) fieldValue).toArray());
       }
+    } else if (valueSchema.isPrimitiveType()) {
+      return valueSchema.asPrimitiveTypeDescriptor().getValueAccessor().valueOf(fieldValue);
     } else if (valueSchema.isStructureType()) {
       final Map<String, Object> messageValue = new HashMap<>();
       valueSchema
@@ -143,12 +148,12 @@ public class ProtoMessageValueAccessor<T extends Message> implements StructureVa
           (SchemaTypeDescriptor<Object>) getFieldSchemaTypeDescriptor(fieldsDescriptors, field);
       final FieldDescriptor protoFieldDescriptor = getProtoFieldDescriptor(protoDescriptor, field);
 
-      if (valueSchema.isPrimitiveType()) {
+      if (valueSchema.isArrayType()) {
+        setArrayValue(valueSchema.asArrayTypeDescriptor(), value, protoFieldDescriptor, builder);
+      } else if (valueSchema.isPrimitiveType()) {
         builder.setField(
             protoFieldDescriptor,
             buildPrimitiveValue(valueSchema.asPrimitiveTypeDescriptor(), value));
-      } else if (valueSchema.isArrayType()) {
-        setArrayValue(valueSchema.asArrayTypeDescriptor(), value, protoFieldDescriptor, builder);
       } else if (valueSchema.isStructureType()) {
         final Builder fieldBuilder = builder.getFieldBuilder(protoFieldDescriptor);
         final Message message =
