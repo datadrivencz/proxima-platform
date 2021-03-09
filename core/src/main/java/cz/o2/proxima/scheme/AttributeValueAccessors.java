@@ -57,6 +57,11 @@ public class AttributeValueAccessors {
     }
   }
 
+  /**
+   * Primitive value accessor
+   *
+   * @param <T> primitive type
+   */
   public interface PrimitiveValueAccessor<T> extends GenericValueAccessor<T> {}
 
   /**
@@ -79,6 +84,75 @@ public class AttributeValueAccessors {
     }
   }
 
+  /**
+   * Value accessor for {@link AttributeValueType#STRUCTURE} provides access for fields.
+   *
+   * @param <T> structure type
+   */
+  public interface StructureValueAccessor<T> extends GenericValueAccessor<T> {
+
+    /**
+     * Return structure as {@link Map} with fields as keys
+     *
+     * @param value input structure
+     * @return map with fields
+     */
+    Map<String, Object> valuesOf(T value);
+
+    /**
+     * Return value of specific field from structure
+     *
+     * @param name field name
+     * @param value structure
+     * @param <V> value type
+     * @return field value
+     */
+    <V> V valueOf(String name, T value);
+
+    /**
+     * Create structure from {@link Map} with fields as keys
+     *
+     * @param map create from
+     * @return structure
+     */
+    T createFrom(Map<String, Object> map);
+  }
+
+  /**
+   * Enum value accessor. Enum values is stored as string and default implementation works also with
+   * string as input type.
+   *
+   * @param <T> value input type
+   */
+  public interface EnumValueAccessor<T> extends Serializable {
+
+    /**
+     * Return string representation of input value type.
+     *
+     * @param value input value
+     * @return value as string
+     */
+    default String valueOf(T value) {
+      return value.toString();
+    }
+
+    /**
+     * Return enum value from string
+     *
+     * @param value string representation of enum value.
+     * @return enum value
+     */
+    @SuppressWarnings("unchecked")
+    default T createFrom(String value) {
+      return (T) value;
+    }
+  }
+
+  /**
+   * Default implementation of {@link ArrayValueAccessor}.
+   *
+   * @param <T> array value type
+   */
   public static class DefaultArrayValueAccessor<T> implements ArrayValueAccessor<T> {
 
     private final GenericValueAccessor<T> valueAccessor;
@@ -100,26 +174,11 @@ public class AttributeValueAccessors {
     }
   }
 
-  public interface StructureValueAccessor<T> extends GenericValueAccessor<T> {
-
-    Map<String, Object> valuesOf(T value);
-
-    <V> V readField(String name, T value);
-
-    T createFrom(Map<String, Object> map);
-  }
-
-  public interface EnumValueAccessor<T> extends Serializable {
-    default String valueOf(T value) {
-      return value.toString();
-    }
-
-    @SuppressWarnings("unchecked")
-    default T createFrom(String value) {
-      return (T) value;
-    }
-  }
-
+  /**
+   * Default structure accessor.
+   *
+   * @param <T> structure type
+   */
   public static class DefaultStructureValueAccessor<T> implements StructureValueAccessor<T> {
 
     @SuppressWarnings("unchecked")
@@ -130,7 +189,7 @@ public class AttributeValueAccessors {
 
     @Override
     @SuppressWarnings("unchecked")
-    public <V> V readField(String name, T value) {
+    public <V> V valueOf(String name, T value) {
       checkInputValue(value);
       return ((Map<String, V>) value).get(name);
     }

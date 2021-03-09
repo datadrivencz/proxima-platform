@@ -65,11 +65,11 @@ public class ProtoUtilsTest {
 
     StructureValueAccessor<Device> valueProvider = schema.getValueAccessor();
     assertThrows(
-        IllegalArgumentException.class, () -> valueProvider.readField("unknown-field", value));
-    assertEquals("test-type-value", valueProvider.readField("type", value));
+        IllegalArgumentException.class, () -> valueProvider.valueOf("unknown-field", value));
+    assertEquals("test-type-value", valueProvider.valueOf("type", value));
     assertArrayEquals(
         "test-payload-value".getBytes(StandardCharsets.UTF_8),
-        valueProvider.readField("payload", value));
+        valueProvider.valueOf("payload", value));
     Map<String, Object> createFrom =
         new HashMap<String, Object>() {
           {
@@ -124,12 +124,12 @@ public class ProtoUtilsTest {
 
     final StructureValueAccessor<ValueSchemeMessage> valueProvider = descriptor.getValueAccessor();
 
-    Object[] repeatedStringValue = valueProvider.readField("repeated_string", object);
+    Object[] repeatedStringValue = valueProvider.valueOf("repeated_string", object);
     assertArrayEquals(
         Arrays.asList("repeated_string_value_1", "repeated_string_value_2").toArray(new String[0]),
         repeatedStringValue);
 
-    Map<String, Object> innerMessage = valueProvider.readField("inner_message", object);
+    Map<String, Object> innerMessage = valueProvider.valueOf("inner_message", object);
 
     assertArrayEquals(
         Arrays.asList("repeated_inner_string_value1", "repeated_inner_string_value2")
@@ -139,11 +139,10 @@ public class ProtoUtilsTest {
 
     assertEquals(Directions.LEFT.name(), innerMessage.get("inner_enum"));
 
-    assertEquals("string_type_value", valueProvider.readField("string_type", object));
-    assertEquals(true, valueProvider.readField("boolean_type", object));
-    assertEquals(
-        100L, Optional.ofNullable(valueProvider.readField("long_type", object)).orElse(-1));
-    assertEquals(69, Optional.ofNullable(valueProvider.readField("int_type", object)).orElse(-1));
+    assertEquals("string_type_value", valueProvider.valueOf("string_type", object));
+    assertEquals(true, valueProvider.valueOf("boolean_type", object));
+    assertEquals(100L, Optional.ofNullable(valueProvider.valueOf("long_type", object)).orElse(-1));
+    assertEquals(69, Optional.ofNullable(valueProvider.valueOf("int_type", object)).orElse(-1));
 
     final Map<String, Object> createFrom =
         new HashMap<String, Object>() {

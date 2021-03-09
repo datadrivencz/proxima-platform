@@ -58,7 +58,7 @@ public class SchemaDescriptors {
    * @param values possible values
    * @return enum type descriptor
    */
-  public static EnumTypeDescriptor enums(List<String> values) {
+  public static EnumTypeDescriptor<String> enums(List<String> values) {
     return enums(values, new EnumValueAccessor<String>() {});
   }
 
@@ -69,9 +69,9 @@ public class SchemaDescriptors {
    * @param valueAccessor value accessor
    * @return enum type descriptor
    */
-  public static <T> EnumTypeDescriptor enums(
+  public static <T> EnumTypeDescriptor<T> enums(
       List<String> values, EnumValueAccessor<T> valueAccessor) {
-    return new EnumTypeDescriptor(values, valueAccessor);
+    return new EnumTypeDescriptor<>(values, valueAccessor);
   }
 
   /**

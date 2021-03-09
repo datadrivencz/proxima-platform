@@ -56,12 +56,12 @@ public class ProtoMessageValueAccessor<T extends Message> implements StructureVa
   @Override
   public Map<String, Object> valuesOf(T value) {
     final Map<String, Object> result = new HashMap<>();
-    fields.forEach((field, type) -> result.put(field, readField(field, value)));
+    fields.forEach((field, type) -> result.put(field, valueOf(field, value)));
     return result;
   }
 
   @Override
-  public <V> V readField(String name, T value) {
+  public <V> V valueOf(String name, T value) {
     @SuppressWarnings("unchecked")
     final SchemaTypeDescriptor<Object> valueSchema =
         (SchemaTypeDescriptor<Object>) getFieldSchemaTypeDescriptor(fields, name);

@@ -120,36 +120,38 @@ public class ProtoUtils {
         break;
       case ENUM:
         descriptor =
-            SchemaDescriptors.enums(
-                proto
-                    .getEnumType()
-                    .getValues()
-                    .stream()
-                    .map(EnumValueDescriptor::getName)
-                    .collect(Collectors.toList()),
-                new EnumValueAccessor<EnumValueDescriptor>() {
-                  private EnumValueDescriptor getEnumDescriptor(String name) {
-                    @Nullable
-                    final EnumValueDescriptor enumValue = proto.getEnumType().findValueByName(name);
-                    if (enumValue == null) {
-                      throw new IllegalArgumentException(
-                          String.format(
-                              "Unknown value [%s] for enum type. Values: %s",
-                              name, proto.getEnumType().getValues()));
-                    }
-                    return enumValue;
-                  }
+            (SchemaTypeDescriptor<T>)
+                SchemaDescriptors.enums(
+                    proto
+                        .getEnumType()
+                        .getValues()
+                        .stream()
+                        .map(EnumValueDescriptor::getName)
+                        .collect(Collectors.toList()),
+                    new EnumValueAccessor<EnumValueDescriptor>() {
+                      private EnumValueDescriptor getEnumDescriptor(String name) {
+                        @Nullable
+                        final EnumValueDescriptor enumValue =
+                            proto.getEnumType().findValueByName(name);
+                        if (enumValue == null) {
+                          throw new IllegalArgumentException(
+                              String.format(
+                                  "Unknown value [%s] for enum type. Values: %s",
+                                  name, proto.getEnumType().getValues()));
+                        }
+                        return enumValue;
+                      }
 
-                  @Override
-                  public EnumValueDescriptor createFrom(String object) {
-                    return getEnumDescriptor(object);
-                  }
+                      @Override
+                      public EnumValueDescriptor createFrom(String object) {
+                        return getEnumDescriptor(object);
+                      }
 
-                  @Override
-                  public String valueOf(EnumValueDescriptor value) {
-                    return getEnumDescriptor(value.getName()).getName();
-                  }
-                });
+                      @Override
+                      public String valueOf(EnumValueDescriptor value) {
+                        return getEnumDescriptor(value.getName()).getName();
+                      }
+                    });
         break;
       case MESSAGE:
         final String messageTypeName = proto.getMessageType().toProto().getName();

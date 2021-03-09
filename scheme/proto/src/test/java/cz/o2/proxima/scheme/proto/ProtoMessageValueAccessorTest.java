@@ -80,12 +80,12 @@ public class ProtoMessageValueAccessorTest {
   @Test
   public void testReadTopLevelPrimitiveTypes() {
     assertEquals(
-        "top_level_string_type_value", valueAccessor.readField("string_type", referenceValue));
-    assertEquals(true, valueAccessor.readField("boolean_type", referenceValue));
+        "top_level_string_type_value", valueAccessor.valueOf("string_type", referenceValue));
+    assertEquals(true, valueAccessor.valueOf("boolean_type", referenceValue));
     assertEquals(
-        20L, Optional.ofNullable(valueAccessor.readField("long_type", referenceValue)).orElse(-1));
+        20L, Optional.ofNullable(valueAccessor.valueOf("long_type", referenceValue)).orElse(-1));
     assertEquals(
-        8, Optional.ofNullable(valueAccessor.readField("int_type", referenceValue)).orElse(-1));
+        8, Optional.ofNullable(valueAccessor.valueOf("int_type", referenceValue)).orElse(-1));
   }
 
   @Test
@@ -93,12 +93,12 @@ public class ProtoMessageValueAccessorTest {
     assertArrayEquals(
         Arrays.asList("top_level_repeated_string_value_1", "top_level_repeated_string_value_2")
             .toArray(new Object[0]),
-        valueAccessor.readField("repeated_string", referenceValue));
+        valueAccessor.valueOf("repeated_string", referenceValue));
   }
 
   @Test
   public void testReadInnerMessage() {
-    final Map<String, Object> innerValue = valueAccessor.readField("inner_message", referenceValue);
+    final Map<String, Object> innerValue = valueAccessor.valueOf("inner_message", referenceValue);
     assertArrayEquals(
         Arrays.asList("inner_repeated_string_value1", "inner_repeated_string_value2")
             .toArray(new Object[0]),
@@ -136,14 +136,12 @@ public class ProtoMessageValueAccessorTest {
 
     assertEquals(
         40.0,
-        Optional.ofNullable(arrayValueAccessor.readField("inner_double_type", values[0]))
-            .orElse(-1));
-    assertEquals(Directions.LEFT.name(), arrayValueAccessor.readField("inner_enum", values[0]));
+        Optional.ofNullable(arrayValueAccessor.valueOf("inner_double_type", values[0])).orElse(-1));
+    assertEquals(Directions.LEFT.name(), arrayValueAccessor.valueOf("inner_enum", values[0]));
     assertEquals(
         20.0,
-        Optional.ofNullable(arrayValueAccessor.readField("inner_double_type", values[1]))
-            .orElse(-1));
-    assertEquals(Directions.RIGHT.name(), arrayValueAccessor.readField("inner_enum", values[1]));
+        Optional.ofNullable(arrayValueAccessor.valueOf("inner_double_type", values[1])).orElse(-1));
+    assertEquals(Directions.RIGHT.name(), arrayValueAccessor.valueOf("inner_enum", values[1]));
   }
 
   @Test

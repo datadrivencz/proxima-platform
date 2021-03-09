@@ -189,8 +189,8 @@ public class SchemaDescriptorsTest {
         };
     StructureValueAccessor<Object> accessor = s.getValueAccessor();
     assertEquals(expected, accessor.createFrom(expected));
-    assertEquals("string_field_value", accessor.readField("string_field", expected));
-    assertEquals(expected.get("inner_structure"), accessor.readField("inner_structure", expected));
+    assertEquals("string_field_value", accessor.valueOf("string_field", expected));
+    assertEquals(expected.get("inner_structure"), accessor.valueOf("inner_structure", expected));
     assertEquals(expected, accessor.valuesOf(expected));
   }
 
