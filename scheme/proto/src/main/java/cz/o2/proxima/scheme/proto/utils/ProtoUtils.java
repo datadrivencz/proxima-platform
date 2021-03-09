@@ -29,8 +29,8 @@ import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.StructureTypeDescriptor;
 import cz.o2.proxima.scheme.proto.ProtoMessageValueAccessor;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import javax.annotation.Nullable;
 import lombok.extern.slf4j.Slf4j;
@@ -52,7 +52,7 @@ public class ProtoUtils {
    */
   public static <T extends Message> StructureTypeDescriptor<T> convertProtoToSchema(
       Descriptor proto, T defaultValue) {
-    return convertProtoMessage(proto, defaultValue, new HashMap<>());
+    return convertProtoMessage(proto, defaultValue, new ConcurrentHashMap<>());
   }
 
   static <T extends Message> StructureTypeDescriptor<T> convertProtoMessage(
