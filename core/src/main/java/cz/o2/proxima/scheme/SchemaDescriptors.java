@@ -112,7 +112,7 @@ public class SchemaDescriptors {
 
           @Override
           public byte[] createFrom(Object object) {
-            return object.toString().getBytes(StandardCharsets.UTF_8);
+            return (byte[]) object;
           }
 
           @Override
@@ -531,6 +531,16 @@ public class SchemaDescriptors {
      */
     public AttributeValueType getValueType() {
       return valueDescriptor.getType();
+    }
+
+    @Override
+    public boolean isPrimitiveType() {
+      return valueDescriptor.isPrimitiveType();
+    }
+
+    @Override
+    public PrimitiveTypeDescriptor<T> asPrimitiveTypeDescriptor() {
+      return valueDescriptor.asPrimitiveTypeDescriptor();
     }
 
     @Override

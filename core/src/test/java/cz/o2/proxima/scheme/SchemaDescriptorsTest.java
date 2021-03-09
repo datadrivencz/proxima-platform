@@ -211,13 +211,16 @@ public class SchemaDescriptorsTest {
     final ArrayTypeDescriptor<byte[]> bytes = SchemaDescriptors.bytes();
     assertEquals(AttributeValueType.ARRAY, bytes.getType());
     assertEquals(AttributeValueType.BYTE, bytes.getValueType());
-    final ArrayValueAccessor<byte[]> accessor = bytes.getValueAccessor();
+    assertTrue(bytes.isPrimitiveType());
+    final PrimitiveValueAccessor<byte[]> accessor =
+        bytes.asPrimitiveTypeDescriptor().getValueAccessor();
     final byte[] testBytes = new byte[] {1, 2, 3};
-    // byte[] valuesOf = accessor.valuesOf(testBytes);
-    // assertArrayEquals(testBytes, valuesOf);
-    // @TODO: FIX later
-    // assertArrayEquals(testBytes, accessor.createFrom(testBytes));
-
+    final byte[] valuesOf = accessor.valueOf(testBytes);
+    assertArrayEquals(testBytes, valuesOf);
+    assertArrayEquals(testBytes, accessor.createFrom(testBytes));
+    assertArrayEquals(
+        "foo".getBytes(StandardCharsets.UTF_8),
+        accessor.valueOf(accessor.createFrom("foo".getBytes(StandardCharsets.UTF_8))));
   }
 
   @Test
