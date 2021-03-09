@@ -28,18 +28,15 @@ import cz.o2.proxima.scheme.SchemaDescriptors;
 import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.StructureTypeDescriptor;
 import cz.o2.proxima.scheme.proto.ProtoMessageValueAccessor;
-import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 public class ProtoUtils {
-
-  private static final Map<String, SchemaTypeDescriptor<?>> structCache = new ConcurrentHashMap<>();
 
   private ProtoUtils() {
     // no-op
@@ -55,11 +52,18 @@ public class ProtoUtils {
    */
   public static <T extends Message> StructureTypeDescriptor<T> convertProtoToSchema(
       Descriptor proto, T defaultValue) {
+    return convertProtoMessage(proto, defaultValue, new HashMap<>());
+  }
+
+  private static <T extends Message> StructureTypeDescriptor<T> convertProtoMessage(
+      Descriptor proto, T defaultValue, Map<String, SchemaTypeDescriptor<?>> structCache) {
     final Map<String, SchemaTypeDescriptor<?>> fields =
         proto
             .getFields()
             .stream()
-            .collect(Collectors.toMap(FieldDescriptor::getName, ProtoUtils::convertField));
+            .collect(
+                Collectors.toMap(
+                    FieldDescriptor::getName, field -> convertField(field, structCache)));
 
     return SchemaDescriptors.structures(
         proto.getName(),
@@ -75,7 +79,8 @@ public class ProtoUtils {
    * @return schema type descriptor
    */
   @SuppressWarnings("unchecked")
-  protected static <T> SchemaTypeDescriptor<T> convertField(FieldDescriptor proto) {
+  private static <T> SchemaTypeDescriptor<T> convertField(
+      FieldDescriptor proto, Map<String, SchemaTypeDescriptor<?>> structCache) {
     SchemaTypeDescriptor<T> descriptor;
 
     switch (proto.getJavaType()) {
@@ -117,13 +122,12 @@ public class ProtoUtils {
         descriptor =
             (SchemaTypeDescriptor<T>)
                 SchemaDescriptors.enums(
-                    new ArrayList<>(
-                        proto
-                            .getEnumType()
-                            .getValues()
-                            .stream()
-                            .map(EnumValueDescriptor::getName)
-                            .collect(Collectors.toList())),
+                    proto
+                        .getEnumType()
+                        .getValues()
+                        .stream()
+                        .map(EnumValueDescriptor::getName)
+                        .collect(Collectors.toList()),
                     new EnumValueAccessor<String>() {
                       @Override
                       public String createFrom(Object object) {
@@ -155,9 +159,10 @@ public class ProtoUtils {
         structCache.computeIfAbsent(
             messageTypeName,
             name ->
-                convertProtoToSchema(
+                convertProtoMessage(
                     proto.getMessageType(),
-                    proto.getMessageType().toProto().getDefaultInstanceForType()));
+                    proto.getMessageType().toProto().getDefaultInstanceForType(),
+                    structCache));
         descriptor = (SchemaTypeDescriptor<T>) structCache.get(messageTypeName);
 
         break;

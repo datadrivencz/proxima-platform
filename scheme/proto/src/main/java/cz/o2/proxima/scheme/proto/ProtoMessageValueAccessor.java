@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Optional;
+import javax.annotation.Nullable;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -39,8 +40,8 @@ public class ProtoMessageValueAccessor<T extends Message> implements StructureVa
   private final Map<String, SchemaTypeDescriptor<?>> fields;
   private final Factory<Descriptor> protoDescriptorFactory;
   private final Factory<T> defaultValueFactory;
-  private transient Descriptor proto;
-  private transient T defaultValue;
+  @Nullable private transient Descriptor proto;
+  @Nullable private transient T defaultValue;
 
   public ProtoMessageValueAccessor(
       Map<String, SchemaTypeDescriptor<?>> fields,
