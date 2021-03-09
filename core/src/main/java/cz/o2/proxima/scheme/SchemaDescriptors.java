@@ -56,11 +56,10 @@ public class SchemaDescriptors {
    * Create {@link EnumTypeDescriptor} for {@link AttributeValueType#ENUM} type.
    *
    * @param values possible values
-   * @param <T> type of descriptor
    * @return enum type descriptor
    */
-  public static <T extends Serializable> EnumTypeDescriptor<T> enums(List<T> values) {
-    return enums(values, new EnumValueAccessor<T>() {});
+  public static EnumTypeDescriptor enums(List<String> values) {
+    return enums(values, new EnumValueAccessor<String>() {});
   }
 
   /**
@@ -68,12 +67,11 @@ public class SchemaDescriptors {
    *
    * @param values possible values
    * @param valueAccessor value accessor
-   * @param <T> type of descriptor
    * @return enum type descriptor
    */
-  public static <T> EnumTypeDescriptor<T> enums(
-      List<T> values, EnumValueAccessor<T> valueAccessor) {
-    return new EnumTypeDescriptor<>(values, valueAccessor);
+  public static <T> EnumTypeDescriptor enums(
+      List<String> values, EnumValueAccessor<T> valueAccessor) {
+    return new EnumTypeDescriptor(values, valueAccessor);
   }
 
   /**
@@ -443,7 +441,7 @@ public class SchemaDescriptors {
      *
      * @return enum type descriptor
      */
-    public EnumTypeDescriptor<T> asEnumTypeDescriptor() {
+    public EnumTypeDescriptor asEnumTypeDescriptor() {
       throw new UnsupportedOperationException(
           String.format(TYPE_CHECK_ERROR_MESSAGE_TEMPLATE, AttributeValueType.ENUM, getType()));
     }
@@ -664,25 +662,25 @@ public class SchemaDescriptors {
     }
   }
 
-  /**
-   * Enum type descriptor.
-   *
-   * @param <T> value type
-   */
-  public static class EnumTypeDescriptor<T> extends SchemaTypeDescriptor<T> {
+  /** Enum type descriptor. */
+  public static class EnumTypeDescriptor<T> extends SchemaTypeDescriptor<String> {
 
-    @Getter private final List<T> values;
+    private final List<String> values;
     @Getter private final EnumValueAccessor<T> valueAccessor;
 
-    public EnumTypeDescriptor(List<T> values, EnumValueAccessor<T> valueAccessor) {
+    public EnumTypeDescriptor(List<String> values, EnumValueAccessor<T> valueAccessor) {
       super(AttributeValueType.ENUM);
       this.values = values;
       this.valueAccessor = valueAccessor;
     }
 
     @Override
-    public EnumTypeDescriptor<T> asEnumTypeDescriptor() {
+    public EnumTypeDescriptor asEnumTypeDescriptor() {
       return this;
+    }
+
+    public List<String> getValues() {
+      return Collections.unmodifiableList(values);
     }
 
     @Override
@@ -696,7 +694,7 @@ public class SchemaDescriptors {
       if (!super.equals(o)) {
         return false;
       }
-      EnumTypeDescriptor<?> that = (EnumTypeDescriptor<?>) o;
+      EnumTypeDescriptor that = (EnumTypeDescriptor) o;
       return values.equals(that.values);
     }
 

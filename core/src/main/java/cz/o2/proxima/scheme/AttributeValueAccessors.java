@@ -109,7 +109,16 @@ public class AttributeValueAccessors {
     T createFrom(Map<String, Object> map);
   }
 
-  public interface EnumValueAccessor<T> extends GenericValueAccessor<T> {}
+  public interface EnumValueAccessor<T> extends Serializable {
+    default String valueOf(T value) {
+      return value.toString();
+    }
+
+    @SuppressWarnings("unchecked")
+    default T createFrom(String value) {
+      return (T) value;
+    }
+  }
 
   public static class DefaultStructureValueAccessor<T> implements StructureValueAccessor<T> {
 

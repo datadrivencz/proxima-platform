@@ -50,6 +50,10 @@ message ValueSchemeMessage {
     LEFT = 1;
     RIGHT = 2;
   }
+  enum SecondEnum {
+    VALUE1 = 0;
+    VALUE2 = 1;
+  }
   message SecondInnerMessage {
     float inner_float_type = 1;
   }

@@ -21,6 +21,7 @@ import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import com.google.protobuf.ByteString;
+import com.google.protobuf.Descriptors.EnumValueDescriptor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.ArrayValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.EnumValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.StructureValueAccessor;
@@ -32,11 +33,13 @@ import cz.o2.proxima.scheme.proto.test.Scheme.Device;
 import cz.o2.proxima.scheme.proto.test.Scheme.ValueSchemeMessage;
 import cz.o2.proxima.scheme.proto.test.Scheme.ValueSchemeMessage.Directions;
 import cz.o2.proxima.scheme.proto.test.Scheme.ValueSchemeMessage.InnerMessage;
+import cz.o2.proxima.scheme.proto.test.Scheme.ValueSchemeMessage.SecondEnum;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.Test;
 
@@ -85,6 +88,7 @@ public class ProtoUtilsTest {
     StructureTypeDescriptor<ValueSchemeMessage> descriptor =
         ProtoUtils.convertProtoToSchema(
             ValueSchemeMessage.getDescriptor(), ValueSchemeMessage.getDefaultInstance());
+    log.debug("Schema: {}", descriptor);
     assertEquals(AttributeValueType.STRUCTURE, descriptor.getType());
     assertEquals(ValueSchemeMessage.getDescriptor().getName(), descriptor.getName());
     assertTrue(descriptor.hasField("repeated_inner_message"));
@@ -178,20 +182,27 @@ public class ProtoUtilsTest {
             ValueSchemeMessage.getDescriptor(), ValueSchemeMessage.getDefaultInstance());
 
     @SuppressWarnings("unchecked")
-    EnumTypeDescriptor<String> enumTypeDescriptor =
-        (EnumTypeDescriptor<String>)
-            descriptor
-                .getField("inner_message")
-                .asStructureTypeDescriptor()
-                .getField("inner_enum")
-                .asEnumTypeDescriptor();
+    EnumTypeDescriptor<EnumValueDescriptor> enumTypeDescriptor =
+        descriptor
+            .getField("inner_message")
+            .asStructureTypeDescriptor()
+            .getField("inner_enum")
+            .asEnumTypeDescriptor();
 
-    EnumValueAccessor<String> accessor = enumTypeDescriptor.getValueAccessor();
+    EnumValueAccessor<EnumValueDescriptor> accessor = enumTypeDescriptor.getValueAccessor();
     // proto enum fields contains +1 value UNRECOGNIZED
     assertEquals(Directions.values().length - 1, enumTypeDescriptor.getValues().size());
-    assertEquals(Directions.LEFT.getValueDescriptor(), accessor.valueOf(Directions.LEFT.name()));
-    assertEquals(Directions.LEFT.name(), accessor.createFrom(Directions.LEFT));
-    assertThrows(IllegalArgumentException.class, () -> accessor.valueOf("NOT_IN_VALUES"));
+    assertEquals(
+        Directions.getDescriptor()
+            .getValues()
+            .stream()
+            .map(EnumValueDescriptor::getName)
+            .collect(Collectors.toList()),
+        enumTypeDescriptor.getValues());
+    assertEquals(Directions.LEFT.name(), accessor.valueOf(Directions.LEFT.getValueDescriptor()));
+    assertEquals(Directions.LEFT.getValueDescriptor(), accessor.createFrom("LEFT"));
+    final EnumValueDescriptor illegalEnumValue = SecondEnum.VALUE1.getValueDescriptor();
+    assertThrows(IllegalArgumentException.class, () -> accessor.valueOf(illegalEnumValue));
     assertThrows(IllegalArgumentException.class, () -> accessor.createFrom("NOT_IN_VALUES"));
   }
 

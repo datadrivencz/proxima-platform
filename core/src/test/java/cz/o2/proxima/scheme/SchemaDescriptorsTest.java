@@ -289,7 +289,7 @@ public class SchemaDescriptorsTest {
   @Test
   public void testEnumType() {
     List<String> values = Arrays.asList("LEFT", "RIGHT");
-    EnumTypeDescriptor<String> desc = SchemaDescriptors.enums(values);
+    EnumTypeDescriptor desc = SchemaDescriptors.enums(values);
     assertEquals(AttributeValueType.ENUM, desc.getType());
     assertEquals(values, desc.getValues());
     assertEquals("ENUM[LEFT, RIGHT]", desc.toString());
