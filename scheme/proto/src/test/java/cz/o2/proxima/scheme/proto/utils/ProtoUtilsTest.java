@@ -182,11 +182,12 @@ public class ProtoUtilsTest {
 
     @SuppressWarnings("unchecked")
     EnumTypeDescriptor<EnumValueDescriptor> enumTypeDescriptor =
-        descriptor
-            .getField("inner_message")
-            .asStructureTypeDescriptor()
-            .getField("inner_enum")
-            .asEnumTypeDescriptor();
+        (EnumTypeDescriptor<EnumValueDescriptor>)
+            descriptor
+                .getField("inner_message")
+                .asStructureTypeDescriptor()
+                .getField("inner_enum")
+                .asEnumTypeDescriptor();
 
     EnumValueAccessor<EnumValueDescriptor> accessor = enumTypeDescriptor.getValueAccessor();
     // proto enum fields contains +1 value UNRECOGNIZED

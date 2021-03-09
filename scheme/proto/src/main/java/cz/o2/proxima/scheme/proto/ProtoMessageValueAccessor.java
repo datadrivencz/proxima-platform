@@ -16,7 +16,6 @@
 package cz.o2.proxima.scheme.proto;
 
 import com.google.protobuf.Descriptors.Descriptor;
-import com.google.protobuf.Descriptors.EnumValueDescriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor;
 import com.google.protobuf.Message;
 import com.google.protobuf.Message.Builder;
@@ -129,9 +128,8 @@ public class ProtoMessageValueAccessor<T extends Message> implements StructureVa
               });
       return (V) messageValue;
     } else if (valueSchema.isEnumType()) {
-      EnumValueAccessor<EnumValueDescriptor> accessor =
-          valueSchema.asEnumTypeDescriptor().getValueAccessor();
-      return (V) accessor.valueOf((EnumValueDescriptor) fieldValue);
+      EnumValueAccessor<Object> accessor = valueSchema.asEnumTypeDescriptor().getValueAccessor();
+      return (V) accessor.valueOf(fieldValue);
     } else {
       throw new UnsupportedOperationException(
           String.format("Unsupported field conversion for type [%s]", valueSchema.getType()));

@@ -441,7 +441,7 @@ public class SchemaDescriptors {
      *
      * @return enum type descriptor
      */
-    public EnumTypeDescriptor asEnumTypeDescriptor() {
+    public EnumTypeDescriptor<T> asEnumTypeDescriptor() {
       throw new UnsupportedOperationException(
           String.format(TYPE_CHECK_ERROR_MESSAGE_TEMPLATE, AttributeValueType.ENUM, getType()));
     }
@@ -663,7 +663,7 @@ public class SchemaDescriptors {
   }
 
   /** Enum type descriptor. */
-  public static class EnumTypeDescriptor<T> extends SchemaTypeDescriptor<String> {
+  public static class EnumTypeDescriptor<T> extends SchemaTypeDescriptor<T> {
 
     private final List<String> values;
     @Getter private final EnumValueAccessor<T> valueAccessor;
@@ -675,7 +675,7 @@ public class SchemaDescriptors {
     }
 
     @Override
-    public EnumTypeDescriptor asEnumTypeDescriptor() {
+    public EnumTypeDescriptor<T> asEnumTypeDescriptor() {
       return this;
     }
 
@@ -694,7 +694,7 @@ public class SchemaDescriptors {
       if (!super.equals(o)) {
         return false;
       }
-      EnumTypeDescriptor that = (EnumTypeDescriptor) o;
+      EnumTypeDescriptor<?> that = (EnumTypeDescriptor<?>) o;
       return values.equals(that.values);
     }
 
