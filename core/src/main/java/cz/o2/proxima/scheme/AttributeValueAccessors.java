@@ -19,6 +19,7 @@ import com.google.common.base.Preconditions;
 import cz.o2.proxima.annotations.Experimental;
 import java.io.Serializable;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 
 /** Classes providing access to Attribute values */
@@ -129,9 +130,7 @@ public class AttributeValueAccessors {
      * @param value input value
      * @return value as string
      */
-    default String valueOf(T value) {
-      return value.toString();
-    }
+    String valueOf(T value);
 
     /**
      * Return enum value from string
@@ -139,10 +138,7 @@ public class AttributeValueAccessors {
      * @param value string representation of enum value.
      * @return enum value
      */
-    @SuppressWarnings("unchecked")
-    default T createFrom(String value) {
-      return (T) value;
-    }
+    T createFrom(String value);
 
     @Override
     default ValueAccessorType getType() {
@@ -152,6 +148,9 @@ public class AttributeValueAccessors {
 
   /**
    * Default implementation of {@link ArrayValueAccessor}.
+   *
+   * <p>This implementation delegate {@link #createFrom(Object[])} and {@link #valuesOf(Object[])}
+   * to value accessor.
    *
    * @param <T> array value type
    */
@@ -218,6 +217,11 @@ public class AttributeValueAccessors {
       }
     }
 
+    /**
+     * Delegation interface
+     *
+     * @param <T>
+     */
     private interface DelegateToAccessor<T> extends Serializable {
       T createFrom(Object object);
 
@@ -267,6 +271,27 @@ public class AttributeValueAccessors {
       Preconditions.checkArgument(
           object instanceof Map,
           "Input value must be instance of Map. Given " + object.getClass().getName());
+    }
+  }
+
+  /** Default implementation of {@link EnumValueAccessor} with string representation. */
+  public static class DefaultEnumValueAccessor implements EnumValueAccessor<String> {
+    private final List<String> values;
+
+    public DefaultEnumValueAccessor(List<String> values) {
+      this.values = values;
+    }
+
+    @Override
+    public String valueOf(String value) {
+      Preconditions.checkArgument(
+          values.contains(value), "Illegal value [%s]. Available values %s.", values);
+      return value;
+    }
+
+    @Override
+    public String createFrom(String value) {
+      return valueOf(value);
     }
   }
 }

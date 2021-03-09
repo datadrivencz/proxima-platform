@@ -24,6 +24,7 @@ import cz.o2.proxima.scheme.AttributeValueAccessors.EnumValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.StructureValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueType;
 import cz.o2.proxima.scheme.SchemaDescriptors.ArrayTypeDescriptor;
+import cz.o2.proxima.scheme.SchemaDescriptors.EnumTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.PrimitiveTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
 import java.util.HashMap;
@@ -89,18 +90,12 @@ public class ProtoMessageValueAccessor<T extends Message> implements StructureVa
           .getValueDescriptor()
           .getType()
           .equals(AttributeValueType.BYTE)) {
-        final Object val =
-            valueSchema
-                .asArrayTypeDescriptor()
-                .getValueDescriptor()
-                .asPrimitiveTypeDescriptor()
-                .getValueAccessor()
-                .valueOf(fieldValue);
-        if (val instanceof List) {
-          return (V) ((List<Object>) val).toArray();
-        } else {
-          return (V) val;
-        }
+        return valueSchema
+            .asArrayTypeDescriptor()
+            .getValueDescriptor()
+            .asPrimitiveTypeDescriptor()
+            .getValueAccessor()
+            .valueOf(fieldValue);
       } else {
         return (V)
             valueSchema
@@ -179,6 +174,10 @@ public class ProtoMessageValueAccessor<T extends Message> implements StructureVa
     return type.getValueAccessor().createFrom(value);
   }
 
+  private Object buildEnumValue(EnumTypeDescriptor<Object> type, Object value) {
+    return type.getValueAccessor().createFrom(value.toString());
+  }
+
   private void setArrayValue(
       ArrayTypeDescriptor<Object> type,
       Object values,
@@ -205,18 +204,17 @@ public class ProtoMessageValueAccessor<T extends Message> implements StructureVa
       FieldDescriptor protoFieldDescriptor,
       Object value,
       Builder builder) {
-    if (type.getValueDescriptor().isStructureType()) {
-      // Array<Structure> needs to be created via builder
-      return buildMessage(
-          (Map<String, Object>) value,
-          type.getValueDescriptor().asStructureTypeDescriptor().getFields(),
-          protoFieldDescriptor.getMessageType(),
-          builder.newBuilderForField(protoFieldDescriptor));
-    } else if (type.getValueDescriptor().isPrimitiveType()) {
-      return buildPrimitiveValue(type.getValueDescriptor().asPrimitiveTypeDescriptor(), value);
-    } else {
-      throw new UnsupportedOperationException(
-          String.format("Unknown Array value type %s", type.getValueDescriptor().getType()));
+    switch (type.getValueType()) {
+      case STRUCTURE:
+        return buildMessage(
+            (Map<String, Object>) value,
+            type.getValueDescriptor().asStructureTypeDescriptor().getFields(),
+            protoFieldDescriptor.getMessageType(),
+            builder.newBuilderForField(protoFieldDescriptor));
+      case ENUM:
+        return buildEnumValue(type.getValueDescriptor().asEnumTypeDescriptor(), value);
+      default:
+        return buildPrimitiveValue(type.getValueDescriptor().asPrimitiveTypeDescriptor(), value);
     }
   }
 

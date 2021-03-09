@@ -18,6 +18,7 @@ package cz.o2.proxima.scheme.proto;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertThrows;
 
 import cz.o2.proxima.scheme.AttributeValueAccessors.ArrayValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.StructureValueAccessor;
@@ -76,6 +77,13 @@ public class ProtoMessageValueAccessorTest {
           .setLongType(20L)
           .setIntType(8)
           .build();
+
+  @Test
+  public void testReadIllegalFieldShouldThrowsException() {
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> valueAccessor.valueOf("not-existed-field", referenceValue));
+  }
 
   @Test
   public void testReadTopLevelPrimitiveTypes() {

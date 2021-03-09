@@ -23,8 +23,10 @@ import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import cz.o2.proxima.scheme.AttributeValueAccessors.ArrayValueAccessor;
+import cz.o2.proxima.scheme.AttributeValueAccessors.EnumValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.PrimitiveValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.StructureValueAccessor;
+import cz.o2.proxima.scheme.AttributeValueAccessors.ValueAccessorType;
 import cz.o2.proxima.scheme.SchemaDescriptors.ArrayTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.EnumTypeDescriptor;
 import cz.o2.proxima.scheme.SchemaDescriptors.PrimitiveTypeDescriptor;
@@ -38,6 +40,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.junit.Test;
 
 public class SchemaDescriptorsTest {
@@ -50,6 +53,11 @@ public class SchemaDescriptorsTest {
   @Test
   public void assertSerializableArrayType() throws IOException, ClassNotFoundException {
     TestUtils.assertSerializable(SchemaDescriptors.bytes());
+  }
+
+  @Test
+  public void assertSerializableEnumType() throws IOException, ClassNotFoundException {
+    TestUtils.assertSerializable(SchemaDescriptors.enums(Arrays.asList("FIRST", "SECOND")));
   }
 
   @Test
@@ -247,9 +255,38 @@ public class SchemaDescriptorsTest {
         });
 
     final ArrayValueAccessor<Object> valueAccessor = desc.getValueAccessor();
-    // Object[] expected = Arrays.asList()
+    assertEquals(ValueAccessorType.ARRAY, valueAccessor.getType());
+    List<Object> expected =
+        Arrays.asList(
+            new HashMap<String, Object>() {
+              {
+                put("field1", "value_1_field_1");
+                put("field2", "value_1_field_2");
+              }
+            },
+            new HashMap<String, Object>() {
+              {
+                put("field1", "value_2_field_1");
+                put("field2", "value_2_field_2");
+              }
+            });
+    final Object[] values = valueAccessor.valuesOf(expected.toArray());
+    assertEquals(expected, Arrays.stream(values).collect(Collectors.toList()));
+    assertEquals(
+        expected,
+        Arrays.stream(valueAccessor.createFrom(expected.toArray())).collect(Collectors.toList()));
+  }
 
-    // Object[] arrayValues = valueAccessor.valuesOf()
+  @Test
+  public void testArrayOfEnum() {
+    final List<String> enumValues = Arrays.asList("FIRST", "SECOND");
+    final ArrayTypeDescriptor<String> desc =
+        SchemaDescriptors.arrays(SchemaDescriptors.enums(enumValues));
+    final ArrayValueAccessor<String> accessor = desc.getValueAccessor();
+    assertEquals(ValueAccessorType.ARRAY, accessor.getType());
+    final String[] expected = Arrays.asList("FIRST", "FIRST").toArray(new String[0]);
+    assertArrayEquals(expected, accessor.createFrom(expected));
+    assertArrayEquals(expected, accessor.valuesOf(expected));
   }
 
   @Test
@@ -291,12 +328,20 @@ public class SchemaDescriptorsTest {
 
   @Test
   public void testEnumType() {
-    List<String> values = Arrays.asList("LEFT", "RIGHT");
-    EnumTypeDescriptor desc = SchemaDescriptors.enums(values);
+    final List<String> values = Arrays.asList("LEFT", "RIGHT");
+    final EnumTypeDescriptor<String> desc = SchemaDescriptors.enums(values);
     assertEquals(AttributeValueType.ENUM, desc.getType());
     assertEquals(values, desc.getValues());
     assertEquals("ENUM[LEFT, RIGHT]", desc.toString());
 
     assertEquals(desc, SchemaDescriptors.enums(values));
+    final EnumValueAccessor<String> accessor = desc.getValueAccessor();
+    assertEquals(ValueAccessorType.ENUM, accessor.getType());
+    assertEquals("LEFT", accessor.createFrom("LEFT"));
+    assertEquals("RIGHT", accessor.valueOf("RIGHT"));
+    assertThrows(IllegalArgumentException.class, () -> accessor.createFrom("UNKNOWN"));
+    assertThrows(IllegalArgumentException.class, () -> accessor.valueOf("UNKNOWN"));
+
+    assertNotEquals(desc, SchemaDescriptors.enums(Collections.emptyList()));
   }
 }

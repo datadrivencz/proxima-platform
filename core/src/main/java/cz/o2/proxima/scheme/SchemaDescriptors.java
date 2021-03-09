@@ -18,13 +18,13 @@ package cz.o2.proxima.scheme;
 import com.google.common.base.Preconditions;
 import cz.o2.proxima.scheme.AttributeValueAccessors.ArrayValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.DefaultArrayValueAccessor;
+import cz.o2.proxima.scheme.AttributeValueAccessors.DefaultEnumValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.DefaultStructureValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.EnumValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.PrimitiveValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.StructureValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.ValueAccessor;
 import java.io.Serializable;
-import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -59,7 +59,7 @@ public class SchemaDescriptors {
    * @return enum type descriptor
    */
   public static EnumTypeDescriptor<String> enums(List<String> values) {
-    return enums(values, new EnumValueAccessor<String>() {});
+    return enums(values, new DefaultEnumValueAccessor(values));
   }
 
   /**
@@ -80,13 +80,7 @@ public class SchemaDescriptors {
    * @return Primitive type descriptor
    */
   public static PrimitiveTypeDescriptor<String> strings() {
-    return strings(
-        new PrimitiveValueAccessor<String>() {
-          @Override
-          public String createFrom(Object object) {
-            return Objects.toString(object);
-          }
-        });
+    return strings((PrimitiveValueAccessor<String>) Objects::toString);
   }
 
   /**
@@ -124,7 +118,7 @@ public class SchemaDescriptors {
   }
 
   /**
-   * Create {@link ArrayTypeDescriptor} with primitive value and value accessor
+   * Create {@link ArrayTypeDescriptor} for byte array value and value accessor
    *
    * @param valueProvider value accessor
    * @param <V> array value type
@@ -134,33 +128,13 @@ public class SchemaDescriptors {
     return arrays(primitives(AttributeValueType.BYTE, valueProvider));
   }
 
-  // @FIXME
-  public static ArrayTypeDescriptor<byte[]> bytes(ArrayValueAccessor<byte[]> valueProvider) {
-    return arrays(
-        primitives(
-            AttributeValueType.BYTE,
-            new PrimitiveValueAccessor<byte[]>() {
-              @Override
-              public byte[] createFrom(Object object) {
-                return object.toString().getBytes(StandardCharsets.UTF_8);
-              }
-            }),
-        valueProvider);
-  }
-
   /**
    * Create {@link PrimitiveTypeDescriptor} for {@code Integer}.
    *
    * @return Primitive type descriptor
    */
   public static PrimitiveTypeDescriptor<Integer> integers() {
-    return integers(
-        new PrimitiveValueAccessor<Integer>() {
-          @Override
-          public Integer createFrom(Object object) {
-            return Integer.parseInt(object.toString());
-          }
-        });
+    return integers(object -> Integer.parseInt(object.toString()));
   }
 
   /**
@@ -182,14 +156,11 @@ public class SchemaDescriptors {
    */
   public static PrimitiveTypeDescriptor<Long> longs() {
     return longs(
-        new PrimitiveValueAccessor<Long>() {
-          @Override
-          public Long createFrom(Object object) {
-            if (object instanceof Long) {
-              return (Long) object;
-            }
-            return Long.parseLong(object.toString());
+        object -> {
+          if (object instanceof Long) {
+            return (Long) object;
           }
+          return Long.parseLong(object.toString());
         });
   }
 
@@ -210,13 +181,7 @@ public class SchemaDescriptors {
    * @return Primitive type descriptor
    */
   public static PrimitiveTypeDescriptor<Double> doubles() {
-    return doubles(
-        new PrimitiveValueAccessor<Double>() {
-          @Override
-          public Double createFrom(Object object) {
-            return Double.parseDouble(object.toString());
-          }
-        });
+    return doubles(object -> Double.parseDouble(object.toString()));
   }
 
   /**
@@ -237,13 +202,7 @@ public class SchemaDescriptors {
    * @return Primitive type descriptor
    */
   public static PrimitiveTypeDescriptor<Float> floats() {
-    return floats(
-        new PrimitiveValueAccessor<Float>() {
-          @Override
-          public Float createFrom(Object object) {
-            return Float.parseFloat(object.toString());
-          }
-        });
+    return floats(object -> Float.parseFloat(object.toString()));
   }
 
   /**
@@ -263,13 +222,7 @@ public class SchemaDescriptors {
    * @return Primitive type descriptor
    */
   public static PrimitiveTypeDescriptor<Boolean> booleans() {
-    return booleans(
-        new PrimitiveValueAccessor<Boolean>() {
-          @Override
-          public Boolean createFrom(Object object) {
-            return Boolean.parseBoolean(object.toString());
-          }
-        });
+    return booleans(object -> Boolean.parseBoolean(object.toString()));
   }
 
   /**
@@ -293,12 +246,15 @@ public class SchemaDescriptors {
    */
   public static <T> ArrayTypeDescriptor<T> arrays(SchemaTypeDescriptor<T> valueDescriptor) {
     ValueAccessor valueAccessor;
-    if (valueDescriptor.isPrimitiveType()) {
-      valueAccessor = valueDescriptor.asPrimitiveTypeDescriptor().getValueAccessor();
-    } else if (valueDescriptor.isStructureType()) {
-      valueAccessor = valueDescriptor.asStructureTypeDescriptor().getValueAccessor();
-    } else {
-      throw new UnsupportedOperationException("Unable to create Array value accessor");
+    switch (valueDescriptor.getType()) {
+      case STRUCTURE:
+        valueAccessor = valueDescriptor.asStructureTypeDescriptor().getValueAccessor();
+        break;
+      case ENUM:
+        valueAccessor = valueDescriptor.asEnumTypeDescriptor().getValueAccessor();
+        break;
+      default:
+        valueAccessor = valueDescriptor.asPrimitiveTypeDescriptor().getValueAccessor();
     }
     return arrays(valueDescriptor, new DefaultArrayValueAccessor<>(valueAccessor));
   }
