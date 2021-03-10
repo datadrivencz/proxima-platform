@@ -491,7 +491,7 @@ public class SchemaDescriptors {
 
     @Override
     public boolean isPrimitiveType() {
-      return valueDescriptor.isPrimitiveType();
+      return !valueDescriptor.isArrayType() && valueDescriptor.isPrimitiveType();
     }
 
     @Override

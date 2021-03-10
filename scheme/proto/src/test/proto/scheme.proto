@@ -70,7 +70,7 @@ message ValueSchemeMessage {
   bool boolean_type = 5;
   uint64 long_type = 6;
   uint32 int_type = 7;
-
+  repeated bytes repeated_bytes = 8;
 }
 
 message RecursiveMessage {

@@ -184,7 +184,7 @@ public class ProtoMessageValueAccessor<T extends Message> implements StructureVa
       FieldDescriptor protoFieldDescriptor,
       Builder builder) {
     final SchemaTypeDescriptor<Object> valueType = type.getValueDescriptor();
-    if (valueType.isPrimitiveType()
+    if (type.isPrimitiveType()
         && valueType.asPrimitiveTypeDescriptor().getType().equals(AttributeValueType.BYTE)) {
       // Bytes needs to be converted as PrimitiveValue of String
       builder.setField(

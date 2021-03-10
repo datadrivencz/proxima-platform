@@ -20,6 +20,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThrows;
 
+import com.google.protobuf.ByteString;
 import cz.o2.proxima.scheme.AttributeValueAccessors.ArrayValueAccessor;
 import cz.o2.proxima.scheme.AttributeValueAccessors.StructureValueAccessor;
 import cz.o2.proxima.scheme.SchemaDescriptors.StructureTypeDescriptor;
@@ -28,6 +29,7 @@ import cz.o2.proxima.scheme.proto.test.Scheme.ValueSchemeMessage.Directions;
 import cz.o2.proxima.scheme.proto.test.Scheme.ValueSchemeMessage.InnerMessage;
 import cz.o2.proxima.scheme.proto.test.Scheme.ValueSchemeMessage.SecondInnerMessage;
 import cz.o2.proxima.scheme.proto.utils.ProtoUtils;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -76,6 +78,8 @@ public class ProtoMessageValueAccessorTest {
           .setBooleanType(true)
           .setLongType(20L)
           .setIntType(8)
+          .addRepeatedBytes(ByteString.copyFromUtf8("repeated_bytes_value_1"))
+          .addRepeatedBytes(ByteString.copyFromUtf8("repeated_bytes_value_2"))
           .build();
 
   @Test
@@ -217,6 +221,12 @@ public class ProtoMessageValueAccessorTest {
             put("boolean_type", true);
             put("long_type", 20);
             put("int_type", 8);
+            put(
+                "repeated_bytes",
+                Arrays.asList(
+                        "repeated_bytes_value_1".getBytes(StandardCharsets.UTF_8),
+                        "repeated_bytes_value_2".getBytes(StandardCharsets.UTF_8))
+                    .toArray());
           }
         };
     final Object created = valueAccessor.createFrom(createFrom);

@@ -327,6 +327,33 @@ public class SchemaDescriptorsTest {
   }
 
   @Test
+  public void testArrayOfBytes() {
+    final ArrayTypeDescriptor<byte[]> descriptor =
+        SchemaDescriptors.arrays(SchemaDescriptors.bytes());
+    assertEquals(AttributeValueType.ARRAY, descriptor.getType());
+    assertEquals(AttributeValueType.ARRAY, descriptor.getValueType());
+    byte[][] expected =
+        Arrays.asList(
+                "value1".getBytes(StandardCharsets.UTF_8),
+                "value2".getBytes(StandardCharsets.UTF_8))
+            .toArray(new byte[0][0]);
+
+    assertFalse(descriptor.isPrimitiveType());
+    assertTrue(descriptor.isArrayType());
+    // but value descriptor should be primitive
+    assertTrue(descriptor.asArrayTypeDescriptor().getValueDescriptor().isPrimitiveType());
+    final ArrayValueAccessor<byte[]> accessor = descriptor.getValueAccessor();
+    Object[] created = accessor.createFrom(expected);
+    assertEquals(2, created.length);
+    assertArrayEquals(expected, created);
+    Object[] values = accessor.valuesOf(expected);
+    assertEquals(values.length, expected.length);
+    assertArrayEquals(expected, values);
+    assertArrayEquals("value1".getBytes(StandardCharsets.UTF_8), (byte[]) values[0]);
+    assertArrayEquals("value2".getBytes(StandardCharsets.UTF_8), (byte[]) values[1]);
+  }
+
+  @Test
   public void testEnumType() {
     final List<String> values = Arrays.asList("LEFT", "RIGHT");
     final EnumTypeDescriptor<String> desc = SchemaDescriptors.enums(values);
