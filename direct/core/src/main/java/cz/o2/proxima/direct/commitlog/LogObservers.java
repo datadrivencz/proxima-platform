@@ -30,6 +30,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.concurrent.atomic.AtomicLong;
+import lombok.experimental.Delegate;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -207,6 +208,18 @@ public class LogObservers {
       BiConsumer<StreamElement, OnNextContext> latecomerConsumer) {
 
     return new SinglePartitionSortedLogObserver(upstream, allowedLateness, latecomerConsumer);
+  }
+
+  /**
+   * A @{link LogObserver} that delegates calls to underlying delegate. Useful for overriding
+   * specific methods before passing to delegate.
+   */
+  public static class Delegating implements LogObserver {
+    @Delegate private final LogObserver delegate;
+
+    public Delegating(LogObserver delegate) {
+      this.delegate = delegate;
+    }
   }
 
   private LogObservers() {}
