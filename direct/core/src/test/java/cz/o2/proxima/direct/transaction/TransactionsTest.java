@@ -20,15 +20,14 @@ import static org.junit.Assert.assertEquals;
 
 import com.typesafe.config.ConfigFactory;
 import cz.o2.proxima.direct.commitlog.CommitLogReader;
-import cz.o2.proxima.direct.core.DirectAttributeFamilyDescriptor;
 import cz.o2.proxima.direct.core.DirectDataOperator;
 import cz.o2.proxima.direct.core.OnlineAttributeWriter;
+import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityAwareAttributeDescriptor.Wildcard;
 import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.repository.Repository;
 import cz.o2.proxima.transaction.Request;
 import cz.o2.proxima.transaction.Response;
-import cz.o2.proxima.util.Optionals;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.Test;
@@ -39,6 +38,8 @@ public class TransactionsTest {
   private final Repository repo =
       Repository.ofTest(ConfigFactory.load("test-transactions.conf").resolve());
   private final DirectDataOperator direct = repo.getOrCreateOperator(DirectDataOperator.class);
+  private final EntityDescriptor gateway = repo.getEntity("gateway");
+  private final AttributeDescriptor<?> status = gateway.getAttribute("status");
   private final EntityDescriptor transaction = repo.getEntity("_transaction");
   private final Wildcard<Request> request =
       Wildcard.wildcard(transaction, transaction.getAttribute("request.*"));
@@ -52,11 +53,8 @@ public class TransactionsTest {
 
   @Test
   public void testTransactionRequestResponse() {
-    // we must access the readers/writers directly through family name
-    DirectAttributeFamilyDescriptor family =
-        Optionals.get(direct.findFamilyByName("gateway-transaction-commit-log"));
-    CommitLogReader reader = Optionals.get(family.getCommitLogReader());
-    OnlineAttributeWriter writer = Optionals.get(family.getWriter()).online();
+    CommitLogReader reader = TransactionUtils.getResponseReader(direct, status);
+    OnlineAttributeWriter writer = TransactionUtils.getRequestWriter(direct, status);
     List<Response> receivedResponses = new ArrayList<>();
 
     // create a simple ping-pong communication
