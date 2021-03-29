@@ -33,9 +33,11 @@ import cz.o2.proxima.scheme.proto.test.Scheme.Event;
 import cz.o2.proxima.transaction.Request;
 import cz.o2.proxima.transaction.Response;
 import cz.o2.proxima.transaction.State;
+import cz.o2.proxima.util.Optionals;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Optional;
 import org.junit.Before;
@@ -123,9 +125,15 @@ public class ProtoSerializerFactoryTest {
     AttributeDescriptor<Request> request = transaction.getAttribute("request.*");
     assertTrue(request.getValueSerializer() instanceof TransactionProtoSerializer);
     assertTrue(request.getValueSerializer().isUsable());
-    byte[] bytes = request.getValueSerializer().serialize(Request.of());
+    Request transactionRequest =
+        Request.builder()
+            .inputAttributes(Collections.singletonList(request))
+            .outputAttributes(Collections.singletonList(request))
+            .build();
+    byte[] bytes = request.getValueSerializer().serialize(transactionRequest);
     assertNotNull(bytes);
-    assertTrue(request.getValueSerializer().deserialize(bytes).isPresent());
+    assertEquals(
+        transactionRequest, Optionals.get(request.getValueSerializer().deserialize(bytes)));
 
     AttributeDescriptor<Response> response = transaction.getAttribute("response.*");
     assertTrue(response.getValueSerializer() instanceof TransactionProtoSerializer);

@@ -16,16 +16,21 @@
 package cz.o2.proxima.scheme.proto;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.Iterables;
 import com.google.protobuf.AbstractMessage;
 import com.google.protobuf.Message.Builder;
 import com.google.protobuf.Parser;
 import com.google.protobuf.TextFormat;
 import com.google.protobuf.util.JsonFormat;
-import cz.o2.proxima.functional.UnaryFunction;
+import cz.o2.proxima.functional.BiFunction;
+import cz.o2.proxima.repository.AttributeDescriptor;
+import cz.o2.proxima.repository.Repository;
+import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.scheme.AttributeValueAccessor;
 import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
 import cz.o2.proxima.scheme.ValueSerializer;
 import cz.o2.proxima.scheme.ValueSerializerFactory;
+import cz.o2.proxima.scheme.proto.transactions.Transactions;
 import cz.o2.proxima.scheme.proto.transactions.Transactions.ProtoRequest;
 import cz.o2.proxima.scheme.proto.transactions.Transactions.ProtoResponse;
 import cz.o2.proxima.scheme.proto.transactions.Transactions.ProtoState;
@@ -39,9 +44,11 @@ import cz.o2.proxima.util.ExceptionUtils;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.URI;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 import javax.annotation.Nullable;
 import lombok.extern.slf4j.Slf4j;
 
@@ -112,6 +119,10 @@ public class ProtoSerializerFactory implements ValueSerializerFactory {
     @Nullable private transient SchemaTypeDescriptor<MessageT> valueSchemaDescriptor;
 
     @Nullable private transient ProtoMessageValueAccessor<MessageT> accessor;
+
+    ProtoValueSerializer(Class<MessageT> protoClass) {
+      this(protoClass.getName());
+    }
 
     ProtoValueSerializer(String protoClass) {
       this.protoClass = protoClass;
@@ -199,41 +210,88 @@ public class ProtoSerializerFactory implements ValueSerializerFactory {
   }
 
   @VisibleForTesting
-  static class TransactionProtoSerializer<T> implements ValueSerializer<T> {
+  static class TransactionProtoSerializer<TransactionT, ProtoTransactionT extends AbstractMessage>
+      implements ValueSerializer<TransactionT>, ValueSerializer.InitializedWithRepository {
 
-    @SuppressWarnings("unchecked")
-    static <V> TransactionProtoSerializer<V> ofTransactionClass(String className) {
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    static <V, P extends AbstractMessage> TransactionProtoSerializer<V, P> ofTransactionClass(
+        String className) {
+
       switch (className) {
         case "cz.o2.proxima.transaction.Request":
-          return (TransactionProtoSerializer<V>)
-              new TransactionProtoSerializer<>(
+          return (TransactionProtoSerializer)
+              new TransactionProtoSerializer<Request, ProtoRequest>(
                   new ProtoValueSerializer<>(ProtoRequest.class.getName()),
-                  req -> ProtoRequest.newBuilder().build(),
-                  req -> Request.of());
+                  TransactionProtoSerializer::requestToProto,
+                  TransactionProtoSerializer::requestFromProto);
         case "cz.o2.proxima.transaction.Response":
-          return (TransactionProtoSerializer<V>)
+          return (TransactionProtoSerializer)
               new TransactionProtoSerializer<>(
                   new ProtoValueSerializer<>(ProtoResponse.class.getName()),
-                  req -> ProtoResponse.newBuilder().build(),
-                  req -> Response.of());
+                  (Repository r, Response resp) -> ProtoResponse.newBuilder().build(),
+                  (r, req) -> Response.of());
         case "cz.o2.proxima.transaction.State":
-          return (TransactionProtoSerializer<V>)
+          return (TransactionProtoSerializer)
               new TransactionProtoSerializer<>(
                   new ProtoValueSerializer<>(ProtoState.class.getName()),
-                  req -> ProtoState.newBuilder().build(),
-                  req -> State.of());
+                  (Repository r, State state) -> ProtoState.newBuilder().build(),
+                  (r, req) -> State.of());
       }
       throw new UnsupportedOperationException("Unknown className of transactions: " + className);
     }
 
-    private final ProtoValueSerializer<AbstractMessage> inner;
-    private final UnaryFunction<T, AbstractMessage> asMessage;
-    private final UnaryFunction<AbstractMessage, T> asTransaction;
+    private static ProtoRequest requestToProto(Repository repository, Request request) {
+      return ProtoRequest.newBuilder()
+          .addAllInputAttribute(asProtoDesc(request.getInputAttributes()))
+          .addAllOutputAttribute(asProtoDesc(request.getOutputAttributes()))
+          .build();
+    }
+
+    private static Request requestFromProto(Repository repository, ProtoRequest protoRequest) {
+      return Request.builder()
+          .inputAttributes(
+              getAttributeDescriptorsFromProto(repository, protoRequest.getInputAttributeList()))
+          .outputAttributes(
+              getAttributeDescriptorsFromProto(repository, protoRequest.getOutputAttributeList()))
+          .flags(asFlags(protoRequest.getFlags()))
+          .build();
+    }
+
+    private static Request.Flags asFlags(Transactions.Flags flags) {
+      return null;
+    }
+
+    private static List<AttributeDescriptor<?>> getAttributeDescriptorsFromProto(
+        Repository repo, List<Transactions.AttributeDescriptor> attrList) {
+
+      return attrList
+          .stream()
+          .map(a -> repo.getEntity(a.getEntity()).getAttribute(a.getAttribute()))
+          .collect(Collectors.toList());
+    }
+
+    private static Iterable<Transactions.AttributeDescriptor> asProtoDesc(
+        List<AttributeDescriptor<?>> inputAttributes) {
+
+      return Iterables.transform(
+          inputAttributes,
+          a ->
+              Transactions.AttributeDescriptor.newBuilder()
+                  .setEntity(a.getEntity())
+                  .setAttribute(a.getName())
+                  .build());
+    }
+
+    private final ProtoValueSerializer<ProtoTransactionT> inner;
+    private final BiFunction<Repository, TransactionT, ProtoTransactionT> asMessage;
+    private final BiFunction<Repository, ProtoTransactionT, TransactionT> asTransaction;
+    private RepositoryFactory repoFactory;
+    private transient Repository repo;
 
     public TransactionProtoSerializer(
-        ProtoValueSerializer<AbstractMessage> inner,
-        UnaryFunction<T, AbstractMessage> asMessage,
-        UnaryFunction<AbstractMessage, T> asTransaction) {
+        ProtoValueSerializer<ProtoTransactionT> inner,
+        BiFunction<Repository, TransactionT, ProtoTransactionT> asMessage,
+        BiFunction<Repository, ProtoTransactionT, TransactionT> asTransaction) {
 
       this.inner = inner;
       this.asMessage = asMessage;
@@ -241,18 +299,31 @@ public class ProtoSerializerFactory implements ValueSerializerFactory {
     }
 
     @Override
-    public Optional<T> deserialize(byte[] input) {
-      return inner.deserialize(input).map(asTransaction::apply);
+    public Optional<TransactionT> deserialize(byte[] input) {
+      return inner.deserialize(input).map(m -> asTransaction.apply(repo(), m));
     }
 
     @Override
-    public byte[] serialize(T value) {
-      return inner.serialize(asMessage.apply(value));
+    public byte[] serialize(TransactionT value) {
+      return inner.serialize(asMessage.apply(repo(), value));
     }
 
     @Override
-    public T getDefault() {
-      return asTransaction.apply(inner.getDefault());
+    public TransactionT getDefault() {
+      return asTransaction.apply(repo(), inner.getDefault());
+    }
+
+    private Repository repo() {
+      if (repo == null && repoFactory != null) {
+        repo = repoFactory.apply();
+      }
+      return repo;
+    }
+
+    @Override
+    public void setRepository(Repository repository) {
+      this.repo = repository;
+      this.repoFactory = repo.asFactory();
     }
   }
 }

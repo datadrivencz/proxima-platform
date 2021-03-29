@@ -74,7 +74,7 @@ public class TransactionLogObserverTest {
   public void testCreateTransaction() {
     OnlineAttributeWriter requestWriter = TransactionUtils.getRequestWriter(direct, gatewayStatus);
     String transactionId = UUID.randomUUID().toString();
-    writeSync(requestWriter, request.upsert(transactionId, "1", now, Request.of()));
+    writeSync(requestWriter, request.upsert(transactionId, "1", now, Request.builder().build()));
   }
 
   private void writeSync(OnlineAttributeWriter writer, StreamElement element) {

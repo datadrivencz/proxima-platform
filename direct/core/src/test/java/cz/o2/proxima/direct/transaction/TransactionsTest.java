@@ -78,7 +78,8 @@ public class TransactionsTest {
     reader.observe("responses", toList(receivedResponses, response));
 
     writer.write(
-        request.upsert("firstTransaction", "abc", System.currentTimeMillis(), Request.of()),
+        request.upsert(
+            "firstTransaction", "abc", System.currentTimeMillis(), Request.builder().build()),
         (succ, exc) -> {});
 
     assertEquals(1, receivedResponses.size());
