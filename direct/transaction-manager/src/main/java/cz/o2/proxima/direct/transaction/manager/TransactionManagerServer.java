@@ -24,7 +24,6 @@ import cz.o2.proxima.direct.commitlog.LogObserver;
 import cz.o2.proxima.direct.commitlog.LogObservers;
 import cz.o2.proxima.direct.commitlog.ObserveHandle;
 import cz.o2.proxima.direct.core.DirectDataOperator;
-import cz.o2.proxima.direct.transaction.manager.TransactionLogObserverFactory.Context;
 import cz.o2.proxima.repository.AttributeFamilyDescriptor;
 import cz.o2.proxima.repository.ConfigRepository;
 import cz.o2.proxima.repository.Repository;
@@ -79,7 +78,6 @@ public class TransactionManagerServer {
   private final Repository repo;
   private final DirectDataOperator direct;
   private final List<ObserveHandle> runningObserves = new ArrayList<>();
-  private final TransactionLogObserverFactory.Context context;
   private final TransactionLogObserverFactory observerFactory;
   private AtomicBoolean closed = new AtomicBoolean();
 
@@ -87,12 +85,7 @@ public class TransactionManagerServer {
     this.conf = conf;
     this.repo = repo;
     this.direct = repo.getOrCreateOperator(DirectDataOperator.class);
-    this.context = createContext();
     this.observerFactory = getObserverFactory(conf);
-  }
-
-  private Context createContext() {
-    return Context.of(repo, direct);
   }
 
   private TransactionLogObserverFactory getObserverFactory(Config conf) {
@@ -134,7 +127,7 @@ public class TransactionManagerServer {
   }
 
   private LogObserver newTransformationLogObserver(CountDownLatch awaitingLatch) {
-    return new LogObservers.Delegating(observerFactory.create(context)) {
+    return new LogObservers.Delegating(observerFactory.create(direct)) {
       boolean repartitioned = false;
 
       @Override

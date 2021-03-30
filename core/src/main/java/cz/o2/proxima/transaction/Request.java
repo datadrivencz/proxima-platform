@@ -39,7 +39,7 @@ public class Request implements Serializable {
   @Getter private final Flags flags;
 
   public Request() {
-    this(Collections.emptyList(), Collections.emptyList(), null);
+    this(null, null, null);
   }
 
   public Request(
@@ -47,8 +47,8 @@ public class Request implements Serializable {
       List<AttributeDescriptor<?>> outputAttributes,
       Flags flags) {
 
-    this.inputAttributes = inputAttributes;
-    this.outputAttributes = outputAttributes;
+    this.inputAttributes = inputAttributes == null ? Collections.emptyList() : inputAttributes;
+    this.outputAttributes = outputAttributes == null ? Collections.emptyList() : outputAttributes;
     this.flags = flags;
   }
 }

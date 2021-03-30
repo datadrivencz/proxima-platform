@@ -235,7 +235,7 @@ public class ProtoSerializerFactory implements ValueSerializerFactory {
               new TransactionProtoSerializer<>(
                   new ProtoValueSerializer<>(ProtoState.class.getName()),
                   (Repository r, State state) -> ProtoState.newBuilder().build(),
-                  (r, req) -> State.of());
+                  (r, req) -> State.empty());
       }
       throw new UnsupportedOperationException("Unknown className of transactions: " + className);
     }

@@ -145,7 +145,7 @@ public class ProtoSerializerFactoryTest {
     AttributeDescriptor<State> state = transaction.getAttribute("state");
     assertTrue(state.getValueSerializer() instanceof TransactionProtoSerializer);
     assertTrue(state.getValueSerializer().isUsable());
-    bytes = state.getValueSerializer().serialize(State.of());
+    bytes = state.getValueSerializer().serialize(State.empty());
     assertNotNull(bytes);
     assertTrue(state.getValueSerializer().deserialize(bytes).isPresent());
   }

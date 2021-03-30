@@ -15,11 +15,9 @@
  */
 package cz.o2.proxima.direct.transaction;
 
-import static cz.o2.proxima.direct.commitlog.LogObserverUtils.toList;
 import static org.junit.Assert.assertEquals;
 
 import com.typesafe.config.ConfigFactory;
-import cz.o2.proxima.direct.commitlog.CommitLogReader;
 import cz.o2.proxima.direct.core.DirectDataOperator;
 import cz.o2.proxima.direct.core.OnlineAttributeWriter;
 import cz.o2.proxima.repository.AttributeDescriptor;
@@ -28,12 +26,15 @@ import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.repository.Repository;
 import cz.o2.proxima.transaction.Request;
 import cz.o2.proxima.transaction.Response;
+import cz.o2.proxima.util.Pair;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.UUID;
 import org.junit.Test;
 
 /** Test transactions are working according to the specification. */
-public class TransactionsTest {
+public class TransactionResourceManagerTest {
 
   private final Repository repo =
       Repository.ofTest(ConfigFactory.load("test-transactions.conf").resolve());
@@ -53,12 +54,17 @@ public class TransactionsTest {
 
   @Test
   public void testTransactionRequestResponse() {
-    CommitLogReader reader = TransactionUtils.getResponseReader(direct, status);
-    OnlineAttributeWriter writer = TransactionUtils.getRequestWriter(direct, status);
-    List<Response> receivedResponses = new ArrayList<>();
+    TransactionResourceManager manager = TransactionResourceManager.of(direct);
+    String transactionId = UUID.randomUUID().toString();
+    List<Pair<String, Response>> receivedResponses = new ArrayList<>();
+    manager.begin(
+        transactionId,
+        (k, v) -> receivedResponses.add(Pair.of(k, v)),
+        Collections.singletonList(status));
+    OnlineAttributeWriter writer = manager.getRequestWriter(transactionId);
 
     // create a simple ping-pong communication
-    reader.observe(
+    manager.observeRequests(
         "requests",
         (ingest, context) -> {
           if (ingest.getAttributeDescriptor().equals(request)) {
@@ -75,11 +81,8 @@ public class TransactionsTest {
           return true;
         });
 
-    reader.observe("responses", toList(receivedResponses, response));
-
     writer.write(
-        request.upsert(
-            "firstTransaction", "abc", System.currentTimeMillis(), Request.builder().build()),
+        request.upsert(transactionId, "abc", System.currentTimeMillis(), Request.builder().build()),
         (succ, exc) -> {});
 
     assertEquals(1, receivedResponses.size());

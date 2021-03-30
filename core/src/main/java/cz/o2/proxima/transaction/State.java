@@ -23,7 +23,7 @@ import lombok.Value;
 @Value
 public class State implements Serializable {
 
-  public static State of() {
+  public static State empty() {
     return new State();
   }
 }

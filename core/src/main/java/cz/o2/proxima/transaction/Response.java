@@ -23,6 +23,12 @@ import lombok.Value;
 @Value
 public class Response implements Serializable {
 
+  public enum Flags {
+    NONE,
+    OPEN,
+    COMMITTED
+  }
+
   public static Response of() {
     return new Response();
   }

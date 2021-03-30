@@ -210,6 +210,51 @@ public class LogObservers {
     return new SinglePartitionSortedLogObserver(upstream, allowedLateness, latecomerConsumer);
   }
 
+  public static LogObserver synchronizedObserver(LogObserver delegate) {
+    return new LogObserver() {
+
+      @Override
+      public synchronized void onCompleted() {
+        delegate.onCompleted();
+      }
+
+      @Override
+      public synchronized void onCancelled() {
+        delegate.onCancelled();
+      }
+
+      @Override
+      public synchronized boolean onError(Throwable error) {
+        return delegate.onError(error);
+      }
+
+      @Override
+      public synchronized boolean onException(Exception exception) {
+        return delegate.onException(exception);
+      }
+
+      @Override
+      public synchronized boolean onFatalError(Error error) {
+        return delegate.onFatalError(error);
+      }
+
+      @Override
+      public synchronized boolean onNext(StreamElement ingest, OnNextContext context) {
+        return delegate.onNext(ingest, context);
+      }
+
+      @Override
+      public synchronized void onRepartition(OnRepartitionContext context) {
+        delegate.onRepartition(context);
+      }
+
+      @Override
+      public synchronized void onIdle(OnIdleContext context) {
+        delegate.onIdle(context);
+      }
+    };
+  }
+
   /**
    * A @{link LogObserver} that delegates calls to underlying delegate. Useful for overriding
    * specific methods before passing to delegate.

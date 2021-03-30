@@ -15,13 +15,14 @@
  */
 package cz.o2.proxima.direct.transaction.manager;
 
+import static org.junit.Assert.*;
+
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigFactory;
 import cz.o2.proxima.direct.commitlog.LogObserver;
 import cz.o2.proxima.direct.core.DirectDataOperator;
 import cz.o2.proxima.direct.core.OnlineAttributeWriter;
-import cz.o2.proxima.direct.transaction.TransactionUtils;
-import cz.o2.proxima.direct.transaction.manager.TransactionLogObserverFactory.Context;
+import cz.o2.proxima.direct.transaction.TransactionResourceManager;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityAwareAttributeDescriptor.Regular;
 import cz.o2.proxima.repository.EntityAwareAttributeDescriptor.Wildcard;
@@ -32,7 +33,11 @@ import cz.o2.proxima.transaction.Request;
 import cz.o2.proxima.transaction.Response;
 import cz.o2.proxima.transaction.State;
 import cz.o2.proxima.util.ExceptionUtils;
+import cz.o2.proxima.util.Pair;
+import java.util.Collections;
 import java.util.UUID;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import org.junit.After;
 import org.junit.Before;
@@ -56,25 +61,50 @@ public class TransactionLogObserverTest {
   private final Regular<State> state =
       Regular.regular(transaction, transaction.getAttribute("state"));
   private long now;
+  private TransactionResourceManager manager;
   private LogObserver observer;
 
   @Before
   public void setUp() {
-    Context context = Context.of(repo, direct);
     now = System.currentTimeMillis();
-    observer = new TransactionLogObserverFactory.Default().create(context);
+    manager = TransactionResourceManager.of(direct);
+    observer = new TransactionLogObserverFactory.Default().create(direct);
   }
 
   @After
   public void tearDown() {
     direct.close();
+    manager.close();
   }
 
-  @Test
-  public void testCreateTransaction() {
-    OnlineAttributeWriter requestWriter = TransactionUtils.getRequestWriter(direct, gatewayStatus);
+  @Test(timeout = 10000)
+  public void testCreateTransaction() throws InterruptedException {
     String transactionId = UUID.randomUUID().toString();
-    writeSync(requestWriter, request.upsert(transactionId, "1", now, Request.builder().build()));
+    BlockingQueue<Pair<String, Response>> responseQueue = new ArrayBlockingQueue<>(1);
+    manager.observeRequests("test", observer);
+    manager.begin(
+        transactionId,
+        ExceptionUtils.uncheckedBiConsumer((k, v) -> responseQueue.put(Pair.of(k, v))),
+        Collections.singletonList(userGateways));
+    OnlineAttributeWriter requestWriter = manager.getRequestWriter(transactionId);
+    write(
+        requestWriter,
+        request.upsert(
+            transactionId,
+            "1",
+            now,
+            Request.builder().inputAttributes(Collections.singletonList(userGateways)).build()));
+    Pair<String, Response> response = responseQueue.take();
+    assertEquals("1", response.getFirst());
+    assertNotNull(response.getSecond());
+  }
+
+  private void write(OnlineAttributeWriter writer, StreamElement element) {
+    writer.write(
+        element,
+        (succ, exc) -> {
+          assertTrue(succ);
+        });
   }
 
   private void writeSync(OnlineAttributeWriter writer, StreamElement element) {
