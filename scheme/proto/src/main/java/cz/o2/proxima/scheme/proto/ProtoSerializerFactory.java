@@ -229,7 +229,7 @@ public class ProtoSerializerFactory implements ValueSerializerFactory {
               new TransactionProtoSerializer<>(
                   new ProtoValueSerializer<>(ProtoResponse.class.getName()),
                   (Repository r, Response resp) -> ProtoResponse.newBuilder().build(),
-                  (r, req) -> Response.of());
+                  (r, req) -> Response.empty());
         case "cz.o2.proxima.transaction.State":
           return (TransactionProtoSerializer)
               new TransactionProtoSerializer<>(

@@ -17,13 +17,36 @@ package cz.o2.proxima.transaction;
 
 import cz.o2.proxima.annotations.Internal;
 import java.io.Serializable;
-import lombok.Value;
+import lombok.EqualsAndHashCode;
+import lombok.Getter;
+import lombok.ToString;
 
 @Internal
-@Value
+@ToString
+@EqualsAndHashCode
 public class State implements Serializable {
 
+  public static State open() {
+    return new State(Flags.OPEN);
+  }
+
   public static State empty() {
-    return new State();
+    return new State(Flags.UNKNOWN);
+  }
+
+  public enum Flags {
+    UNKNOWN,
+    OPEN,
+    COMMITTED
+  }
+
+  @Getter private final Flags flags;
+
+  public State() {
+    this(Flags.UNKNOWN);
+  }
+
+  private State(Flags flags) {
+    this.flags = flags;
   }
 }

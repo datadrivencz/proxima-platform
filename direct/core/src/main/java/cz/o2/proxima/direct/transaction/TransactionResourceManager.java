@@ -23,6 +23,8 @@ import cz.o2.proxima.direct.commitlog.ObserveHandle;
 import cz.o2.proxima.direct.core.DirectAttributeFamilyDescriptor;
 import cz.o2.proxima.direct.core.DirectDataOperator;
 import cz.o2.proxima.direct.core.OnlineAttributeWriter;
+import cz.o2.proxima.direct.randomaccess.KeyValue;
+import cz.o2.proxima.direct.view.CachedView;
 import cz.o2.proxima.functional.BiConsumer;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.AttributeFamilyDescriptor;
@@ -31,9 +33,11 @@ import cz.o2.proxima.repository.EntityAwareAttributeDescriptor.Wildcard;
 import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.repository.TransactionMode;
 import cz.o2.proxima.storage.StreamElement;
+import cz.o2.proxima.transaction.KeyAttribute;
 import cz.o2.proxima.transaction.Request;
 import cz.o2.proxima.transaction.Response;
 import cz.o2.proxima.transaction.State;
+import cz.o2.proxima.util.ExceptionUtils;
 import cz.o2.proxima.util.Optionals;
 import cz.o2.proxima.util.Pair;
 import java.util.HashMap;
@@ -43,6 +47,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import javax.annotation.Nullable;
@@ -66,15 +71,17 @@ public class TransactionResourceManager implements AutoCloseable {
     return new TransactionResourceManager(direct);
   }
 
-  private static class CachedWriters {
+  private static class CachedWriters implements AutoCloseable {
+
     @Nullable OnlineAttributeWriter requestWriter;
     @Nullable OnlineAttributeWriter responseWriter;
-    @Nullable OnlineAttributeWriter stateWriter;
+    @Nullable CachedView stateView;
 
+    @Override
     public void close() {
       Optional.ofNullable(requestWriter).ifPresent(OnlineAttributeWriter::close);
       Optional.ofNullable(responseWriter).ifPresent(OnlineAttributeWriter::close);
-      Optional.ofNullable(stateWriter).ifPresent(OnlineAttributeWriter::close);
+      Optional.ofNullable(stateView).ifPresent(CachedView::close);
     }
 
     public OnlineAttributeWriter getOrCreateRequestWriter(DirectAttributeFamilyDescriptor family) {
@@ -83,28 +90,47 @@ public class TransactionResourceManager implements AutoCloseable {
       }
       return requestWriter;
     }
+
+    public OnlineAttributeWriter getOrCreateResponseWriter(DirectAttributeFamilyDescriptor family) {
+      if (responseWriter == null) {
+        responseWriter = Optionals.get(family.getWriter()).online();
+      }
+      return responseWriter;
+    }
+
+    public CachedView getOrCreateStateView(DirectAttributeFamilyDescriptor family) {
+      if (stateView == null) {
+        stateView = Optionals.get(family.getCachedView());
+      }
+      return stateView;
+    }
   }
 
-  private class CachedTransaction {
+  private class CachedTransaction implements AutoCloseable {
 
     final String transactionId;
-    final Set<AttributeDescriptor<?>> affectedAttributes = new HashSet<>();
+    final Set<KeyAttribute> affectedAttributes = new HashSet<>();
     final Map<AttributeDescriptor<?>, DirectAttributeFamilyDescriptor> attributeToFamily =
         new HashMap<>();
     final Thread owningThread = Thread.currentThread();
-    final AtomicReference<State> state = new AtomicReference<>(State.empty());
     final @Nullable BiConsumer<String, Response> responseConsumer;
     @Nullable OnlineAttributeWriter requestWriter;
     @Nullable OnlineAttributeWriter responseWriter;
+    @Nullable CachedView stateView;
 
     CachedTransaction(
         String transactionId,
-        List<AttributeDescriptor<?>> attributes,
+        List<KeyAttribute> attributes,
         @Nullable BiConsumer<String, Response> responseConsumer) {
 
       this.transactionId = transactionId;
       affectedAttributes.addAll(attributes);
-      attributeToFamily.putAll(findFamilyForTransactionalAttribute(attributes));
+      attributeToFamily.putAll(
+          findFamilyForTransactionalAttribute(
+              attributes
+                  .stream()
+                  .map(KeyAttribute::getAttributeDescriptor)
+                  .collect(Collectors.toList())));
       this.responseConsumer = responseConsumer;
     }
 
@@ -112,12 +138,31 @@ public class TransactionResourceManager implements AutoCloseable {
       Preconditions.checkState(responseConsumer != null);
       addTransactionResponseConsumer(
           transactionId, attributeToFamily.get(requestDesc), responseConsumer);
+      Optional<KeyValue<State>> currentState = getStateView().get(transactionId, stateDesc);
+      if (!currentState.isPresent()) {
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicReference<Throwable> error = new AtomicReference<>();
+        getStateView()
+            .write(
+                stateDesc.upsert(transactionId, System.currentTimeMillis(), State.open()),
+                (succ, exc) -> {
+                  error.set(exc);
+                  latch.countDown();
+                });
+        ExceptionUtils.ignoringInterrupted(latch::await);
+        if (error.get() != null) {
+          throw new IllegalStateException(error.get());
+        }
+      }
     }
 
-    void close() {
+    @Override
+    public void close() {
       Optional.ofNullable(requestWriter).ifPresent(OnlineAttributeWriter::close);
       Optional.ofNullable(responseWriter).ifPresent(OnlineAttributeWriter::close);
+      Optional.ofNullable(stateView).ifPresent(CachedView::close);
       requestWriter = responseWriter = null;
+      stateView = null;
     }
 
     OnlineAttributeWriter getRequestWriter() {
@@ -129,12 +174,33 @@ public class TransactionResourceManager implements AutoCloseable {
       return requestWriter;
     }
 
+    OnlineAttributeWriter getResponseWriter() {
+      checkThread();
+      if (responseWriter == null) {
+        DirectAttributeFamilyDescriptor family = attributeToFamily.get(requestDesc);
+        responseWriter = getCachedAccessors(family).getOrCreateResponseWriter(family);
+      }
+      return responseWriter;
+    }
+
+    CachedView getStateView() {
+      checkThread();
+      if (stateView == null) {
+        DirectAttributeFamilyDescriptor family = attributeToFamily.get(requestDesc);
+        stateView = getCachedAccessors(family).getOrCreateStateView(family);
+      }
+      return stateView;
+    }
+
     private void checkThread() {
       Preconditions.checkState(owningThread == Thread.currentThread());
     }
 
     public State getState() {
-      return state.get();
+      return getStateView()
+          .get(transactionId, stateDesc)
+          .map(KeyValue::getParsedRequired)
+          .orElse(State.empty());
     }
   }
 
@@ -171,10 +237,10 @@ public class TransactionResourceManager implements AutoCloseable {
    * Observe all transactional families with given observer.
    *
    * @param name name of the observer (will be appended with name of the family)
-   * @param observer the observer (need not be synchronized)
+   * @param requestObserver the observer (need not be synchronized)
    */
-  public void observeRequests(String name, LogObserver observer) {
-    LogObserver synchronizedObserver = LogObservers.synchronizedObserver(observer);
+  public void runObservations(String name, LogObserver requestObserver) {
+    LogObserver synchronizedObserver = LogObservers.synchronizedObserver(requestObserver);
     direct
         .getRepository()
         .getAllFamilies(true)
@@ -242,7 +308,7 @@ public class TransactionResourceManager implements AutoCloseable {
 
   /**
    * Initialize (possibly) new transaction. If the transaction already existed prior to this call,
-   * its old state is returned. Otherwise {@link State#empty()} is returned.
+   * its current state is returned, otherwise the transaction is opened.
    *
    * @param transactionId ID of transaction
    * @param responseConsumer consumer of responses related to the transaction
@@ -252,7 +318,7 @@ public class TransactionResourceManager implements AutoCloseable {
   public synchronized State begin(
       String transactionId,
       BiConsumer<String, Response> responseConsumer,
-      List<AttributeDescriptor<?>> attributes) {
+      List<KeyAttribute> attributes) {
 
     log.debug("Opening transaction {} with attributes {}", transactionId, attributes);
     CachedTransaction cachedTransaction =
@@ -262,11 +328,20 @@ public class TransactionResourceManager implements AutoCloseable {
     return cachedTransaction.getState();
   }
 
-  public synchronized void updateTransaction(
-      String transactionId, List<AttributeDescriptor<?>> attributes) {
+  /**
+   * Update the transaction with additional attributes related to the transaction.
+   *
+   * @param transactionId ID of transaction
+   * @param newAttributes attributes to be added to the transaction
+   * @return
+   */
+  public synchronized State updateTransaction(
+      String transactionId, List<KeyAttribute> newAttributes) {
 
-    openTransactionMap.computeIfAbsent(
-        transactionId, k -> new CachedTransaction(transactionId, attributes, null));
+    return openTransactionMap
+        .computeIfAbsent(
+            transactionId, k -> new CachedTransaction(transactionId, newAttributes, null))
+        .getState();
   }
 
   private Map<AttributeDescriptor<?>, DirectAttributeFamilyDescriptor>

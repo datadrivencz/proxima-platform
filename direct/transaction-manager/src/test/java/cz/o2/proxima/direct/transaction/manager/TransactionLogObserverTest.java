@@ -29,6 +29,7 @@ import cz.o2.proxima.repository.EntityAwareAttributeDescriptor.Wildcard;
 import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.repository.Repository;
 import cz.o2.proxima.storage.StreamElement;
+import cz.o2.proxima.transaction.KeyAttribute;
 import cz.o2.proxima.transaction.Request;
 import cz.o2.proxima.transaction.Response;
 import cz.o2.proxima.transaction.State;
@@ -81,11 +82,11 @@ public class TransactionLogObserverTest {
   public void testCreateTransaction() throws InterruptedException {
     String transactionId = UUID.randomUUID().toString();
     BlockingQueue<Pair<String, Response>> responseQueue = new ArrayBlockingQueue<>(1);
-    manager.observeRequests("test", observer);
+    manager.runObservations("test", observer);
     manager.begin(
         transactionId,
         ExceptionUtils.uncheckedBiConsumer((k, v) -> responseQueue.put(Pair.of(k, v))),
-        Collections.singletonList(userGateways));
+        Collections.singletonList(KeyAttribute.ofAttributeDescriptor(user, "user", userGateways));
     OnlineAttributeWriter requestWriter = manager.getRequestWriter(transactionId);
     write(
         requestWriter,
@@ -96,7 +97,7 @@ public class TransactionLogObserverTest {
             Request.builder().inputAttributes(Collections.singletonList(userGateways)).build()));
     Pair<String, Response> response = responseQueue.take();
     assertEquals("1", response.getFirst());
-    assertNotNull(response.getSecond());
+    assertEquals(Response.Flags.OPEN, response.getSecond().getFlags());
   }
 
   private void write(OnlineAttributeWriter writer, StreamElement element) {

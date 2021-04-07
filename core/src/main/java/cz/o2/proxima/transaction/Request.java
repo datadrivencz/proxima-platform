@@ -16,7 +16,6 @@
 package cz.o2.proxima.transaction;
 
 import cz.o2.proxima.annotations.Internal;
-import cz.o2.proxima.repository.AttributeDescriptor;
 import java.io.Serializable;
 import java.util.Collections;
 import java.util.List;
@@ -32,20 +31,20 @@ import lombok.ToString;
 @EqualsAndHashCode
 public class Request implements Serializable {
 
-  public enum Flags {}
+  public enum Flags {
+    NONE
+  }
 
-  @Getter private final List<AttributeDescriptor<?>> inputAttributes;
-  @Getter private final List<AttributeDescriptor<?>> outputAttributes;
+  @Getter private final List<KeyAttribute> inputAttributes;
+  @Getter private final List<KeyAttribute> outputAttributes;
   @Getter private final Flags flags;
 
   public Request() {
-    this(null, null, null);
+    this(null, null, Flags.NONE);
   }
 
   public Request(
-      List<AttributeDescriptor<?>> inputAttributes,
-      List<AttributeDescriptor<?>> outputAttributes,
-      Flags flags) {
+      List<KeyAttribute> inputAttributes, List<KeyAttribute> outputAttributes, Flags flags) {
 
     this.inputAttributes = inputAttributes == null ? Collections.emptyList() : inputAttributes;
     this.outputAttributes = outputAttributes == null ? Collections.emptyList() : outputAttributes;

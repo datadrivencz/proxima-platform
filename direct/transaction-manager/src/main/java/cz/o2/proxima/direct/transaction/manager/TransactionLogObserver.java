@@ -83,7 +83,7 @@ class TransactionLogObserver implements LogObserver {
     if (maybeRequest.isPresent()) {
       processTransactionRequest(transactionId, requestId, stamp, maybeRequest.get(), context);
     } else {
-      log.error("Unparseable request at offset {}", context.getOffset());
+      log.error("Unable to parse request at offset {}", context.getOffset());
       context.confirm();
     }
   }
@@ -97,7 +97,7 @@ class TransactionLogObserver implements LogObserver {
         .write(
             resourceManager
                 .getResponseDesc()
-                .upsert(transactionId, requestId, stamp, Response.of()),
+                .upsert(transactionId, requestId, stamp, Response.empty()),
             context::commit);
   }
 

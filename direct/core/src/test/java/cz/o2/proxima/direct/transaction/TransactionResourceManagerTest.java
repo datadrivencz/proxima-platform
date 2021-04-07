@@ -24,6 +24,7 @@ import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityAwareAttributeDescriptor.Wildcard;
 import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.repository.Repository;
+import cz.o2.proxima.transaction.KeyAttribute;
 import cz.o2.proxima.transaction.Request;
 import cz.o2.proxima.transaction.Response;
 import cz.o2.proxima.util.Pair;
@@ -60,18 +61,18 @@ public class TransactionResourceManagerTest {
     manager.begin(
         transactionId,
         (k, v) -> receivedResponses.add(Pair.of(k, v)),
-        Collections.singletonList(status));
+        Collections.singletonList(KeyAttribute.ofAttributeDescriptor(gateway, "gw1", status)));
     OnlineAttributeWriter writer = manager.getRequestWriter(transactionId);
 
     // create a simple ping-pong communication
-    manager.observeRequests(
+    manager.runObservations(
         "requests",
         (ingest, context) -> {
           if (ingest.getAttributeDescriptor().equals(request)) {
             String requestId = request.extractSuffix(ingest.getAttribute());
             writer.write(
                 response.upsert(
-                    ingest.getKey(), requestId, System.currentTimeMillis(), Response.of()),
+                    ingest.getKey(), requestId, System.currentTimeMillis(), Response.open()),
                 (succ, exc) -> {
                   context.confirm();
                 });
@@ -86,5 +87,6 @@ public class TransactionResourceManagerTest {
         (succ, exc) -> {});
 
     assertEquals(1, receivedResponses.size());
+    assertEquals(Response.Flags.OPEN, receivedResponses.get(0).getSecond().getFlags());
   }
 }

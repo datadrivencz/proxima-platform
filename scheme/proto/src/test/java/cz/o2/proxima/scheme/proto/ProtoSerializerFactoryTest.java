@@ -138,7 +138,7 @@ public class ProtoSerializerFactoryTest {
     AttributeDescriptor<Response> response = transaction.getAttribute("response.*");
     assertTrue(response.getValueSerializer() instanceof TransactionProtoSerializer);
     assertTrue(request.getValueSerializer().isUsable());
-    bytes = response.getValueSerializer().serialize(Response.of());
+    bytes = response.getValueSerializer().serialize(Response.empty());
     assertNotNull(bytes);
     assertTrue(response.getValueSerializer().deserialize(bytes).isPresent());
 
