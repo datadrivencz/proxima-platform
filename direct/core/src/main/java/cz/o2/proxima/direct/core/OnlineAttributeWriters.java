@@ -49,6 +49,11 @@ public class OnlineAttributeWriters {
       public synchronized void close() {
         delegate.close();
       }
+
+      @Override
+      public synchronized void rollback() {
+        delegate.rollback();
+      }
     };
   }
 

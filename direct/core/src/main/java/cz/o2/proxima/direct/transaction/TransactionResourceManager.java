@@ -168,9 +168,6 @@ class TransactionResourceManager implements ClientTransactionManager, ServerTran
 
     @Override
     public void close() {
-      Optional.ofNullable(requestWriter).ifPresent(OnlineAttributeWriter::close);
-      Optional.ofNullable(responseWriter).ifPresent(OnlineAttributeWriter::close);
-      Optional.ofNullable(stateView).ifPresent(CachedView::close);
       requestWriter = responseWriter = null;
       stateView = null;
     }
@@ -243,6 +240,7 @@ class TransactionResourceManager implements ClientTransactionManager, ServerTran
     cachedAccessors.forEach((k, v) -> v.close());
     openTransactionMap.clear();
     cachedAccessors.clear();
+    transactionResponseConsumers.clear();
   }
 
   /**
@@ -400,7 +398,7 @@ class TransactionResourceManager implements ClientTransactionManager, ServerTran
     CachedTransaction cachedTransaction =
         openTransactionMap.computeIfAbsent(
             transactionId,
-            tmp -> new CachedTransaction(transactionId, state.getInputAttributes(), null));
+            tmp -> new CachedTransaction(transactionId, state.getOpenAttributes(), null));
     cachedTransaction
         .getStateView()
         .write(stateDesc.upsert(transactionId, System.currentTimeMillis(), state), callback);

@@ -28,8 +28,8 @@ import lombok.ToString;
 @EqualsAndHashCode
 public class State implements Serializable {
 
-  public static State open(Set<KeyAttribute> inputAttributes) {
-    return new State(Flags.OPEN, inputAttributes);
+  public static State open(Set<KeyAttribute> openAttributes) {
+    return new State(Flags.OPEN, openAttributes);
   }
 
   public static State empty() {
@@ -43,14 +43,14 @@ public class State implements Serializable {
   }
 
   @Getter private final Flags flags;
-  @Getter private final Set<KeyAttribute> inputAttributes;
+  @Getter private final Set<KeyAttribute> openAttributes;
 
   public State() {
     this(Flags.UNKNOWN, Collections.emptySet());
   }
 
-  private State(Flags flags, Set<KeyAttribute> inputAttributes) {
+  private State(Flags flags, Set<KeyAttribute> openAttributes) {
     this.flags = flags;
-    this.inputAttributes = inputAttributes;
+    this.openAttributes = openAttributes;
   }
 }

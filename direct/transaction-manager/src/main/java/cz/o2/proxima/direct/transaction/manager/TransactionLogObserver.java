@@ -102,18 +102,9 @@ class TransactionLogObserver implements LogObserver {
       State newState = transitionState(currentState, request);
       CompletableFuture<?> stateFuture = new CompletableFuture<>();
       CompletableFuture<?> responseFuture = new CompletableFuture<>();
-      CommitCallback commitCallback = Utils.callbackForFutures(stateFuture, responseFuture);
+      CommitCallback commitCallback = CommitCallback.afterNumCommits(2, context::commit);
       manager.setCurrentState(transactionId, newState, commitCallback);
       manager.writeResponse(transactionId, requestId, Response.open(), commitCallback);
-      CompletableFuture.allOf(stateFuture, responseFuture)
-          .whenComplete(
-              (val, exc) -> {
-                if (exc != null) {
-                  context.confirm();
-                } else {
-                  context.fail(exc);
-                }
-              });
     } else {
       // FIXME
       context.confirm();
@@ -122,8 +113,8 @@ class TransactionLogObserver implements LogObserver {
 
   private State transitionState(State currentState, Request request) {
     Set<KeyAttribute> attrSet = new HashSet<>(request.getInputAttributes());
-    if (!currentState.getInputAttributes().isEmpty()) {
-      attrSet.addAll(currentState.getInputAttributes());
+    if (!currentState.getOpenAttributes().isEmpty()) {
+      attrSet.addAll(currentState.getOpenAttributes());
     }
     System.err.println(" *** statetransition: " + attrSet);
     return State.open(attrSet);

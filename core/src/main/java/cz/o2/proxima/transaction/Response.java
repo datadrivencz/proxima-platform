@@ -16,10 +16,7 @@
 package cz.o2.proxima.transaction;
 
 import cz.o2.proxima.annotations.Internal;
-import cz.o2.proxima.storage.StreamElement;
 import java.io.Serializable;
-import java.util.Collections;
-import java.util.List;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -37,7 +34,7 @@ public class Response implements Serializable {
    * @return empty response
    */
   public static Response empty() {
-    return new Response(Flags.NONE, Collections.emptyList());
+    return new Response(Flags.NONE);
   }
 
   /**
@@ -46,17 +43,7 @@ public class Response implements Serializable {
    * @return response for open transaction
    */
   public static Response open() {
-    return open(Collections.emptyList());
-  }
-
-  /**
-   * Create response for open transaction with given inputs.
-   *
-   * @param inputs the input data requested by the transaction
-   * @return response for open transaction with given inputs.
-   */
-  public static Response open(List<StreamElement> inputs) {
-    return new Response(Flags.OPEN, inputs);
+    return new Response(Flags.OPEN);
   }
 
   public enum Flags {
@@ -66,14 +53,12 @@ public class Response implements Serializable {
   }
 
   @Getter private final Flags flags;
-  @Getter private final List<StreamElement> inputData;
 
   public Response() {
-    this(Flags.NONE, Collections.emptyList());
+    this(Flags.NONE);
   }
 
-  private Response(Flags flags, List<StreamElement> inputData) {
+  private Response(Flags flags) {
     this.flags = flags;
-    this.inputData = inputData;
   }
 }

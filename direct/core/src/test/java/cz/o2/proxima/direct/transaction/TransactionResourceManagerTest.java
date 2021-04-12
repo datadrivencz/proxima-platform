@@ -60,44 +60,45 @@ public class TransactionResourceManagerTest {
 
   @Test
   public void testTransactionRequestResponse() {
-    TransactionResourceManager manager = TransactionResourceManager.of(direct);
-    String transactionId = UUID.randomUUID().toString();
-    List<Pair<String, Response>> receivedResponses = new ArrayList<>();
+    try (TransactionResourceManager manager = TransactionResourceManager.of(direct)) {
+      String transactionId = UUID.randomUUID().toString();
+      List<Pair<String, Response>> receivedResponses = new ArrayList<>();
 
-    // create a simple ping-pong communication
-    manager.runObservations(
-        "requests",
-        (ingest, context) -> {
-          if (ingest.getAttributeDescriptor().equals(requestDesc)) {
-            String key = ingest.getKey();
-            String requestId = requestDesc.extractSuffix(ingest.getAttribute());
-            Request request = Optionals.get(requestDesc.valueOf(ingest));
-            assertEquals(1, request.getInputAttributes().size());
-            CountDownLatch latch = new CountDownLatch(1);
-            manager.setCurrentState(
-                key,
-                State.open(new HashSet<>(request.getInputAttributes())),
-                (succ, exc) -> {
-                  latch.countDown();
-                });
-            ExceptionUtils.ignoringInterrupted(latch::await);
-            manager.writeResponse(key, requestId, Response.open(), context::commit);
-          } else {
-            context.confirm();
-          }
-          return true;
-        });
+      // create a simple ping-pong communication
+      manager.runObservations(
+          "requests",
+          (ingest, context) -> {
+            if (ingest.getAttributeDescriptor().equals(requestDesc)) {
+              String key = ingest.getKey();
+              String requestId = requestDesc.extractSuffix(ingest.getAttribute());
+              Request request = Optionals.get(requestDesc.valueOf(ingest));
+              assertEquals(1, request.getInputAttributes().size());
+              CountDownLatch latch = new CountDownLatch(1);
+              manager.setCurrentState(
+                  key,
+                  State.open(new HashSet<>(request.getInputAttributes())),
+                  (succ, exc) -> {
+                    latch.countDown();
+                  });
+              ExceptionUtils.ignoringInterrupted(latch::await);
+              manager.writeResponse(key, requestId, Response.open(), context::commit);
+            } else {
+              context.confirm();
+            }
+            return true;
+          });
 
-    manager.begin(
-        transactionId,
-        (k, v) -> receivedResponses.add(Pair.of(k, v)),
-        Collections.singletonList(KeyAttribute.ofAttributeDescriptor(gateway, "gw1", status)));
+      manager.begin(
+          transactionId,
+          (k, v) -> receivedResponses.add(Pair.of(k, v)),
+          Collections.singletonList(KeyAttribute.ofAttributeDescriptor(gateway, "gw1", status)));
 
-    assertEquals(1, receivedResponses.size());
-    assertEquals(Response.Flags.OPEN, receivedResponses.get(0).getSecond().getFlags());
+      assertEquals(1, receivedResponses.size());
+      assertEquals(Response.Flags.OPEN, receivedResponses.get(0).getSecond().getFlags());
 
-    State state = manager.getCurrentState(transactionId);
-    assertNotNull(state);
-    assertEquals(State.Flags.OPEN, state.getFlags());
+      State state = manager.getCurrentState(transactionId);
+      assertNotNull(state);
+      assertEquals(State.Flags.OPEN, state.getFlags());
+    }
   }
 }

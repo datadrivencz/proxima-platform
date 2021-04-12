@@ -20,6 +20,7 @@ import cz.o2.proxima.annotations.Experimental;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
 import java.io.Serializable;
+import java.util.Optional;
 import javax.annotation.Nullable;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -87,5 +88,9 @@ public class KeyAttribute implements Serializable {
     this.key = key;
     this.attributeDescriptor = attributeDescriptor;
     this.attribute = attribute;
+  }
+
+  public Optional<String> getAttribute() {
+    return Optional.ofNullable(attribute);
   }
 }
