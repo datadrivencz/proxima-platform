@@ -16,6 +16,7 @@
 package cz.o2.proxima.scheme.proto;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Strings;
 import com.google.common.collect.Iterables;
 import com.google.protobuf.AbstractMessage;
 import com.google.protobuf.Message.Builder;
@@ -23,7 +24,7 @@ import com.google.protobuf.Parser;
 import com.google.protobuf.TextFormat;
 import com.google.protobuf.util.JsonFormat;
 import cz.o2.proxima.functional.BiFunction;
-import cz.o2.proxima.repository.AttributeDescriptor;
+import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.repository.Repository;
 import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.scheme.AttributeValueAccessor;
@@ -35,6 +36,7 @@ import cz.o2.proxima.scheme.proto.transactions.Transactions.ProtoRequest;
 import cz.o2.proxima.scheme.proto.transactions.Transactions.ProtoResponse;
 import cz.o2.proxima.scheme.proto.transactions.Transactions.ProtoState;
 import cz.o2.proxima.scheme.proto.utils.ProtoUtils;
+import cz.o2.proxima.transaction.KeyAttribute;
 import cz.o2.proxima.transaction.Request;
 import cz.o2.proxima.transaction.Response;
 import cz.o2.proxima.transaction.State;
@@ -44,6 +46,7 @@ import cz.o2.proxima.util.ExceptionUtils;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.URI;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -226,59 +229,152 @@ public class ProtoSerializerFactory implements ValueSerializerFactory {
                   TransactionProtoSerializer::requestFromProto);
         case "cz.o2.proxima.transaction.Response":
           return (TransactionProtoSerializer)
-              new TransactionProtoSerializer<>(
+              new TransactionProtoSerializer<Response, ProtoResponse>(
                   new ProtoValueSerializer<>(ProtoResponse.class.getName()),
-                  (Repository r, Response resp) -> ProtoResponse.newBuilder().build(),
-                  (r, req) -> Response.empty());
+                  TransactionProtoSerializer::responseToProto,
+                  TransactionProtoSerializer::responseFromProto);
         case "cz.o2.proxima.transaction.State":
           return (TransactionProtoSerializer)
-              new TransactionProtoSerializer<>(
+              new TransactionProtoSerializer<State, ProtoState>(
                   new ProtoValueSerializer<>(ProtoState.class.getName()),
-                  (Repository r, State state) -> ProtoState.newBuilder().build(),
-                  (r, req) -> State.empty());
+                  TransactionProtoSerializer::stateToProto,
+                  TransactionProtoSerializer::stateFromProto);
       }
       throw new UnsupportedOperationException("Unknown className of transactions: " + className);
     }
 
+    private static State stateFromProto(Repository repository, ProtoState state) {
+      switch (state.getFlags()) {
+        case UNKNOWN:
+          return State.empty();
+        case OPEN:
+          return State.open(
+              new HashSet<>(getKeyAttributesFromProto(repository, state.getOpenAttributesList())));
+        default:
+          throw new IllegalStateException("Unknown flags: " + state.getFlags());
+      }
+    }
+
+    private static ProtoState stateToProto(Repository repository, State state) {
+      return ProtoState.newBuilder()
+          .setFlags(asFlags(state.getFlags()))
+          .addAllOpenAttributes(asProtoKeyAttributes(state.getOpenAttributes()))
+          .build();
+    }
+
+    private static Response responseFromProto(Repository repository, ProtoResponse response) {
+      switch (response.getFlags()) {
+        case UNKNOWN:
+          return Response.empty();
+        case OPEN:
+          return Response.open();
+        default:
+          throw new IllegalArgumentException("Unknown flag: " + response.getFlags());
+      }
+    }
+
+    private static ProtoResponse responseToProto(Repository repository, Response response) {
+      return ProtoResponse.newBuilder().setFlags(asFlags(response.getFlags())).build();
+    }
+
     private static ProtoRequest requestToProto(Repository repository, Request request) {
       return ProtoRequest.newBuilder()
-          .addAllInputAttribute(asProtoDesc(request.getInputAttributes()))
-          .addAllOutputAttribute(asProtoDesc(request.getOutputAttributes()))
+          .addAllInputAttribute(asProtoKeyAttributes(request.getInputAttributes()))
+          .addAllOutputAttribute(asProtoKeyAttributes(request.getOutputAttributes()))
+          .setFlags(asFlags(request.getFlags()))
           .build();
     }
 
     private static Request requestFromProto(Repository repository, ProtoRequest protoRequest) {
       return Request.builder()
           .inputAttributes(
-              getAttributeDescriptorsFromProto(repository, protoRequest.getInputAttributeList()))
+              getKeyAttributesFromProto(repository, protoRequest.getInputAttributeList()))
           .outputAttributes(
-              getAttributeDescriptorsFromProto(repository, protoRequest.getOutputAttributeList()))
+              getKeyAttributesFromProto(repository, protoRequest.getOutputAttributeList()))
           .flags(asFlags(protoRequest.getFlags()))
           .build();
     }
 
     private static Request.Flags asFlags(Transactions.Flags flags) {
-      return null;
+      switch (flags) {
+        case UNKNOWN:
+          return Request.Flags.NONE;
+        case OPEN:
+          return Request.Flags.OPEN;
+        default:
+          throw new IllegalArgumentException("Unknown flags: " + flags);
+      }
     }
 
-    private static List<AttributeDescriptor<?>> getAttributeDescriptorsFromProto(
-        Repository repo, List<Transactions.AttributeDescriptor> attrList) {
+    private static Transactions.Flags asFlags(Response.Flags flags) {
+      switch (flags) {
+        case NONE:
+          return Transactions.Flags.UNKNOWN;
+        case OPEN:
+          return Transactions.Flags.OPEN;
+        case COMMITTED:
+          return Transactions.Flags.COMMITTED;
+        default:
+          throw new IllegalArgumentException("Unknown flags: " + flags);
+      }
+    }
+
+    private static Transactions.Flags asFlags(State.Flags flags) {
+      switch (flags) {
+        case UNKNOWN:
+          return Transactions.Flags.UNKNOWN;
+        case OPEN:
+          return Transactions.Flags.OPEN;
+        case COMMITTED:
+          return Transactions.Flags.COMMITTED;
+        default:
+          throw new IllegalArgumentException("Unknown flags: " + flags);
+      }
+    }
+
+    private static Transactions.Flags asFlags(Request.Flags flags) {
+      switch (flags) {
+        case NONE:
+          return Transactions.Flags.UNKNOWN;
+        case OPEN:
+          return Transactions.Flags.OPEN;
+        default:
+          throw new IllegalArgumentException("Unknown flags: " + flags);
+      }
+    }
+
+    private static List<KeyAttribute> getKeyAttributesFromProto(
+        Repository repo, List<Transactions.KeyAttribute> attrList) {
 
       return attrList
           .stream()
-          .map(a -> repo.getEntity(a.getEntity()).getAttribute(a.getAttribute()))
+          .map(
+              a -> {
+                EntityDescriptor entity = repo.getEntity(a.getEntity());
+                if (Strings.isNullOrEmpty(a.getAttribute())) {
+                  return KeyAttribute.ofAttributeDescriptor(
+                      entity, a.getKey(), entity.getAttribute(a.getAttributeDesc()));
+                }
+                return KeyAttribute.ofSingleWildcardAttribute(
+                    entity,
+                    a.getKey(),
+                    entity.getAttribute(a.getAttributeDesc()),
+                    a.getAttribute());
+              })
           .collect(Collectors.toList());
     }
 
-    private static Iterable<Transactions.AttributeDescriptor> asProtoDesc(
-        List<AttributeDescriptor<?>> inputAttributes) {
+    private static Iterable<Transactions.KeyAttribute> asProtoKeyAttributes(
+        Iterable<KeyAttribute> inputAttributes) {
 
       return Iterables.transform(
           inputAttributes,
           a ->
-              Transactions.AttributeDescriptor.newBuilder()
-                  .setEntity(a.getEntity())
-                  .setAttribute(a.getName())
+              Transactions.KeyAttribute.newBuilder()
+                  .setEntity(a.getEntity().getName())
+                  .setAttributeDesc(a.getAttributeDescriptor().getName())
+                  .setKey(a.getKey())
+                  .setAttribute(a.getAttribute().orElse(""))
                   .build());
     }
 

@@ -17,25 +17,30 @@ syntax = "proto3";
 
 package cz.o2.proxima.scheme.proto.transactions;
 
-message AttributeDescriptor {
+message KeyAttribute {
   string entity = 1;
-  string attribute = 2;
+  string key = 2;
+  string attributeDesc = 3;
+  string attribute = 4;
 }
 
 enum Flags {
-  EMPTY = 0;
+  UNKNOWN = 0;
+  OPEN = 1;
+  COMMITTED = 2;
 }
 
 message ProtoRequest {
-  repeated AttributeDescriptor inputAttribute = 1;
-  repeated AttributeDescriptor outputAttribute = 2;
+  repeated KeyAttribute inputAttribute = 1;
+  repeated KeyAttribute outputAttribute = 2;
   Flags flags = 3;
 }
 
 message ProtoResponse {
-
+  Flags flags = 1;
 }
 
 message ProtoState {
-
+  Flags flags = 1;
+  repeated KeyAttribute openAttributes = 2;
 }

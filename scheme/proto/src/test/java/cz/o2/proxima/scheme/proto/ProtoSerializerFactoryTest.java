@@ -17,6 +17,7 @@ package cz.o2.proxima.scheme.proto;
 
 import static org.junit.Assert.*;
 
+import com.google.common.collect.Sets;
 import com.google.protobuf.ByteString;
 import com.typesafe.config.ConfigFactory;
 import cz.o2.proxima.repository.AttributeDescriptor;
@@ -30,6 +31,7 @@ import cz.o2.proxima.scheme.ValueSerializer;
 import cz.o2.proxima.scheme.ValueSerializerFactory;
 import cz.o2.proxima.scheme.proto.ProtoSerializerFactory.TransactionProtoSerializer;
 import cz.o2.proxima.scheme.proto.test.Scheme.Event;
+import cz.o2.proxima.transaction.KeyAttribute;
 import cz.o2.proxima.transaction.Request;
 import cz.o2.proxima.transaction.Response;
 import cz.o2.proxima.transaction.State;
@@ -123,12 +125,15 @@ public class ProtoSerializerFactoryTest {
                 .resolve());
     EntityDescriptor transaction = repo.getEntity("_transaction");
     AttributeDescriptor<Request> request = transaction.getAttribute("request.*");
+    KeyAttribute keyAttribute = KeyAttribute.ofAttributeDescriptor(transaction, "t", request);
+
     assertTrue(request.getValueSerializer() instanceof TransactionProtoSerializer);
     assertTrue(request.getValueSerializer().isUsable());
     Request transactionRequest =
         Request.builder()
-            .inputAttributes(Collections.singletonList(request))
-            .outputAttributes(Collections.singletonList(request))
+            .inputAttributes(Collections.singletonList(keyAttribute))
+            .outputAttributes(Collections.singletonList(keyAttribute))
+            .flags(Request.Flags.OPEN)
             .build();
     byte[] bytes = request.getValueSerializer().serialize(transactionRequest);
     assertNotNull(bytes);
@@ -138,15 +143,22 @@ public class ProtoSerializerFactoryTest {
     AttributeDescriptor<Response> response = transaction.getAttribute("response.*");
     assertTrue(response.getValueSerializer() instanceof TransactionProtoSerializer);
     assertTrue(request.getValueSerializer().isUsable());
-    bytes = response.getValueSerializer().serialize(Response.empty());
+    Response r = Response.open();
+    bytes = response.getValueSerializer().serialize(r);
     assertNotNull(bytes);
     assertTrue(response.getValueSerializer().deserialize(bytes).isPresent());
+    assertEquals(r, response.getValueSerializer().deserialize(bytes).get());
 
     AttributeDescriptor<State> state = transaction.getAttribute("state");
     assertTrue(state.getValueSerializer() instanceof TransactionProtoSerializer);
     assertTrue(state.getValueSerializer().isUsable());
-    bytes = state.getValueSerializer().serialize(State.empty());
+    keyAttribute =
+        KeyAttribute.ofSingleWildcardAttribute(
+            transaction, "t", request, request.toAttributePrefix() + "1");
+    State s = State.open(Sets.newHashSet(keyAttribute));
+    bytes = state.getValueSerializer().serialize(s);
     assertNotNull(bytes);
     assertTrue(state.getValueSerializer().deserialize(bytes).isPresent());
+    assertEquals(s, state.getValueSerializer().deserialize(bytes).get());
   }
 }
