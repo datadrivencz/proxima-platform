@@ -17,6 +17,8 @@ package cz.o2.proxima.transaction;
 
 import cz.o2.proxima.annotations.Internal;
 import java.io.Serializable;
+import java.util.Collections;
+import java.util.Set;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.ToString;
@@ -26,12 +28,12 @@ import lombok.ToString;
 @EqualsAndHashCode
 public class State implements Serializable {
 
-  public static State open() {
-    return new State(Flags.OPEN);
+  public static State open(Set<KeyAttribute> inputAttributes) {
+    return new State(Flags.OPEN, inputAttributes);
   }
 
   public static State empty() {
-    return new State(Flags.UNKNOWN);
+    return new State(Flags.UNKNOWN, Collections.emptySet());
   }
 
   public enum Flags {
@@ -41,12 +43,14 @@ public class State implements Serializable {
   }
 
   @Getter private final Flags flags;
+  @Getter private final Set<KeyAttribute> inputAttributes;
 
   public State() {
-    this(Flags.UNKNOWN);
+    this(Flags.UNKNOWN, Collections.emptySet());
   }
 
-  private State(Flags flags) {
+  private State(Flags flags, Set<KeyAttribute> inputAttributes) {
     this.flags = flags;
+    this.inputAttributes = inputAttributes;
   }
 }

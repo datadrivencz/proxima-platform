@@ -32,7 +32,8 @@ import lombok.ToString;
 public class Request implements Serializable {
 
   public enum Flags {
-    NONE
+    NONE,
+    OPEN
   }
 
   @Getter private final List<KeyAttribute> inputAttributes;

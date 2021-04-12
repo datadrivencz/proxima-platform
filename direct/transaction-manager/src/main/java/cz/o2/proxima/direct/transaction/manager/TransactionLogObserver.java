@@ -16,15 +16,20 @@
 package cz.o2.proxima.direct.transaction.manager;
 
 import cz.o2.proxima.direct.commitlog.LogObserver;
+import cz.o2.proxima.direct.core.CommitCallback;
 import cz.o2.proxima.direct.core.DirectDataOperator;
-import cz.o2.proxima.direct.core.OnlineAttributeWriter;
-import cz.o2.proxima.direct.transaction.TransactionResourceManager;
+import cz.o2.proxima.direct.transaction.ServerTransactionManager;
+import cz.o2.proxima.direct.transaction.TransactionManager;
 import cz.o2.proxima.repository.EntityAwareAttributeDescriptor.Wildcard;
 import cz.o2.proxima.storage.StreamElement;
+import cz.o2.proxima.transaction.KeyAttribute;
 import cz.o2.proxima.transaction.Request;
 import cz.o2.proxima.transaction.Response;
 import cz.o2.proxima.transaction.State;
+import java.util.HashSet;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -35,11 +40,11 @@ import lombok.extern.slf4j.Slf4j;
 class TransactionLogObserver implements LogObserver {
 
   private final DirectDataOperator direct;
-  private final TransactionResourceManager resourceManager;
+  private final ServerTransactionManager manager;
 
   TransactionLogObserver(DirectDataOperator direct) {
     this.direct = direct;
-    this.resourceManager = TransactionResourceManager.of(direct);
+    this.manager = TransactionManager.server(direct);
   }
 
   @Override
@@ -51,7 +56,7 @@ class TransactionLogObserver implements LogObserver {
   @Override
   public boolean onNext(StreamElement ingest, OnNextContext context) {
     log.debug("Received element {} for transaction processing", ingest);
-    Wildcard<Request> requestDesc = resourceManager.getRequestDesc();
+    Wildcard<Request> requestDesc = manager.getRequestDesc();
     if (ingest.getAttributeDescriptor().equals(requestDesc)) {
       handleRequest(
           ingest.getKey(),
@@ -59,8 +64,8 @@ class TransactionLogObserver implements LogObserver {
           ingest.getStamp(),
           requestDesc.valueOf(ingest),
           context);
-    } else if (ingest.getAttributeDescriptor().equals(resourceManager.getStateDesc())) {
-      handleState(resourceManager.getStateDesc().valueOf(ingest), context);
+    } else if (ingest.getAttributeDescriptor().equals(manager.getStateDesc())) {
+      handleState(manager.getStateDesc().valueOf(ingest), context);
     } else {
       // unknown attribute, probably own response, can be safely ignored
       log.debug("Unknown attribute {}. Ignored.", ingest.getAttributeDescriptor());
@@ -92,17 +97,36 @@ class TransactionLogObserver implements LogObserver {
       String transactionId, String requestId, long stamp, Request request, OnNextContext context) {
 
     log.debug("Processing request {} for transaction {}", requestId, transactionId);
-    resourceManager.updateTransaction(transactionId, request.getInputAttributes());
-    getResponseWriterForRequest(transactionId)
-        .write(
-            resourceManager
-                .getResponseDesc()
-                .upsert(transactionId, requestId, stamp, Response.empty()),
-            context::commit);
+    State currentState = manager.getCurrentState(transactionId);
+    if (currentState.getFlags() == State.Flags.UNKNOWN) {
+      State newState = transitionState(currentState, request);
+      CompletableFuture<?> stateFuture = new CompletableFuture<>();
+      CompletableFuture<?> responseFuture = new CompletableFuture<>();
+      CommitCallback commitCallback = Utils.callbackForFutures(stateFuture, responseFuture);
+      manager.setCurrentState(transactionId, newState, commitCallback);
+      manager.writeResponse(transactionId, requestId, Response.open(), commitCallback);
+      CompletableFuture.allOf(stateFuture, responseFuture)
+          .whenComplete(
+              (val, exc) -> {
+                if (exc != null) {
+                  context.confirm();
+                } else {
+                  context.fail(exc);
+                }
+              });
+    } else {
+      // FIXME
+      context.confirm();
+    }
   }
 
-  private OnlineAttributeWriter getResponseWriterForRequest(String transactionId) {
-    return resourceManager.getRequestWriter(transactionId);
+  private State transitionState(State currentState, Request request) {
+    Set<KeyAttribute> attrSet = new HashSet<>(request.getInputAttributes());
+    if (!currentState.getInputAttributes().isEmpty()) {
+      attrSet.addAll(currentState.getInputAttributes());
+    }
+    System.err.println(" *** statetransition: " + attrSet);
+    return State.open(attrSet);
   }
 
   @Override
@@ -110,4 +134,8 @@ class TransactionLogObserver implements LogObserver {
 
   @Override
   public void onIdle(OnIdleContext context) {}
+
+  public void run(String name) {
+    manager.runObservations(name, this);
+  }
 }

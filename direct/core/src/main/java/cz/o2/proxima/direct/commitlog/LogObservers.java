@@ -259,10 +259,10 @@ public class LogObservers {
    * A @{link LogObserver} that delegates calls to underlying delegate. Useful for overriding
    * specific methods before passing to delegate.
    */
-  public static class Delegating implements LogObserver {
+  public static class ForwardingObserver implements LogObserver {
     @Delegate private final LogObserver delegate;
 
-    public Delegating(LogObserver delegate) {
+    protected ForwardingObserver(LogObserver delegate) {
       this.delegate = delegate;
     }
   }

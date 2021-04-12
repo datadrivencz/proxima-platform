@@ -21,7 +21,7 @@ import com.typesafe.config.Config;
 import com.typesafe.config.ConfigFactory;
 import cz.o2.proxima.annotations.Experimental;
 import cz.o2.proxima.direct.commitlog.LogObserver;
-import cz.o2.proxima.direct.commitlog.LogObservers;
+import cz.o2.proxima.direct.commitlog.LogObservers.ForwardingObserver;
 import cz.o2.proxima.direct.commitlog.ObserveHandle;
 import cz.o2.proxima.direct.core.DirectDataOperator;
 import cz.o2.proxima.repository.AttributeFamilyDescriptor;
@@ -127,7 +127,7 @@ public class TransactionManagerServer {
   }
 
   private LogObserver newTransformationLogObserver(CountDownLatch awaitingLatch) {
-    return new LogObservers.Delegating(observerFactory.create(direct)) {
+    return new ForwardingObserver(observerFactory.create(direct)) {
       boolean repartitioned = false;
 
       @Override

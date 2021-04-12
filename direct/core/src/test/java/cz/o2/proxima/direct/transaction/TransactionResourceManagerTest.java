@@ -16,10 +16,10 @@
 package cz.o2.proxima.direct.transaction;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 
 import com.typesafe.config.ConfigFactory;
 import cz.o2.proxima.direct.core.DirectDataOperator;
-import cz.o2.proxima.direct.core.OnlineAttributeWriter;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityAwareAttributeDescriptor.Wildcard;
 import cz.o2.proxima.repository.EntityDescriptor;
@@ -27,11 +27,16 @@ import cz.o2.proxima.repository.Repository;
 import cz.o2.proxima.transaction.KeyAttribute;
 import cz.o2.proxima.transaction.Request;
 import cz.o2.proxima.transaction.Response;
+import cz.o2.proxima.transaction.State;
+import cz.o2.proxima.util.ExceptionUtils;
+import cz.o2.proxima.util.Optionals;
 import cz.o2.proxima.util.Pair;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import org.junit.Test;
 
 /** Test transactions are working according to the specification. */
@@ -43,14 +48,14 @@ public class TransactionResourceManagerTest {
   private final EntityDescriptor gateway = repo.getEntity("gateway");
   private final AttributeDescriptor<?> status = gateway.getAttribute("status");
   private final EntityDescriptor transaction = repo.getEntity("_transaction");
-  private final Wildcard<Request> request =
+  private final Wildcard<Request> requestDesc =
       Wildcard.wildcard(transaction, transaction.getAttribute("request.*"));
   private final Wildcard<Response> response =
       Wildcard.wildcard(transaction, transaction.getAttribute("response.*"));
 
   @Test(expected = IllegalArgumentException.class)
   public void testDirectWriterFetchFails() {
-    direct.getWriter(request);
+    direct.getWriter(requestDesc);
   }
 
   @Test
@@ -58,35 +63,41 @@ public class TransactionResourceManagerTest {
     TransactionResourceManager manager = TransactionResourceManager.of(direct);
     String transactionId = UUID.randomUUID().toString();
     List<Pair<String, Response>> receivedResponses = new ArrayList<>();
-    manager.begin(
-        transactionId,
-        (k, v) -> receivedResponses.add(Pair.of(k, v)),
-        Collections.singletonList(KeyAttribute.ofAttributeDescriptor(gateway, "gw1", status)));
-    OnlineAttributeWriter writer = manager.getRequestWriter(transactionId);
 
     // create a simple ping-pong communication
     manager.runObservations(
         "requests",
         (ingest, context) -> {
-          if (ingest.getAttributeDescriptor().equals(request)) {
-            String requestId = request.extractSuffix(ingest.getAttribute());
-            writer.write(
-                response.upsert(
-                    ingest.getKey(), requestId, System.currentTimeMillis(), Response.open()),
+          if (ingest.getAttributeDescriptor().equals(requestDesc)) {
+            String key = ingest.getKey();
+            String requestId = requestDesc.extractSuffix(ingest.getAttribute());
+            Request request = Optionals.get(requestDesc.valueOf(ingest));
+            assertEquals(1, request.getInputAttributes().size());
+            CountDownLatch latch = new CountDownLatch(1);
+            manager.setCurrentState(
+                key,
+                State.open(new HashSet<>(request.getInputAttributes())),
                 (succ, exc) -> {
-                  context.confirm();
+                  latch.countDown();
                 });
+            ExceptionUtils.ignoringInterrupted(latch::await);
+            manager.writeResponse(key, requestId, Response.open(), context::commit);
           } else {
             context.confirm();
           }
           return true;
         });
 
-    writer.write(
-        request.upsert(transactionId, "abc", System.currentTimeMillis(), Request.builder().build()),
-        (succ, exc) -> {});
+    manager.begin(
+        transactionId,
+        (k, v) -> receivedResponses.add(Pair.of(k, v)),
+        Collections.singletonList(KeyAttribute.ofAttributeDescriptor(gateway, "gw1", status)));
 
     assertEquals(1, receivedResponses.size());
     assertEquals(Response.Flags.OPEN, receivedResponses.get(0).getSecond().getFlags());
+
+    State state = manager.getCurrentState(transactionId);
+    assertNotNull(state);
+    assertEquals(State.Flags.OPEN, state.getFlags());
   }
 }

@@ -19,16 +19,14 @@ import static org.junit.Assert.*;
 
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigFactory;
-import cz.o2.proxima.direct.commitlog.LogObserver;
 import cz.o2.proxima.direct.core.DirectDataOperator;
-import cz.o2.proxima.direct.core.OnlineAttributeWriter;
-import cz.o2.proxima.direct.transaction.TransactionResourceManager;
+import cz.o2.proxima.direct.transaction.ClientTransactionManager;
+import cz.o2.proxima.direct.transaction.TransactionManager;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityAwareAttributeDescriptor.Regular;
 import cz.o2.proxima.repository.EntityAwareAttributeDescriptor.Wildcard;
 import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.repository.Repository;
-import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.transaction.KeyAttribute;
 import cz.o2.proxima.transaction.Request;
 import cz.o2.proxima.transaction.Response;
@@ -39,7 +37,6 @@ import java.util.Collections;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.CountDownLatch;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -62,59 +59,33 @@ public class TransactionLogObserverTest {
   private final Regular<State> state =
       Regular.regular(transaction, transaction.getAttribute("state"));
   private long now;
-  private TransactionResourceManager manager;
-  private LogObserver observer;
+  private ClientTransactionManager clientManager;
+  private TransactionLogObserver observer;
 
   @Before
   public void setUp() {
     now = System.currentTimeMillis();
-    manager = TransactionResourceManager.of(direct);
+    clientManager = TransactionManager.client(direct);
     observer = new TransactionLogObserverFactory.Default().create(direct);
+    observer.run(getClass().getSimpleName());
   }
 
   @After
   public void tearDown() {
     direct.close();
-    manager.close();
+    clientManager.close();
   }
 
   @Test(timeout = 10000)
   public void testCreateTransaction() throws InterruptedException {
     String transactionId = UUID.randomUUID().toString();
     BlockingQueue<Pair<String, Response>> responseQueue = new ArrayBlockingQueue<>(1);
-    manager.runObservations("test", observer);
-    manager.begin(
+    clientManager.begin(
         transactionId,
         ExceptionUtils.uncheckedBiConsumer((k, v) -> responseQueue.put(Pair.of(k, v))),
-        Collections.singletonList(KeyAttribute.ofAttributeDescriptor(user, "user", userGateways));
-    OnlineAttributeWriter requestWriter = manager.getRequestWriter(transactionId);
-    write(
-        requestWriter,
-        request.upsert(
-            transactionId,
-            "1",
-            now,
-            Request.builder().inputAttributes(Collections.singletonList(userGateways)).build()));
+        Collections.singletonList(KeyAttribute.ofAttributeDescriptor(user, "user", userGateways)));
     Pair<String, Response> response = responseQueue.take();
-    assertEquals("1", response.getFirst());
+    assertEquals("open", response.getFirst());
     assertEquals(Response.Flags.OPEN, response.getSecond().getFlags());
-  }
-
-  private void write(OnlineAttributeWriter writer, StreamElement element) {
-    writer.write(
-        element,
-        (succ, exc) -> {
-          assertTrue(succ);
-        });
-  }
-
-  private void writeSync(OnlineAttributeWriter writer, StreamElement element) {
-    CountDownLatch latch = new CountDownLatch(1);
-    writer.write(
-        element,
-        (succ, exc) -> {
-          latch.countDown();
-        });
-    ExceptionUtils.ignoringInterrupted(latch::await);
   }
 }

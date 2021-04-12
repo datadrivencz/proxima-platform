@@ -16,25 +16,23 @@
 package cz.o2.proxima.direct.transaction.manager;
 
 import cz.o2.proxima.annotations.Internal;
-import cz.o2.proxima.direct.commitlog.LogObserver;
-import cz.o2.proxima.direct.core.DirectDataOperator;
+import cz.o2.proxima.direct.core.CommitCallback;
+import java.util.Arrays;
+import java.util.concurrent.CompletableFuture;
 
-@FunctionalInterface
 @Internal
-public interface TransactionLogObserverFactory {
+public class Utils {
 
-  class Default implements TransactionLogObserverFactory {
-    @Override
-    public TransactionLogObserver create(DirectDataOperator direct) {
-      return new TransactionLogObserver(direct);
-    }
+  @SafeVarargs
+  public static CommitCallback callbackForFutures(CompletableFuture<?>... futures) {
+    return (succ, exc) -> {
+      if (succ) {
+        Arrays.stream(futures).forEach(f -> f.complete(null));
+      } else {
+        Arrays.stream(futures).forEach(f -> f.completeExceptionally(exc));
+      }
+    };
   }
 
-  /**
-   * A factory for {@link LogObserver} responsible for transaction management.
-   *
-   * @param direct the direct operator for the observer
-   * @return the {@link LogObserver}
-   */
-  TransactionLogObserver create(DirectDataOperator direct);
+  private Utils() {}
 }
