@@ -29,7 +29,6 @@ import cz.o2.proxima.transaction.State;
 import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -98,25 +97,47 @@ class TransactionLogObserver implements LogObserver {
 
     log.debug("Processing request {} for transaction {}", requestId, transactionId);
     State currentState = manager.getCurrentState(transactionId);
-    if (currentState.getFlags() == State.Flags.UNKNOWN) {
-      State newState = transitionState(currentState, request);
-      CompletableFuture<?> stateFuture = new CompletableFuture<>();
-      CompletableFuture<?> responseFuture = new CompletableFuture<>();
-      CommitCallback commitCallback = CommitCallback.afterNumCommits(2, context::commit);
-      manager.setCurrentState(transactionId, newState, commitCallback);
-      manager.writeResponse(transactionId, requestId, Response.open(), commitCallback);
-    } else {
-      // FIXME
-      context.confirm();
+
+    switch (request.getFlags()) {
+      case OPEN:
+        if (currentState.getFlags() == State.Flags.UNKNOWN) {
+          State newState = transitionState(currentState, request);
+          CommitCallback commitCallback = CommitCallback.afterNumCommits(2, context::commit);
+          manager.setCurrentState(transactionId, newState, commitCallback);
+          manager.writeResponse(transactionId, requestId, Response.open(), commitCallback);
+        } else if (currentState.getFlags() == State.Flags.OPEN
+            || currentState.getFlags() == State.Flags.COMMITTED) {
+          manager.writeResponse(transactionId, requestId, Response.duplicate(), context::commit);
+        } else {
+          log.warn(
+              "Unexpected OPEN request for transaction {} when transaction in state {}",
+              transactionId,
+              currentState.getFlags());
+          manager.writeResponse(transactionId, requestId, Response.aborted(), context::commit);
+        }
+        break;
+
+      case COMMIT:
+        if (currentState.getFlags() == State.Flags.OPEN) {
+          State newState = transitionState(currentState, request);
+          CommitCallback commitCallback = CommitCallback.afterNumCommits(2, context::commit);
+          manager.setCurrentState(transactionId, newState, commitCallback);
+          manager.writeResponse(transactionId, requestId, Response.committed(), commitCallback);
+        } else {
+          manager.writeResponse(transactionId, requestId, Response.aborted(), context::commit);
+        }
+        break;
+
+      default:
+        manager.writeResponse(transactionId, requestId, Response.aborted(), context::commit);
     }
   }
 
   private State transitionState(State currentState, Request request) {
     Set<KeyAttribute> attrSet = new HashSet<>(request.getInputAttributes());
-    if (!currentState.getOpenAttributes().isEmpty()) {
-      attrSet.addAll(currentState.getOpenAttributes());
+    if (!currentState.getAttributes().isEmpty()) {
+      attrSet.addAll(currentState.getAttributes());
     }
-    System.err.println(" *** statetransition: " + attrSet);
     return State.open(attrSet);
   }
 

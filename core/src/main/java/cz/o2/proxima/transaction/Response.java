@@ -46,10 +46,39 @@ public class Response implements Serializable {
     return new Response(Flags.OPEN);
   }
 
+  /**
+   * Create response for committed transaction.
+   *
+   * @return response for committed transaction.
+   */
+  public static Response committed() {
+    return new Response(Flags.COMMITTED);
+  }
+
+  /**
+   * Create response for aborted transaction.
+   *
+   * @return response for aborted transaction.
+   */
+  public static Response aborted() {
+    return new Response(Flags.ABORTED);
+  }
+
+  /**
+   * Create response for duplicate transaction open requests.
+   *
+   * @return response for duplicate transaction open requests.
+   */
+  public static Response duplicate() {
+    return new Response(Flags.DUPLICATE);
+  }
+
   public enum Flags {
     NONE,
     OPEN,
-    COMMITTED
+    COMMITTED,
+    ABORTED,
+    DUPLICATE
   }
 
   @Getter private final Flags flags;

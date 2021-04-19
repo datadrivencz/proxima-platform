@@ -26,7 +26,7 @@ public interface ClientTransactionManager extends AutoCloseable, TransactionMana
    * Initialize (possibly) new transaction. If the transaction already existed prior to this call,
    * its current state is returned, otherwise the transaction is opened.
    *
-   * @param transactionId ID of transaction
+   * @param transactionId ID of the transaction
    * @param responseConsumer consumer of responses related to the transaction
    * @param attributes attributes affected by this transaction (both input and output)
    * @return current state of the transaction
@@ -39,11 +39,19 @@ public interface ClientTransactionManager extends AutoCloseable, TransactionMana
   /**
    * Update the transaction with additional attributes related to the transaction.
    *
-   * @param transactionId ID of transaction
+   * @param transactionId ID of the transaction
    * @param newAttributes attributes to be added to the transaction
    * @return
    */
   void updateTransaction(String transactionId, List<KeyAttribute> newAttributes);
+
+  /**
+   * Commit the transaction with given output KeyAttributes being written.
+   *
+   * @param transactionId ID of the transaction
+   * @param outputAttributes attributes to be written to the output
+   */
+  void commit(String transactionId, List<KeyAttribute> outputAttributes);
 
   @Override
   void close();

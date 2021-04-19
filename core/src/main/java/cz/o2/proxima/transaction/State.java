@@ -18,6 +18,7 @@ package cz.o2.proxima.transaction;
 import cz.o2.proxima.annotations.Internal;
 import java.io.Serializable;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Set;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -32,6 +33,10 @@ public class State implements Serializable {
     return new State(Flags.OPEN, openAttributes);
   }
 
+  public static State committed(HashSet<KeyAttribute> outputAttributes) {
+    return new State(Flags.COMMITTED, outputAttributes);
+  }
+
   public static State empty() {
     return new State(Flags.UNKNOWN, Collections.emptySet());
   }
@@ -43,7 +48,7 @@ public class State implements Serializable {
   }
 
   @Getter private final Flags flags;
-  @Getter private final Set<KeyAttribute> openAttributes;
+  @Getter private final Set<KeyAttribute> attributes;
 
   public State() {
     this(Flags.UNKNOWN, Collections.emptySet());
@@ -51,6 +56,6 @@ public class State implements Serializable {
 
   private State(Flags flags, Set<KeyAttribute> openAttributes) {
     this.flags = flags;
-    this.openAttributes = openAttributes;
+    this.attributes = openAttributes;
   }
 }

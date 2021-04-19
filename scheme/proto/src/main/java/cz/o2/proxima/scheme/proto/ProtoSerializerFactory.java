@@ -258,7 +258,7 @@ public class ProtoSerializerFactory implements ValueSerializerFactory {
     private static ProtoState stateToProto(Repository repository, State state) {
       return ProtoState.newBuilder()
           .setFlags(asFlags(state.getFlags()))
-          .addAllOpenAttributes(asProtoKeyAttributes(state.getOpenAttributes()))
+          .addAllOpenAttributes(asProtoKeyAttributes(state.getAttributes()))
           .build();
     }
 

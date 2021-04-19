@@ -166,11 +166,39 @@ class TransactionResourceManager implements ClientTransactionManager, ServerTran
       }
     }
 
+    public void commit(List<KeyAttribute> outputAttributes) {
+      checkThread();
+      CountDownLatch latch = new CountDownLatch(1);
+      AtomicReference<Throwable> error = new AtomicReference<>();
+      getRequestWriter()
+          .write(
+              requestDesc.upsert(
+                  transactionId,
+                  "commit",
+                  System.currentTimeMillis(),
+                  Request.builder()
+                      .flags(Request.Flags.COMMIT)
+                      .outputAttributes(outputAttributes)
+                      .build()),
+              (succ, exc) -> {
+                CachedTransaction removed = openTransactionMap.remove(transactionId);
+                Preconditions.checkState(removed == this);
+                error.set(exc);
+                latch.countDown();
+              });
+      ExceptionUtils.ignoringInterrupted(latch::await);
+      if (error.get() != null) {
+        throw new IllegalStateException(error.get());
+      }
+    }
+
     @Override
     public void close() {
       requestWriter = responseWriter = null;
       stateView = null;
     }
+
+    private void rollback() {}
 
     OnlineAttributeWriter getRequestWriter() {
       checkThread();
@@ -200,7 +228,12 @@ class TransactionResourceManager implements ClientTransactionManager, ServerTran
     }
 
     private void checkThread() {
-      Preconditions.checkState(owningThread == Thread.currentThread());
+      Preconditions.checkState(
+          owningThread == Thread.currentThread(),
+          "Conflict in owning threads of transaction %s: %s and %s",
+          transactionId,
+          owningThread,
+          Thread.currentThread());
     }
 
     public State getState() {
@@ -371,11 +404,18 @@ class TransactionResourceManager implements ClientTransactionManager, ServerTran
    * @return
    */
   @Override
-  public synchronized void updateTransaction(
-      String transactionId, List<KeyAttribute> newAttributes) {
+  public void updateTransaction(String transactionId, List<KeyAttribute> newAttributes) {
 
     openTransactionMap.computeIfAbsent(
         transactionId, k -> new CachedTransaction(transactionId, newAttributes, null));
+  }
+
+  @Override
+  public void commit(String transactionId, List<KeyAttribute> outputAttributes) {
+    @Nullable CachedTransaction cachedTransaction = openTransactionMap.get(transactionId);
+    Preconditions.checkArgument(
+        cachedTransaction != null, "Transaction %s is not open", transactionId);
+    cachedTransaction.commit(outputAttributes);
   }
 
   /**
@@ -398,7 +438,7 @@ class TransactionResourceManager implements ClientTransactionManager, ServerTran
     CachedTransaction cachedTransaction =
         openTransactionMap.computeIfAbsent(
             transactionId,
-            tmp -> new CachedTransaction(transactionId, state.getOpenAttributes(), null));
+            tmp -> new CachedTransaction(transactionId, state.getAttributes(), null));
     cachedTransaction
         .getStateView()
         .write(stateDesc.upsert(transactionId, System.currentTimeMillis(), state), callback);

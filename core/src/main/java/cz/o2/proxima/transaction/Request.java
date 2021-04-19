@@ -33,7 +33,8 @@ public class Request implements Serializable {
 
   public enum Flags {
     NONE,
-    OPEN
+    OPEN,
+    COMMIT;
   }
 
   @Getter private final List<KeyAttribute> inputAttributes;

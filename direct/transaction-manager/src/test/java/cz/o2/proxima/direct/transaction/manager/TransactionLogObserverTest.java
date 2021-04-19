@@ -59,13 +59,11 @@ public class TransactionLogObserverTest {
   private final Regular<State> state =
       Regular.regular(transaction, transaction.getAttribute("state"));
   private long now;
-  private ClientTransactionManager clientManager;
   private TransactionLogObserver observer;
 
   @Before
   public void setUp() {
     now = System.currentTimeMillis();
-    clientManager = TransactionManager.client(direct);
     observer = new TransactionLogObserverFactory.Default().create(direct);
     observer.run(getClass().getSimpleName());
   }
@@ -73,19 +71,68 @@ public class TransactionLogObserverTest {
   @After
   public void tearDown() {
     direct.close();
-    clientManager.close();
   }
 
   @Test(timeout = 10000)
   public void testCreateTransaction() throws InterruptedException {
-    String transactionId = UUID.randomUUID().toString();
-    BlockingQueue<Pair<String, Response>> responseQueue = new ArrayBlockingQueue<>(1);
-    clientManager.begin(
-        transactionId,
-        ExceptionUtils.uncheckedBiConsumer((k, v) -> responseQueue.put(Pair.of(k, v))),
-        Collections.singletonList(KeyAttribute.ofAttributeDescriptor(user, "user", userGateways)));
-    Pair<String, Response> response = responseQueue.take();
-    assertEquals("open", response.getFirst());
-    assertEquals(Response.Flags.OPEN, response.getSecond().getFlags());
+    try (ClientTransactionManager clientManager = TransactionManager.client(direct)) {
+      String transactionId = UUID.randomUUID().toString();
+      BlockingQueue<Pair<String, Response>> responseQueue = new ArrayBlockingQueue<>(1);
+      clientManager.begin(
+          transactionId,
+          ExceptionUtils.uncheckedBiConsumer((k, v) -> responseQueue.put(Pair.of(k, v))),
+          Collections.singletonList(
+              KeyAttribute.ofAttributeDescriptor(user, "user", userGateways)));
+      Pair<String, Response> response = responseQueue.take();
+      assertEquals("open", response.getFirst());
+      assertEquals(Response.Flags.OPEN, response.getSecond().getFlags());
+    }
+  }
+
+  @Test(timeout = 10000)
+  public void testCreateTransactionCommit() throws InterruptedException {
+    try (ClientTransactionManager clientManager = TransactionManager.client(direct)) {
+      String transactionId = UUID.randomUUID().toString();
+      BlockingQueue<Pair<String, Response>> responseQueue = new ArrayBlockingQueue<>(1);
+      clientManager.begin(
+          transactionId,
+          ExceptionUtils.uncheckedBiConsumer((k, v) -> responseQueue.put(Pair.of(k, v))),
+          Collections.singletonList(
+              KeyAttribute.ofAttributeDescriptor(user, "user", userGateways)));
+      responseQueue.take();
+      clientManager.commit(
+          transactionId,
+          Collections.singletonList(
+              KeyAttribute.ofAttributeDescriptor(user, "user", userGateways)));
+      Pair<String, Response> response = responseQueue.take();
+      assertEquals("commit", response.getFirst());
+      assertEquals(Response.Flags.COMMITTED, response.getSecond().getFlags());
+    }
+  }
+
+  @Test(timeout = 10000)
+  public void testCreateTransactionDuplicate() throws InterruptedException {
+    try (ClientTransactionManager clientManager = TransactionManager.client(direct)) {
+      String transactionId = UUID.randomUUID().toString();
+      BlockingQueue<Pair<String, Response>> responseQueue = new ArrayBlockingQueue<>(1);
+      clientManager.begin(
+          transactionId,
+          ExceptionUtils.uncheckedBiConsumer((k, v) -> responseQueue.put(Pair.of(k, v))),
+          Collections.singletonList(
+              KeyAttribute.ofAttributeDescriptor(user, "user", userGateways)));
+      // discard this
+      responseQueue.take();
+      clientManager.begin(
+          transactionId,
+          ExceptionUtils.uncheckedBiConsumer((k, v) -> responseQueue.put(Pair.of(k, v))),
+          Collections.singletonList(
+              KeyAttribute.ofAttributeDescriptor(user, "user", userGateways)));
+      Pair<String, Response> response = responseQueue.take();
+      assertEquals("open", response.getFirst());
+      assertEquals(Response.Flags.DUPLICATE, response.getSecond().getFlags());
+    } catch (Exception ex) {
+      ex.printStackTrace(System.err);
+      throw ex;
+    }
   }
 }

@@ -19,6 +19,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 
 import com.typesafe.config.ConfigFactory;
+import cz.o2.proxima.direct.core.CommitCallback;
 import cz.o2.proxima.direct.core.DirectDataOperator;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityAwareAttributeDescriptor.Wildcard;
@@ -36,6 +37,8 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import org.junit.Test;
 
@@ -99,6 +102,60 @@ public class TransactionResourceManagerTest {
       State state = manager.getCurrentState(transactionId);
       assertNotNull(state);
       assertEquals(State.Flags.OPEN, state.getFlags());
+    }
+  }
+
+  @Test
+  public void testTransactionRequestCommit() throws InterruptedException {
+    try (TransactionResourceManager manager = TransactionResourceManager.of(direct)) {
+      String transactionId = UUID.randomUUID().toString();
+      BlockingQueue<Pair<String, Response>> receivedResponses = new ArrayBlockingQueue<>(1);
+
+      // create a simple ping-pong communication
+      manager.runObservations(
+          "requests",
+          (ingest, context) -> {
+            if (ingest.getAttributeDescriptor().equals(requestDesc)) {
+              String key = ingest.getKey();
+              String requestId = requestDesc.extractSuffix(ingest.getAttribute());
+              Request request = Optionals.get(requestDesc.valueOf(ingest));
+              CountDownLatch latch = new CountDownLatch(1);
+              CommitCallback commit =
+                  CommitCallback.afterNumCommits(
+                      2,
+                      (succ, exc) -> {
+                        latch.countDown();
+                        context.commit(succ, exc);
+                      });
+              if (request.getFlags() == Request.Flags.COMMIT) {
+                manager.setCurrentState(
+                    key, State.committed(new HashSet<>(request.getOutputAttributes())), commit);
+                manager.writeResponse(key, requestId, Response.committed(), commit);
+              } else {
+                manager.setCurrentState(
+                    key, State.open(new HashSet<>(request.getInputAttributes())), commit);
+                manager.writeResponse(key, requestId, Response.open(), commit);
+              }
+              ExceptionUtils.ignoringInterrupted(latch::await);
+            } else {
+              context.confirm();
+            }
+            return true;
+          });
+
+      manager.begin(
+          transactionId,
+          (k, v) -> receivedResponses.add(Pair.of(k, v)),
+          Collections.singletonList(KeyAttribute.ofAttributeDescriptor(gateway, "gw1", status)));
+
+      receivedResponses.take();
+      manager.commit(
+          transactionId,
+          Collections.singletonList(KeyAttribute.ofAttributeDescriptor(gateway, "gw1", status)));
+
+      Pair<String, Response> response = receivedResponses.take();
+      assertEquals("commit", response.getFirst());
+      assertEquals(Response.Flags.COMMITTED, response.getSecond().getFlags());
     }
   }
 }
