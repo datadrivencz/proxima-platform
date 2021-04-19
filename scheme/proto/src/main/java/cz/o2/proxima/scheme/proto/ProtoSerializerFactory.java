@@ -249,7 +249,10 @@ public class ProtoSerializerFactory implements ValueSerializerFactory {
           return State.empty();
         case OPEN:
           return State.open(
-              new HashSet<>(getKeyAttributesFromProto(repository, state.getOpenAttributesList())));
+              new HashSet<>(getKeyAttributesFromProto(repository, state.getAttributesList())));
+        case COMMITTED:
+          return State.committed(
+              new HashSet<>(getKeyAttributesFromProto(repository, state.getAttributesList())));
         default:
           throw new IllegalStateException("Unknown flags: " + state.getFlags());
       }
@@ -258,7 +261,7 @@ public class ProtoSerializerFactory implements ValueSerializerFactory {
     private static ProtoState stateToProto(Repository repository, State state) {
       return ProtoState.newBuilder()
           .setFlags(asFlags(state.getFlags()))
-          .addAllOpenAttributes(asProtoKeyAttributes(state.getAttributes()))
+          .addAllAttributes(asProtoKeyAttributes(state.getAttributes()))
           .build();
     }
 
@@ -268,6 +271,10 @@ public class ProtoSerializerFactory implements ValueSerializerFactory {
           return Response.empty();
         case OPEN:
           return Response.open();
+        case COMMITTED:
+          return Response.committed();
+        case ABORTED:
+          return Response.aborted();
         default:
           throw new IllegalArgumentException("Unknown flag: " + response.getFlags());
       }
@@ -301,6 +308,8 @@ public class ProtoSerializerFactory implements ValueSerializerFactory {
           return Request.Flags.NONE;
         case OPEN:
           return Request.Flags.OPEN;
+        case COMMITTED:
+          return Request.Flags.COMMIT;
         default:
           throw new IllegalArgumentException("Unknown flags: " + flags);
       }
@@ -314,6 +323,10 @@ public class ProtoSerializerFactory implements ValueSerializerFactory {
           return Transactions.Flags.OPEN;
         case COMMITTED:
           return Transactions.Flags.COMMITTED;
+        case ABORTED:
+          return Transactions.Flags.ABORTED;
+        case DUPLICATE:
+          return Transactions.Flags.DUPLICATE;
         default:
           throw new IllegalArgumentException("Unknown flags: " + flags);
       }
@@ -338,6 +351,8 @@ public class ProtoSerializerFactory implements ValueSerializerFactory {
           return Transactions.Flags.UNKNOWN;
         case OPEN:
           return Transactions.Flags.OPEN;
+        case COMMIT:
+          return Transactions.Flags.COMMITTED;
         default:
           throw new IllegalArgumentException("Unknown flags: " + flags);
       }

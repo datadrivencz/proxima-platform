@@ -36,11 +36,14 @@ import cz.o2.proxima.transaction.Request;
 import cz.o2.proxima.transaction.Response;
 import cz.o2.proxima.transaction.State;
 import cz.o2.proxima.util.Optionals;
+import cz.o2.proxima.util.Pair;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Optional;
 import org.junit.Before;
 import org.junit.Test;
@@ -116,6 +119,7 @@ public class ProtoSerializerFactoryTest {
     assertEquals("payload value", created.getPayload().toStringUtf8());
   }
 
+  @SuppressWarnings("unchecked")
   @Test
   public void testTransactionSchemeProvider() {
     Repository repo =
@@ -129,36 +133,48 @@ public class ProtoSerializerFactoryTest {
 
     assertTrue(request.getValueSerializer() instanceof TransactionProtoSerializer);
     assertTrue(request.getValueSerializer().isUsable());
-    Request transactionRequest =
-        Request.builder()
-            .inputAttributes(Collections.singletonList(keyAttribute))
-            .outputAttributes(Collections.singletonList(keyAttribute))
-            .flags(Request.Flags.OPEN)
-            .build();
-    byte[] bytes = request.getValueSerializer().serialize(transactionRequest);
-    assertNotNull(bytes);
-    assertEquals(
-        transactionRequest, Optionals.get(request.getValueSerializer().deserialize(bytes)));
 
     AttributeDescriptor<Response> response = transaction.getAttribute("response.*");
     assertTrue(response.getValueSerializer() instanceof TransactionProtoSerializer);
     assertTrue(request.getValueSerializer().isUsable());
-    Response r = Response.open();
-    bytes = response.getValueSerializer().serialize(r);
-    assertNotNull(bytes);
-    assertTrue(response.getValueSerializer().deserialize(bytes).isPresent());
-    assertEquals(r, response.getValueSerializer().deserialize(bytes).get());
 
     AttributeDescriptor<State> state = transaction.getAttribute("state");
     assertTrue(state.getValueSerializer() instanceof TransactionProtoSerializer);
     assertTrue(state.getValueSerializer().isUsable());
-    keyAttribute =
+
+    KeyAttribute keyAttributeSingleWildcard =
         KeyAttribute.ofSingleWildcardAttribute(
             transaction, "t", request, request.toAttributePrefix() + "1");
-    State s = State.open(Sets.newHashSet(keyAttribute));
-    bytes = state.getValueSerializer().serialize(s);
-    assertNotNull(bytes);
-    assertTrue(state.getValueSerializer().deserialize(bytes).isPresent());
-    assertEquals(s, state.getValueSerializer().deserialize(bytes).get());
+
+    List<Pair<Object, AttributeDescriptor<?>>> toVerify =
+        Arrays.asList(
+            Pair.of(newRequest(keyAttribute, Request.Flags.OPEN), request),
+            Pair.of(newRequest(keyAttributeSingleWildcard, Request.Flags.OPEN), request),
+            Pair.of(newRequest(keyAttribute, Request.Flags.COMMIT), request),
+            Pair.of(newRequest(keyAttributeSingleWildcard, Request.Flags.COMMIT), request),
+            Pair.of(Response.open(), response),
+            Pair.of(Response.committed(), response),
+            Pair.of(Response.aborted(), response),
+            Pair.of(Response.empty(), response),
+            Pair.of(State.committed(Sets.newHashSet(keyAttribute)), state),
+            Pair.of(State.empty(), state),
+            Pair.of(State.committed(Sets.newHashSet(keyAttributeSingleWildcard)), state));
+
+    toVerify.forEach(
+        p -> {
+          ValueSerializer<Object> serializer =
+              (ValueSerializer<Object>) p.getSecond().getValueSerializer();
+          byte[] bytes = serializer.serialize(p.getFirst());
+          assertNotNull(bytes);
+          assertEquals(p.getFirst(), Optionals.get(serializer.deserialize(bytes)));
+        });
+  }
+
+  private Request newRequest(KeyAttribute keyAttribute, Request.Flags flags) {
+    return Request.builder()
+        .inputAttributes(Collections.singletonList(keyAttribute))
+        .outputAttributes(Collections.singletonList(keyAttribute))
+        .flags(flags)
+        .build();
   }
 }

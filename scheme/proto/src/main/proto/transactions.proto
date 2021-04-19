@@ -28,6 +28,8 @@ enum Flags {
   UNKNOWN = 0;
   OPEN = 1;
   COMMITTED = 2;
+  ABORTED = 3;
+  DUPLICATE = 4;
 }
 
 message ProtoRequest {
@@ -42,5 +44,5 @@ message ProtoResponse {
 
 message ProtoState {
   Flags flags = 1;
-  repeated KeyAttribute openAttributes = 2;
+  repeated KeyAttribute attributes = 2;
 }
