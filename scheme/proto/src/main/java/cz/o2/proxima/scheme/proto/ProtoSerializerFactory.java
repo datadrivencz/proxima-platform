@@ -277,6 +277,8 @@ public class ProtoSerializerFactory implements ValueSerializerFactory {
           return Response.committed();
         case ABORTED:
           return Response.aborted();
+        case DUPLICATE:
+          return Response.duplicate();
         default:
           throw new IllegalArgumentException("Unknown flag: " + response.getFlags());
       }

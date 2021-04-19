@@ -26,7 +26,10 @@ import org.junit.Test;
 /** Test suite for {@link TransactionManagerServer}. */
 public class TransactionManagerServerTest {
 
-  private final Config conf = ConfigFactory.load("test-transactions.conf");
+  private final Config conf =
+      ConfigFactory.defaultApplication()
+          .withFallback(ConfigFactory.load("test-transactions.conf"))
+          .resolve();
   private final ConfigRepository repo = ConfigRepository.Builder.of(conf).build();
   private final TransactionManagerServer server = TransactionManagerServer.of(repo);
 

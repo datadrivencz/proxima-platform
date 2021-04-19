@@ -158,6 +158,7 @@ public class ProtoSerializerFactoryTest {
             Pair.of(Response.open(), response),
             Pair.of(Response.committed(), response),
             Pair.of(Response.aborted(), response),
+            Pair.of(Response.duplicate(), response),
             Pair.of(Response.empty(), response),
             Pair.of(State.committed(Sets.newHashSet(keyAttribute)), state),
             Pair.of(State.empty(), state),

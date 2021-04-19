@@ -44,7 +44,10 @@ import org.junit.Test;
 /** Test suite for {@link TransactionLogObserver}. */
 public class TransactionLogObserverTest {
 
-  private final Config conf = ConfigFactory.load("test-transactions.conf").resolve();
+  private final Config conf =
+      ConfigFactory.defaultApplication()
+          .withFallback(ConfigFactory.load("test-transactions.conf"))
+          .resolve();
   private final Repository repo = Repository.ofTest(conf);
   private final DirectDataOperator direct = repo.getOrCreateOperator(DirectDataOperator.class);
   private final EntityDescriptor gateway = repo.getEntity("gateway");
