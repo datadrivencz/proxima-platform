@@ -158,4 +158,58 @@ public class TransactionResourceManagerTest {
       assertEquals(Response.Flags.COMMITTED, response.getSecond().getFlags());
     }
   }
+
+  @Test
+  public void testTransactionRequestRollback() throws InterruptedException {
+    try (TransactionResourceManager manager = TransactionResourceManager.of(direct)) {
+      String transactionId = UUID.randomUUID().toString();
+      BlockingQueue<Pair<String, Response>> receivedResponses = new ArrayBlockingQueue<>(1);
+
+      // create a simple ping-pong communication
+      manager.runObservations(
+          "requests",
+          (ingest, context) -> {
+            if (ingest.getAttributeDescriptor().equals(requestDesc)) {
+              String key = ingest.getKey();
+              String requestId = requestDesc.extractSuffix(ingest.getAttribute());
+              Request request = Optionals.get(requestDesc.valueOf(ingest));
+              CountDownLatch latch = new CountDownLatch(1);
+              CommitCallback commit =
+                  CommitCallback.afterNumCommits(
+                      2,
+                      (succ, exc) -> {
+                        latch.countDown();
+                        context.commit(succ, exc);
+                      });
+              if (request.getFlags() == Request.Flags.ROLLBACK) {
+                manager.setCurrentState(key, null, commit);
+                manager.writeResponse(key, requestId, Response.aborted(), commit);
+              } else if (request.getFlags() == Request.Flags.OPEN) {
+                manager.setCurrentState(
+                    key, State.open(new HashSet<>(request.getInputAttributes())), commit);
+                manager.writeResponse(key, requestId, Response.open(), commit);
+              }
+              ExceptionUtils.ignoringInterrupted(latch::await);
+            } else {
+              context.confirm();
+            }
+            return true;
+          });
+
+      manager.begin(
+          transactionId,
+          (k, v) -> receivedResponses.add(Pair.of(k, v)),
+          Collections.singletonList(KeyAttribute.ofAttributeDescriptor(gateway, "gw1", status)));
+
+      receivedResponses.take();
+      manager.rollback(transactionId);
+
+      Pair<String, Response> response = receivedResponses.take();
+      assertEquals("rollback", response.getFirst());
+      assertEquals(Response.Flags.ABORTED, response.getSecond().getFlags());
+
+      State currentState = manager.getCurrentState(transactionId);
+      assertEquals(State.Flags.UNKNOWN, currentState.getFlags());
+    }
+  }
 }

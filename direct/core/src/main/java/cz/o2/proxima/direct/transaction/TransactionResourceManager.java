@@ -45,6 +45,7 @@ import cz.o2.proxima.util.ExceptionUtils;
 import cz.o2.proxima.util.Optionals;
 import cz.o2.proxima.util.Pair;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -147,42 +148,35 @@ class TransactionResourceManager implements ClientTransactionManager, ServerTran
       Preconditions.checkState(responseConsumer != null);
       addTransactionResponseConsumer(
           transactionId, attributeToFamily.get(requestDesc), responseConsumer);
-      CountDownLatch latch = new CountDownLatch(1);
-      AtomicReference<Throwable> error = new AtomicReference<>();
-      getRequestWriter()
-          .write(
-              requestDesc.upsert(
-                  transactionId,
-                  "open",
-                  System.currentTimeMillis(),
-                  Request.builder().flags(Flags.OPEN).inputAttributes(inputAttrs).build()),
-              (succ, exc) -> {
-                error.set(exc);
-                latch.countDown();
-              });
-      ExceptionUtils.ignoringInterrupted(latch::await);
-      if (error.get() != null) {
-        throw new IllegalStateException(error.get());
-      }
+      sendRequest(Request.builder().flags(Flags.OPEN).inputAttributes(inputAttrs).build(), "open");
     }
 
     public void commit(List<KeyAttribute> outputAttributes) {
       checkThread();
+      sendRequest(
+          Request.builder().flags(Request.Flags.COMMIT).outputAttributes(outputAttributes).build(),
+          "commit");
+    }
+
+    public void update(List<KeyAttribute> addedAttributes) {
+      checkThread();
+      sendRequest(
+          Request.builder().flags(Request.Flags.UPDATE).outputAttributes(addedAttributes).build(),
+          "update");
+    }
+
+    public void rollback() {
+      checkThread();
+      sendRequest(Request.builder().flags(Flags.ROLLBACK).build(), "rollback");
+    }
+
+    private void sendRequest(Request request, String requestId) {
       CountDownLatch latch = new CountDownLatch(1);
       AtomicReference<Throwable> error = new AtomicReference<>();
       getRequestWriter()
           .write(
-              requestDesc.upsert(
-                  transactionId,
-                  "commit",
-                  System.currentTimeMillis(),
-                  Request.builder()
-                      .flags(Request.Flags.COMMIT)
-                      .outputAttributes(outputAttributes)
-                      .build()),
+              requestDesc.upsert(transactionId, requestId, System.currentTimeMillis(), request),
               (succ, exc) -> {
-                CachedTransaction removed = openTransactionMap.remove(transactionId);
-                Preconditions.checkState(removed == this);
                 error.set(exc);
                 latch.countDown();
               });
@@ -197,8 +191,6 @@ class TransactionResourceManager implements ClientTransactionManager, ServerTran
       requestWriter = responseWriter = null;
       stateView = null;
     }
-
-    private void rollback() {}
 
     OnlineAttributeWriter getRequestWriter() {
       checkThread();
@@ -283,7 +275,11 @@ class TransactionResourceManager implements ClientTransactionManager, ServerTran
    * @param requestObserver the observer (need not be synchronized)
    */
   @Override
-  public void runObservations(String name, LogObserver requestObserver) {
+  public void runObservations(
+      String name,
+      BiConsumer<StreamElement, Pair<Long, Object>> updateConsumer,
+      LogObserver requestObserver) {
+
     LogObserver synchronizedObserver = LogObservers.synchronizedObserver(requestObserver);
     direct
         .getRepository()
@@ -299,10 +295,14 @@ class TransactionResourceManager implements ClientTransactionManager, ServerTran
                 r.getSecond()
                     .observe(
                         name + "-" + r.getFirst(),
-                        hookForRepartitions(r.getFirst(), synchronizedObserver)));
+                        hookForRepartitions(r.getFirst(), updateConsumer, synchronizedObserver)));
   }
 
-  private LogObserver hookForRepartitions(String family, LogObserver delegate) {
+  private LogObserver hookForRepartitions(
+      String family,
+      BiConsumer<StreamElement, Pair<Long, Object>> updateConsumer,
+      LogObserver delegate) {
+
     DirectAttributeFamilyDescriptor directFamily = direct.getFamilyByName(family);
     return new ForwardingObserver(delegate) {
       @Override
@@ -316,7 +316,8 @@ class TransactionResourceManager implements ClientTransactionManager, ServerTran
             view.getPartitions()
                 .stream()
                 .filter(p -> partitionIds.contains(p.getId()))
-                .collect(Collectors.toList()));
+                .collect(Collectors.toList()),
+            updateConsumer);
       }
     };
   }
@@ -405,9 +406,10 @@ class TransactionResourceManager implements ClientTransactionManager, ServerTran
    */
   @Override
   public void updateTransaction(String transactionId, List<KeyAttribute> newAttributes) {
-
-    openTransactionMap.computeIfAbsent(
-        transactionId, k -> new CachedTransaction(transactionId, newAttributes, null));
+    @Nullable CachedTransaction cachedTransaction = openTransactionMap.get(transactionId);
+    Preconditions.checkArgument(
+        cachedTransaction != null, "Transaction %s is not open", transactionId);
+    cachedTransaction.update(newAttributes);
   }
 
   @Override
@@ -416,6 +418,15 @@ class TransactionResourceManager implements ClientTransactionManager, ServerTran
     Preconditions.checkArgument(
         cachedTransaction != null, "Transaction %s is not open", transactionId);
     cachedTransaction.commit(outputAttributes);
+  }
+
+  @Override
+  public void rollback(String transactionId) {
+    CachedTransaction cachedTransaction =
+        openTransactionMap.computeIfAbsent(
+            transactionId,
+            k -> new CachedTransaction(transactionId, Collections.emptyList(), null));
+    cachedTransaction.rollback();
   }
 
   /**
@@ -434,14 +445,20 @@ class TransactionResourceManager implements ClientTransactionManager, ServerTran
   }
 
   @Override
-  public void setCurrentState(String transactionId, State state, CommitCallback callback) {
+  public void setCurrentState(
+      String transactionId, @Nullable State state, CommitCallback callback) {
     CachedTransaction cachedTransaction =
         openTransactionMap.computeIfAbsent(
             transactionId,
             tmp -> new CachedTransaction(transactionId, state.getAttributes(), null));
-    cachedTransaction
-        .getStateView()
-        .write(stateDesc.upsert(transactionId, System.currentTimeMillis(), state), callback);
+
+    final StreamElement update;
+    if (state != null) {
+      update = stateDesc.upsert(transactionId, System.currentTimeMillis(), state);
+    } else {
+      update = stateDesc.delete(transactionId, System.currentTimeMillis());
+    }
+    cachedTransaction.getStateView().write(update, callback);
   }
 
   @Override

@@ -152,12 +152,16 @@ public class ProtoSerializerFactoryTest {
             Pair.of(newRequest(keyAttributeSingleWildcard, Request.Flags.OPEN), request),
             Pair.of(newRequest(keyAttribute, Request.Flags.COMMIT), request),
             Pair.of(newRequest(keyAttributeSingleWildcard, Request.Flags.COMMIT), request),
+            Pair.of(newRequest(keyAttribute, Request.Flags.UPDATE), request),
+            Pair.of(newRequest(keyAttributeSingleWildcard, Request.Flags.UPDATE), request),
+            Pair.of(newRequest(Request.Flags.ROLLBACK), request),
             Pair.of(Response.open(), response),
             Pair.of(Response.committed(), response),
             Pair.of(Response.aborted(), response),
             Pair.of(Response.empty(), response),
             Pair.of(State.committed(Sets.newHashSet(keyAttribute)), state),
             Pair.of(State.empty(), state),
+            Pair.of(State.aborted(), state),
             Pair.of(State.committed(Sets.newHashSet(keyAttributeSingleWildcard)), state));
 
     toVerify.forEach(
@@ -168,6 +172,10 @@ public class ProtoSerializerFactoryTest {
           assertNotNull(bytes);
           assertEquals(p.getFirst(), Optionals.get(serializer.deserialize(bytes)));
         });
+  }
+
+  private Request newRequest(Request.Flags flags) {
+    return Request.builder().flags(flags).build();
   }
 
   private Request newRequest(KeyAttribute keyAttribute, Request.Flags flags) {

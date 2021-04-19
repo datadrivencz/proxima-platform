@@ -253,6 +253,8 @@ public class ProtoSerializerFactory implements ValueSerializerFactory {
         case COMMITTED:
           return State.committed(
               new HashSet<>(getKeyAttributesFromProto(repository, state.getAttributesList())));
+        case ABORTED:
+          return State.aborted();
         default:
           throw new IllegalStateException("Unknown flags: " + state.getFlags());
       }
@@ -310,6 +312,10 @@ public class ProtoSerializerFactory implements ValueSerializerFactory {
           return Request.Flags.OPEN;
         case COMMITTED:
           return Request.Flags.COMMIT;
+        case UPDATE:
+          return Request.Flags.UPDATE;
+        case ROLLBACK:
+          return Request.Flags.ROLLBACK;
         default:
           throw new IllegalArgumentException("Unknown flags: " + flags);
       }
@@ -340,6 +346,8 @@ public class ProtoSerializerFactory implements ValueSerializerFactory {
           return Transactions.Flags.OPEN;
         case COMMITTED:
           return Transactions.Flags.COMMITTED;
+        case ABORTED:
+          return Transactions.Flags.ABORTED;
         default:
           throw new IllegalArgumentException("Unknown flags: " + flags);
       }
@@ -353,6 +361,10 @@ public class ProtoSerializerFactory implements ValueSerializerFactory {
           return Transactions.Flags.OPEN;
         case COMMIT:
           return Transactions.Flags.COMMITTED;
+        case UPDATE:
+          return Transactions.Flags.UPDATE;
+        case ROLLBACK:
+          return Transactions.Flags.ROLLBACK;
         default:
           throw new IllegalArgumentException("Unknown flags: " + flags);
       }

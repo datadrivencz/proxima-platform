@@ -24,7 +24,7 @@ import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.ToString;
 
-/** A transactional request sent to coordinator */
+/** A transactional request sent to coordinator. */
 @Internal
 @Builder
 @ToString
@@ -34,6 +34,8 @@ public class Request implements Serializable {
   public enum Flags {
     NONE,
     OPEN,
+    UPDATE,
+    ROLLBACK,
     COMMIT;
   }
 

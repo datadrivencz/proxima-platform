@@ -15,6 +15,7 @@
  */
 package cz.o2.proxima.direct.transaction.manager;
 
+import com.google.common.annotations.VisibleForTesting;
 import cz.o2.proxima.direct.commitlog.LogObserver;
 import cz.o2.proxima.direct.core.CommitCallback;
 import cz.o2.proxima.direct.core.DirectDataOperator;
@@ -26,9 +27,12 @@ import cz.o2.proxima.transaction.KeyAttribute;
 import cz.o2.proxima.transaction.Request;
 import cz.o2.proxima.transaction.Response;
 import cz.o2.proxima.transaction.State;
+import cz.o2.proxima.util.Pair;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import javax.annotation.Nullable;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -40,17 +44,12 @@ class TransactionLogObserver implements LogObserver {
 
   private final DirectDataOperator direct;
   private final ServerTransactionManager manager;
+  private final Map<String, Void> uncommittableTransactions = new ConcurrentHashMap<>();
 
   TransactionLogObserver(DirectDataOperator direct) {
     this.direct = direct;
     this.manager = TransactionManager.server(direct);
   }
-
-  @Override
-  public void onCompleted() {}
-
-  @Override
-  public void onCancelled() {}
 
   @Override
   public boolean onNext(StreamElement ingest, OnNextContext context) {
@@ -63,18 +62,12 @@ class TransactionLogObserver implements LogObserver {
           ingest.getStamp(),
           requestDesc.valueOf(ingest),
           context);
-    } else if (ingest.getAttributeDescriptor().equals(manager.getStateDesc())) {
-      handleState(manager.getStateDesc().valueOf(ingest), context);
     } else {
-      // unknown attribute, probably own response, can be safely ignored
+      // unknown attribute, probably own response or state update, can be safely ignored
       log.debug("Unknown attribute {}. Ignored.", ingest.getAttributeDescriptor());
       context.confirm();
     }
     return true;
-  }
-
-  private void handleState(Optional<State> maybeState, OnNextContext context) {
-    context.confirm();
   }
 
   private void handleRequest(
@@ -97,57 +90,73 @@ class TransactionLogObserver implements LogObserver {
 
     log.debug("Processing request {} for transaction {}", requestId, transactionId);
     State currentState = manager.getCurrentState(transactionId);
+    @Nullable State newState = transitionState(transactionId, currentState, request);
 
-    switch (request.getFlags()) {
-      case OPEN:
-        if (currentState.getFlags() == State.Flags.UNKNOWN) {
-          State newState = transitionState(currentState, request);
-          CommitCallback commitCallback = CommitCallback.afterNumCommits(2, context::commit);
-          manager.setCurrentState(transactionId, newState, commitCallback);
-          manager.writeResponse(transactionId, requestId, Response.open(), commitCallback);
-        } else if (currentState.getFlags() == State.Flags.OPEN
-            || currentState.getFlags() == State.Flags.COMMITTED) {
-          manager.writeResponse(transactionId, requestId, Response.duplicate(), context::commit);
-        } else {
-          log.warn(
-              "Unexpected OPEN request for transaction {} when transaction in state {}",
-              transactionId,
-              currentState.getFlags());
-          manager.writeResponse(transactionId, requestId, Response.aborted(), context::commit);
-        }
-        break;
-
-      case COMMIT:
-        if (currentState.getFlags() == State.Flags.OPEN) {
-          State newState = transitionState(currentState, request);
-          CommitCallback commitCallback = CommitCallback.afterNumCommits(2, context::commit);
-          manager.setCurrentState(transactionId, newState, commitCallback);
-          manager.writeResponse(transactionId, requestId, Response.committed(), commitCallback);
-        } else {
-          manager.writeResponse(transactionId, requestId, Response.aborted(), context::commit);
-        }
-        break;
-
-      default:
+    if (newState != null) {
+      // we have successfully computed new state, produce response
+      Response response = getResponseForNewState(newState);
+      CommitCallback commitCallback = CommitCallback.afterNumCommits(2, context::commit);
+      manager.setCurrentState(transactionId, newState, commitCallback);
+      manager.writeResponse(transactionId, requestId, response, commitCallback);
+    } else {
+      // we cannot transition from current state
+      if (request.getFlags() == Request.Flags.OPEN
+          && (currentState.getFlags() == State.Flags.OPEN
+              || currentState.getFlags() == State.Flags.COMMITTED)) {
+        manager.writeResponse(transactionId, requestId, Response.duplicate(), context::commit);
+      } else {
+        log.warn(
+            "Unexpected OPEN request for transaction {} when the state is {}",
+            transactionId,
+            currentState.getFlags());
         manager.writeResponse(transactionId, requestId, Response.aborted(), context::commit);
+      }
     }
   }
 
-  private State transitionState(State currentState, Request request) {
-    Set<KeyAttribute> attrSet = new HashSet<>(request.getInputAttributes());
-    if (!currentState.getAttributes().isEmpty()) {
-      attrSet.addAll(currentState.getAttributes());
+  private Response getResponseForNewState(State state) {
+    switch (state.getFlags()) {
+      case OPEN:
+        return Response.open();
+      case COMMITTED:
+        return Response.committed();
     }
-    return State.open(attrSet);
+    throw new IllegalArgumentException("Cannot produce response for state " + state.getFlags());
   }
 
-  @Override
-  public void onRepartition(OnRepartitionContext context) {}
+  @VisibleForTesting
+  @Nullable
+  State transitionState(String transactionId, State currentState, Request request) {
+    switch (currentState.getFlags()) {
+      case UNKNOWN:
+        if (request.getFlags() == Request.Flags.OPEN) {
+          return State.open(new HashSet<>(request.getInputAttributes()));
+        }
+        break;
+      case OPEN:
+        if (request.getFlags() == Request.Flags.COMMIT) {
+          if (uncommittableTransactions.containsKey(transactionId)) {
+            return State.aborted();
+          }
+          return State.committed(new HashSet<>(request.getOutputAttributes()));
+        } else if (request.getFlags() == Request.Flags.UPDATE) {
+          HashSet<KeyAttribute> newAttributes = new HashSet<>(currentState.getAttributes());
+          newAttributes.addAll(request.getInputAttributes());
+          return State.open(newAttributes);
+        }
+        break;
+    }
+    return null;
+  }
 
-  @Override
-  public void onIdle(OnIdleContext context) {}
+  private void stateUpdate(StreamElement newUpdate, Pair<Long, Object> oldValue) {
+    if (newUpdate.getAttributeDescriptor().equals(manager.getStateDesc())) {
+      // FIXME: listen for state updates to committed state
+      // on every commit transition uncommittable transactions to 'uncommitableTransactions'
+    }
+  }
 
   public void run(String name) {
-    manager.runObservations(name, this);
+    manager.runObservations(name, this::stateUpdate, this);
   }
 }

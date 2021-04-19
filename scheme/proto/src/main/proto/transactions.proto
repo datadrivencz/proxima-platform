@@ -30,6 +30,8 @@ enum Flags {
   COMMITTED = 2;
   ABORTED = 3;
   DUPLICATE = 4;
+  UPDATE = 5;
+  ROLLBACK = 6;
 }
 
 message ProtoRequest {

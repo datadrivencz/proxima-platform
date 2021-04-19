@@ -130,9 +130,31 @@ public class TransactionLogObserverTest {
       Pair<String, Response> response = responseQueue.take();
       assertEquals("open", response.getFirst());
       assertEquals(Response.Flags.DUPLICATE, response.getSecond().getFlags());
-    } catch (Exception ex) {
-      ex.printStackTrace(System.err);
-      throw ex;
     }
   }
+
+  @Test(timeout = 10000)
+  public void testTransactionUpdate() throws InterruptedException {
+    try (ClientTransactionManager clientManager = TransactionManager.client(direct)) {
+      String transactionId = UUID.randomUUID().toString();
+      BlockingQueue<Pair<String, Response>> responseQueue = new ArrayBlockingQueue<>(1);
+      clientManager.begin(
+          transactionId,
+          ExceptionUtils.uncheckedBiConsumer((k, v) -> responseQueue.put(Pair.of(k, v))),
+          Collections.singletonList(
+              KeyAttribute.ofAttributeDescriptor(user, "user", userGateways)));
+      // discard this
+      responseQueue.take();
+      clientManager.updateTransaction(
+          transactionId,
+          Collections.singletonList(
+              KeyAttribute.ofAttributeDescriptor(user, "user2", userGateways)));
+      Pair<String, Response> response = responseQueue.take();
+      assertEquals("update", response.getFirst());
+      assertEquals(Response.Flags.OPEN, response.getSecond().getFlags());
+    }
+  }
+
+  @Test
+  public void testFailedTransactionCommit() {}
 }

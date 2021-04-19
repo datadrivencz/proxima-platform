@@ -53,6 +53,13 @@ public interface ClientTransactionManager extends AutoCloseable, TransactionMana
    */
   void commit(String transactionId, List<KeyAttribute> outputAttributes);
 
+  /**
+   * Rollback transaction with given ID.
+   *
+   * @param transactionId ID of the transaction to rollback.
+   */
+  void rollback(String transactionId);
+
   @Override
   void close();
 }

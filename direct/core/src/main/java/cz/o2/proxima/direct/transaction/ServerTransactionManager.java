@@ -17,8 +17,12 @@ package cz.o2.proxima.direct.transaction;
 
 import cz.o2.proxima.direct.commitlog.LogObserver;
 import cz.o2.proxima.direct.core.CommitCallback;
+import cz.o2.proxima.functional.BiConsumer;
+import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.transaction.Response;
 import cz.o2.proxima.transaction.State;
+import cz.o2.proxima.util.Pair;
+import javax.annotation.Nullable;
 
 public interface ServerTransactionManager extends AutoCloseable, TransactionManager {
 
@@ -28,7 +32,21 @@ public interface ServerTransactionManager extends AutoCloseable, TransactionMana
    * @param name name of the observer (will be appended with name of the family)
    * @param requestObserver the observer (need not be synchronized)
    */
-  void runObservations(String name, LogObserver requestObserver);
+  default void runObservations(String name, LogObserver requestObserver) {
+    runObservations(name, (elem, p) -> {}, requestObserver);
+  }
+
+  /**
+   * Observe all transactional families with given observer.
+   *
+   * @param name name of the observer (will be appended with name of the family)
+   * @param updateConsumer consumer of updates to the view of transaction states
+   * @param requestObserver the observer (need not be synchronized)
+   */
+  void runObservations(
+      String name,
+      BiConsumer<StreamElement, Pair<Long, Object>> updateConsumer,
+      LogObserver requestObserver);
 
   /**
    * Retrieve current state of the transaction.
@@ -42,10 +60,11 @@ public interface ServerTransactionManager extends AutoCloseable, TransactionMana
    * Write new {@link State} for the transaction.
    *
    * @param transactionId ID of the transaction
-   * @param state the new state
+   * @param state the new state, when {@code null} the state is erased and the transaction is
+   *     cleared
    * @param callback callback for committing the write
    */
-  void setCurrentState(String transactionId, State state, CommitCallback callback);
+  void setCurrentState(String transactionId, @Nullable State state, CommitCallback callback);
 
   /**
    * Write response for a request to the caller.

@@ -41,10 +41,15 @@ public class State implements Serializable {
     return new State(Flags.UNKNOWN, Collections.emptySet());
   }
 
+  public static State aborted() {
+    return new State(Flags.ABORTED, Collections.emptySet());
+  }
+
   public enum Flags {
     UNKNOWN,
     OPEN,
-    COMMITTED
+    COMMITTED,
+    ABORTED
   }
 
   @Getter private final Flags flags;
