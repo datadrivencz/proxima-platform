@@ -37,9 +37,10 @@ import cz.o2.proxima.storage.commitlog.KeyPartitioner;
 import cz.o2.proxima.storage.commitlog.Position;
 import cz.o2.proxima.time.Watermarks;
 import cz.o2.proxima.util.Optionals;
-import cz.o2.proxima.util.Pair;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Properties;
@@ -48,7 +49,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.apache.kafka.clients.admin.NewTopic;
@@ -95,7 +95,8 @@ public class KafkaLogReaderIT {
 
   private static class TestLogObserver implements LogObserver {
 
-    private final AtomicInteger numReceivedElements = new AtomicInteger();
+    private final List<StreamElement> receivedElements =
+        Collections.synchronizedList(new ArrayList<>());
     private final CountDownLatch completed = new CountDownLatch(1);
 
     @Override
@@ -111,7 +112,7 @@ public class KafkaLogReaderIT {
     @Override
     public boolean onNext(StreamElement ingest, OnNextContext context) {
       if (!ingest.getKey().startsWith("poisoned-pill")) {
-        numReceivedElements.incrementAndGet();
+        receivedElements.add(ingest);
       }
       context.confirm();
       return true;
@@ -122,7 +123,11 @@ public class KafkaLogReaderIT {
     }
 
     int getNumReceivedElements() {
-      return numReceivedElements.get();
+      return receivedElements.size();
+    }
+
+    List<StreamElement> getReceivedElements() {
+      return Collections.unmodifiableList(receivedElements);
     }
   }
 
@@ -219,6 +224,29 @@ public class KafkaLogReaderIT {
     Assert.assertEquals(numElements, numCommittedElements(handle));
   }
 
+  @Test(timeout = 30_000L)
+  public void testReadAndWriteSequentialId() throws InterruptedException {
+    initializeTestWithUri("kafka://\"${broker}\"/topic", "[commit-log]");
+    final EmbeddedKafkaBroker embeddedKafka = rule.getEmbeddedKafka();
+    final int numPartitions = 3;
+    embeddedKafka.addTopics(new NewTopic("topic", numPartitions, (short) 1));
+    final CommitLogReader commitLogReader =
+        Optionals.get(operator.getCommitLogReader(fooDescriptor));
+    final TestLogObserver observer = new TestLogObserver();
+    final ObserveHandle handle = commitLogReader.observe("test-reader", Position.OLDEST, observer);
+    handle.waitUntilReady();
+    final int numElements = 100;
+    writeElements(numElements, true);
+    while (observer.getNumReceivedElements() < numElements) {
+      System.err.println(" *** " + observer.getReceivedElements());
+      TimeUnit.MILLISECONDS.sleep(100);
+    }
+    observer.getReceivedElements().forEach(e -> assertTrue(e.hasSequentialId()));
+    handle.close();
+    Assert.assertEquals(numElements, observer.getNumReceivedElements());
+    Assert.assertEquals(numElements, numCommittedElements(handle));
+  }
+
   // --------------------------------------------------------------------------
   // HELPER METHODS
   // --------------------------------------------------------------------------
@@ -232,18 +260,31 @@ public class KafkaLogReaderIT {
   }
 
   private CountDownLatch writeElements(int numElements) {
+    return writeElements(numElements, false);
+  }
+
+  private CountDownLatch writeElements(int numElements, boolean useSeqId) {
     OnlineAttributeWriter writer = Optionals.get(operator.getWriter(fooDescriptor));
     final CountDownLatch done = new CountDownLatch(numElements);
     for (int i = 0; i < numElements; i++) {
       final StreamElement element =
-          StreamElement.upsert(
-              entity,
-              fooDescriptor,
-              UUID.randomUUID().toString(),
-              String.format("element-%d", i),
-              fooDescriptor.getName(),
-              i,
-              "value".getBytes(StandardCharsets.UTF_8));
+          useSeqId
+              ? StreamElement.upsert(
+                  entity,
+                  fooDescriptor,
+                  i + 1,
+                  String.format("element-%d", i),
+                  fooDescriptor.getName(),
+                  i,
+                  "value".getBytes(StandardCharsets.UTF_8))
+              : StreamElement.upsert(
+                  entity,
+                  fooDescriptor,
+                  UUID.randomUUID().toString(),
+                  String.format("element-%d", i),
+                  fooDescriptor.getName(),
+                  i,
+                  "value".getBytes(StandardCharsets.UTF_8));
       writer.write(
           element,
           ((success, error) -> {
@@ -256,6 +297,12 @@ public class KafkaLogReaderIT {
   }
 
   private CountDownLatch writeUsingPublisher(int numElements, List<String> topics) {
+    return writeUsingPublisher(numElements, false, topics);
+  }
+
+  private CountDownLatch writeUsingPublisher(
+      int numElements, boolean useSeqId, List<String> topics) {
+
     final CountDownLatch done = new CountDownLatch(numElements);
     KafkaStreamElementSerializer serializer = new KafkaStreamElementSerializer();
     Properties props = new Properties();
@@ -266,18 +313,27 @@ public class KafkaLogReaderIT {
     Random r = new Random();
     for (int i = 0; i < numElements; i++) {
       final StreamElement element =
-          StreamElement.upsert(
-              entity,
-              fooDescriptor,
-              UUID.randomUUID().toString(),
-              String.format("element-%d", i),
-              fooDescriptor.getName(),
-              i,
-              "value".getBytes(StandardCharsets.UTF_8));
-      Pair<String, byte[]> toWrite = serializer.write(element);
+          useSeqId
+              ? StreamElement.upsert(
+                  entity,
+                  fooDescriptor,
+                  i + 1,
+                  String.format("element-%d", i),
+                  fooDescriptor.getName(),
+                  i,
+                  "value".getBytes(StandardCharsets.UTF_8))
+              : StreamElement.upsert(
+                  entity,
+                  fooDescriptor,
+                  UUID.randomUUID().toString(),
+                  String.format("element-%d", i),
+                  fooDescriptor.getName(),
+                  i,
+                  "value".getBytes(StandardCharsets.UTF_8));
       String topic = topics.get(r.nextInt(topics.size()));
+      ProducerRecord<String, byte[]> toWrite = serializer.write(topic, -1, element);
       producer.send(
-          new ProducerRecord<>(topic, toWrite.getFirst(), toWrite.getSecond()),
+          toWrite,
           (meta, exc) -> {
             assertNull(exc);
             done.countDown();
