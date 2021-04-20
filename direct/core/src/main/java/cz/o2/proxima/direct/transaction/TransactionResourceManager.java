@@ -145,6 +145,7 @@ class TransactionResourceManager implements ClientTransactionManager, ServerTran
     }
 
     void open(List<KeyAttribute> inputAttrs) {
+      checkThread();
       Preconditions.checkState(responseConsumer != null);
       addTransactionResponseConsumer(
           transactionId, attributeToFamily.get(requestDesc), responseConsumer);
@@ -184,6 +185,7 @@ class TransactionResourceManager implements ClientTransactionManager, ServerTran
       if (error.get() != null) {
         throw new IllegalStateException(error.get());
       }
+      ;
     }
 
     @Override
@@ -337,11 +339,13 @@ class TransactionResourceManager implements ClientTransactionManager, ServerTran
     transactionResponseConsumers.put(transactionId, responseConsumer);
     observedFamilies.computeIfAbsent(
         responseFamily,
-        k ->
-            Optionals.get(k.getCommitLogReader())
-                .observe(
-                    "transactionResponseObserver-" + k.getDesc().getName(),
-                    newTransactionResponseObserver()));
+        k -> {
+          log.debug("Starting to observe family {}", k);
+          return Optionals.get(k.getCommitLogReader())
+              .observe(
+                  "transactionResponseObserver-" + k.getDesc().getName(),
+                  newTransactionResponseObserver());
+        });
   }
 
   private LogObserver newTransactionResponseObserver() {
@@ -385,7 +389,7 @@ class TransactionResourceManager implements ClientTransactionManager, ServerTran
    * @return current state of the transaction
    */
   @Override
-  public synchronized void begin(
+  public void begin(
       String transactionId,
       BiConsumer<String, Response> responseConsumer,
       List<KeyAttribute> attributes) {
@@ -504,8 +508,11 @@ class TransactionResourceManager implements ClientTransactionManager, ServerTran
 
     Preconditions.checkState(
         numAttributes == 3,
-        "Should have received only families for unique transactional attributes, got %s",
-        candidates);
+        "Should have received only families for unique transactional attributes, "
+            + "got %s for %s with transactional mode %s",
+        candidates,
+        attributes,
+        mode);
 
     return candidates
         .stream()
