@@ -28,9 +28,12 @@ import cz.o2.proxima.transaction.Request;
 import cz.o2.proxima.transaction.Response;
 import cz.o2.proxima.transaction.State;
 import cz.o2.proxima.util.Pair;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
+import java.util.SortedMap;
+import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import javax.annotation.Nullable;
@@ -47,6 +50,8 @@ class TransactionLogObserver implements LogObserver {
   private final ServerTransactionManager manager;
   private final Map<String, Void> uncommittableTransactions = new ConcurrentHashMap<>();
   private final AtomicLong sequenceId = new AtomicLong(1000L);
+  private final SortedMap<Long, String> openTransactionsBySeqId =
+      Collections.synchronizedSortedMap(new TreeMap<>());
 
   TransactionLogObserver(DirectDataOperator direct) {
     this.direct = direct;
@@ -99,7 +104,8 @@ class TransactionLogObserver implements LogObserver {
       Response response = getResponseForNewState(currentState, newState);
       if (response.getFlags() == Response.Flags.OPEN) {
         // we need to advance our sequenceId for new transaction
-        sequenceId.incrementAndGet();
+        long seqId = sequenceId.getAndIncrement();
+        openTransactionsBySeqId.put(seqId, transactionId);
       }
       CommitCallback commitCallback = CommitCallback.afterNumCommits(2, context::commit);
       manager.setCurrentState(transactionId, newState, commitCallback);
@@ -161,6 +167,14 @@ class TransactionLogObserver implements LogObserver {
     if (newUpdate.getAttributeDescriptor().equals(manager.getStateDesc())) {
       // FIXME: listen for state updates to committed state
       // on every commit transition uncommittable transactions to 'uncommitableTransactions'
+      Optional<State> state = manager.getStateDesc().valueOf(newUpdate);
+      if (state.isPresent() && state.get().getFlags() == State.Flags.COMMITTED) {
+        @Nullable State oldState = oldValue != null ? (State) oldValue.getSecond() : null;
+        if (oldState != null && oldState.getFlags() != State.Flags.COMMITTED) {
+          // transaction transitioned to committed
+          // we have to walk through
+        }
+      }
     }
   }
 

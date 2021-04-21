@@ -167,8 +167,8 @@ public class TransactionIT {
 
       CountDownLatch latch = new CountDownLatch(2);
       CommitCallback callback = (succ, exc) -> latch.countDown();
-      view.write(amount.upsert(userFirst, stamp, firstWillHave), callback);
-      view.write(amount.upsert(userSecond, stamp, secondWillHave), callback);
+      view.write(amount.upsert(sequentialId, userFirst, stamp, firstWillHave), callback);
+      view.write(amount.upsert(sequentialId, userSecond, stamp, secondWillHave), callback);
       latch.await();
       break;
 

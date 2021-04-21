@@ -279,6 +279,8 @@ public class ProtoSerializerFactory implements ValueSerializerFactory {
           return Response.aborted();
         case DUPLICATE:
           return Response.duplicate();
+        case UPDATE:
+          return Response.updated();
         default:
           throw new IllegalArgumentException("Unknown flag: " + response.getFlags());
       }
@@ -338,6 +340,8 @@ public class ProtoSerializerFactory implements ValueSerializerFactory {
           return Transactions.Flags.ABORTED;
         case DUPLICATE:
           return Transactions.Flags.DUPLICATE;
+        case UPDATED:
+          return Transactions.Flags.UPDATE;
         default:
           throw new IllegalArgumentException("Unknown flags: " + flags);
       }

@@ -165,6 +165,7 @@ public class ProtoSerializerFactoryTest {
             Pair.of(newRequest(keyAttributeSingleWildcard, Request.Flags.UPDATE), request),
             Pair.of(newRequest(Request.Flags.ROLLBACK), request),
             Pair.of(Response.open(1L), response),
+            Pair.of(Response.updated(), response),
             Pair.of(Response.committed(), response),
             Pair.of(Response.aborted(), response),
             Pair.of(Response.duplicate(), response),

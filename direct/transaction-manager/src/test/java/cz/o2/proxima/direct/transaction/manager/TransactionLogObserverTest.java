@@ -85,7 +85,7 @@ public class TransactionLogObserverTest {
           transactionId,
           ExceptionUtils.uncheckedBiConsumer((k, v) -> responseQueue.put(Pair.of(k, v))),
           Collections.singletonList(
-              KeyAttribute.ofAttributeDescriptor(user, "user", userGateways, 1L)));
+              KeyAttribute.ofAttributeDescriptor(user, "user", userGateways, 1L, "1")));
       Pair<String, Response> response = responseQueue.take();
       assertEquals("open", response.getFirst());
       assertEquals(Response.Flags.OPEN, response.getSecond().getFlags());
@@ -101,12 +101,12 @@ public class TransactionLogObserverTest {
           transactionId,
           ExceptionUtils.uncheckedBiConsumer((k, v) -> responseQueue.put(Pair.of(k, v))),
           Collections.singletonList(
-              KeyAttribute.ofAttributeDescriptor(user, "user", userGateways, 1L)));
+              KeyAttribute.ofAttributeDescriptor(user, "user", userGateways, 1L, "1")));
       responseQueue.take();
       clientManager.commit(
           transactionId,
           Collections.singletonList(
-              KeyAttribute.ofAttributeDescriptor(user, "user", userGateways, 2L)));
+              KeyAttribute.ofAttributeDescriptor(user, "user", userGateways, 2L, "1")));
       Pair<String, Response> response = responseQueue.take();
       assertEquals("commit", response.getFirst());
       assertEquals(Response.Flags.COMMITTED, response.getSecond().getFlags());
@@ -122,14 +122,14 @@ public class TransactionLogObserverTest {
           transactionId,
           ExceptionUtils.uncheckedBiConsumer((k, v) -> responseQueue.put(Pair.of(k, v))),
           Collections.singletonList(
-              KeyAttribute.ofAttributeDescriptor(user, "user", userGateways, 1L)));
+              KeyAttribute.ofAttributeDescriptor(user, "user", userGateways, 1L, "1")));
       // discard this
       responseQueue.take();
       clientManager.begin(
           transactionId,
           ExceptionUtils.uncheckedBiConsumer((k, v) -> responseQueue.put(Pair.of(k, v))),
           Collections.singletonList(
-              KeyAttribute.ofAttributeDescriptor(user, "user", userGateways, 1L)));
+              KeyAttribute.ofAttributeDescriptor(user, "user", userGateways, 1L, "1")));
       Pair<String, Response> response = responseQueue.take();
       assertEquals("open", response.getFirst());
       assertEquals(Response.Flags.DUPLICATE, response.getSecond().getFlags());
@@ -145,13 +145,13 @@ public class TransactionLogObserverTest {
           transactionId,
           ExceptionUtils.uncheckedBiConsumer((k, v) -> responseQueue.put(Pair.of(k, v))),
           Collections.singletonList(
-              KeyAttribute.ofAttributeDescriptor(user, "user", userGateways, 1L)));
+              KeyAttribute.ofAttributeDescriptor(user, "user", userGateways, 1L, "1")));
       // discard this
       responseQueue.take();
       clientManager.updateTransaction(
           transactionId,
           Collections.singletonList(
-              KeyAttribute.ofAttributeDescriptor(user, "user2", userGateways, 2L)));
+              KeyAttribute.ofAttributeDescriptor(user, "user2", userGateways, 2L, "1")));
       Pair<String, Response> response = responseQueue.take();
       assertEquals("update", response.getFirst());
       assertEquals(Response.Flags.UPDATED, response.getSecond().getFlags());
