@@ -32,6 +32,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import javax.annotation.Nullable;
 import lombok.extern.slf4j.Slf4j;
 
@@ -45,6 +46,7 @@ class TransactionLogObserver implements LogObserver {
   private final DirectDataOperator direct;
   private final ServerTransactionManager manager;
   private final Map<String, Void> uncommittableTransactions = new ConcurrentHashMap<>();
+  private final AtomicLong sequenceId = new AtomicLong(1000L);
 
   TransactionLogObserver(DirectDataOperator direct) {
     this.direct = direct;
@@ -94,7 +96,11 @@ class TransactionLogObserver implements LogObserver {
 
     if (newState != null) {
       // we have successfully computed new state, produce response
-      Response response = getResponseForNewState(newState);
+      Response response = getResponseForNewState(currentState, newState);
+      if (response.getFlags() == Response.Flags.OPEN) {
+        // we need to advance our sequenceId for new transaction
+        sequenceId.incrementAndGet();
+      }
       CommitCallback commitCallback = CommitCallback.afterNumCommits(2, context::commit);
       manager.setCurrentState(transactionId, newState, commitCallback);
       manager.writeResponse(transactionId, requestId, response, commitCallback);
@@ -114,10 +120,12 @@ class TransactionLogObserver implements LogObserver {
     }
   }
 
-  private Response getResponseForNewState(State state) {
+  private Response getResponseForNewState(State oldState, State state) {
     switch (state.getFlags()) {
       case OPEN:
-        return Response.open();
+        return oldState.getFlags() == State.Flags.UNKNOWN
+            ? Response.open(sequenceId.get())
+            : Response.updated();
       case COMMITTED:
         return Response.committed();
     }

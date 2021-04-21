@@ -31,6 +31,7 @@ import cz.o2.proxima.scheme.ValueSerializer;
 import cz.o2.proxima.scheme.ValueSerializerFactory;
 import cz.o2.proxima.scheme.proto.ProtoSerializerFactory.TransactionProtoSerializer;
 import cz.o2.proxima.scheme.proto.test.Scheme.Event;
+import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.transaction.KeyAttribute;
 import cz.o2.proxima.transaction.Request;
 import cz.o2.proxima.transaction.Response;
@@ -129,7 +130,8 @@ public class ProtoSerializerFactoryTest {
                 .resolve());
     EntityDescriptor transaction = repo.getEntity("_transaction");
     AttributeDescriptor<Request> request = transaction.getAttribute("request.*");
-    KeyAttribute keyAttribute = KeyAttribute.ofAttributeDescriptor(transaction, "t", request);
+    KeyAttribute keyAttribute =
+        KeyAttribute.ofAttributeDescriptor(transaction, "t", request, 1L, "1");
 
     assertTrue(request.getValueSerializer() instanceof TransactionProtoSerializer);
     assertTrue(request.getValueSerializer().isUsable());
@@ -142,9 +144,16 @@ public class ProtoSerializerFactoryTest {
     assertTrue(state.getValueSerializer() instanceof TransactionProtoSerializer);
     assertTrue(state.getValueSerializer().isUsable());
 
-    KeyAttribute keyAttributeSingleWildcard =
-        KeyAttribute.ofSingleWildcardAttribute(
-            transaction, "t", request, request.toAttributePrefix() + "1");
+    StreamElement el =
+        StreamElement.upsert(
+            transaction,
+            request,
+            1L,
+            "t",
+            request.toAttributePrefix() + "1",
+            System.currentTimeMillis(),
+            new byte[] {});
+    KeyAttribute keyAttributeSingleWildcard = KeyAttribute.ofStreamElement(el);
 
     List<Pair<Object, AttributeDescriptor<?>>> toVerify =
         Arrays.asList(
@@ -155,7 +164,7 @@ public class ProtoSerializerFactoryTest {
             Pair.of(newRequest(keyAttribute, Request.Flags.UPDATE), request),
             Pair.of(newRequest(keyAttributeSingleWildcard, Request.Flags.UPDATE), request),
             Pair.of(newRequest(Request.Flags.ROLLBACK), request),
-            Pair.of(Response.open(), response),
+            Pair.of(Response.open(1L), response),
             Pair.of(Response.committed(), response),
             Pair.of(Response.aborted(), response),
             Pair.of(Response.duplicate(), response),

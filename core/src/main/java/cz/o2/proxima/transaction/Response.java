@@ -16,8 +16,8 @@
 package cz.o2.proxima.transaction;
 
 import cz.o2.proxima.annotations.Internal;
+import cz.o2.proxima.storage.StreamElement;
 import java.io.Serializable;
-import lombok.Builder;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.ToString;
@@ -25,7 +25,6 @@ import lombok.ToString;
 @Internal
 @EqualsAndHashCode
 @ToString
-@Builder
 public class Response implements Serializable {
 
   /**
@@ -42,8 +41,12 @@ public class Response implements Serializable {
    *
    * @return response for open transaction
    */
-  public static Response open() {
-    return new Response(Flags.OPEN);
+  public static Response open(long seqId) {
+    return new Response(Flags.OPEN, seqId);
+  }
+
+  public static Response updated() {
+    return new Response(Flags.UPDATED);
   }
 
   /**
@@ -76,18 +79,36 @@ public class Response implements Serializable {
   public enum Flags {
     NONE,
     OPEN,
+    UPDATED,
     COMMITTED,
     ABORTED,
-    DUPLICATE
+    DUPLICATE;
   }
 
   @Getter private final Flags flags;
+
+  /**
+   * A sequence ID assigned to the transaction by the transaction manager. Note that this field will
+   * be filled if the flag is set to {@link Flags#OPEN}. All writes that happen after successful
+   * commit <b>MUST</b> have this sequence ID in the {@link StreamElement#upsert} or {@link
+   * StreamElement#delete} filled.
+   */
+  @Getter private final long seqId;
 
   public Response() {
     this(Flags.NONE);
   }
 
   private Response(Flags flags) {
+    this(flags, -1L);
+  }
+
+  private Response(Flags flags, long seqId) {
     this.flags = flags;
+    this.seqId = seqId;
+  }
+
+  public boolean hasSequenceId() {
+    return seqId > 0;
   }
 }

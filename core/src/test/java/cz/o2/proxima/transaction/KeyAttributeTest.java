@@ -22,6 +22,7 @@ import com.typesafe.config.ConfigFactory;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.repository.Repository;
+import cz.o2.proxima.storage.StreamElement;
 import org.junit.Test;
 
 public class KeyAttributeTest {
@@ -34,23 +35,26 @@ public class KeyAttributeTest {
 
   @Test
   public void testKeyAttributeConstruction() {
-    KeyAttribute ka = KeyAttribute.ofAttributeDescriptor(gateway, "gw", status);
-    KeyAttribute ka2 = KeyAttribute.ofAttributeDescriptor(gateway, "gw", status);
+    KeyAttribute ka = KeyAttribute.ofAttributeDescriptor(gateway, "gw", status, 1L);
+    KeyAttribute ka2 = KeyAttribute.ofAttributeDescriptor(gateway, "gw", status, 1L);
     assertEquals(ka, ka2);
-    ka = KeyAttribute.ofAttributeDescriptor(gateway, "gw", device);
-    ka2 = KeyAttribute.ofAttributeDescriptor(gateway, "gw", device);
+    StreamElement el =
+        StreamElement.upsert(
+            gateway,
+            status,
+            1L,
+            "key",
+            status.getName(),
+            System.currentTimeMillis(),
+            new byte[] {});
+    ka = KeyAttribute.ofStreamElement(el);
+    ka2 = KeyAttribute.ofStreamElement(el);
     assertEquals(ka, ka2);
-    ka = KeyAttribute.ofSingleWildcardAttribute(gateway, "gw", device, "device.1");
-    ka2 = KeyAttribute.ofSingleWildcardAttribute(gateway, "gw", device, "device.1");
+    ka = KeyAttribute.ofAttributeDescriptor(gateway, "gw", device, 1L, "1");
+    ka2 = KeyAttribute.ofAttributeDescriptor(gateway, "gw", device, 1L, "1");
     assertEquals(ka, ka2);
     try {
-      KeyAttribute.ofSingleWildcardAttribute(gateway, "gw", status, status.getName());
-      fail("Should have thrown exception");
-    } catch (IllegalArgumentException ex) {
-      // pass
-    }
-    try {
-      KeyAttribute.ofSingleWildcardAttribute(gateway, "gw", device, status.getName());
+      KeyAttribute.ofAttributeDescriptor(gateway, "gw", device, 1L);
       fail("Should have thrown exception");
     } catch (IllegalArgumentException ex) {
       // pass

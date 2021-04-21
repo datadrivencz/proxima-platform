@@ -272,7 +272,7 @@ public class ProtoSerializerFactory implements ValueSerializerFactory {
         case UNKNOWN:
           return Response.empty();
         case OPEN:
-          return Response.open();
+          return Response.open(response.getSeqId());
         case COMMITTED:
           return Response.committed();
         case ABORTED:
@@ -285,7 +285,10 @@ public class ProtoSerializerFactory implements ValueSerializerFactory {
     }
 
     private static ProtoResponse responseToProto(Repository repository, Response response) {
-      return ProtoResponse.newBuilder().setFlags(asFlags(response.getFlags())).build();
+      return ProtoResponse.newBuilder()
+          .setFlags(asFlags(response.getFlags()))
+          .setSeqId(response.hasSequenceId() ? response.getSeqId() : 0L)
+          .build();
     }
 
     private static ProtoRequest requestToProto(Repository repository, Request request) {
@@ -382,12 +385,13 @@ public class ProtoSerializerFactory implements ValueSerializerFactory {
                 EntityDescriptor entity = repo.getEntity(a.getEntity());
                 if (Strings.isNullOrEmpty(a.getAttribute())) {
                   return KeyAttribute.ofAttributeDescriptor(
-                      entity, a.getKey(), entity.getAttribute(a.getAttributeDesc()));
+                      entity, a.getKey(), entity.getAttribute(a.getAttributeDesc()), a.getSeqId());
                 }
-                return KeyAttribute.ofSingleWildcardAttribute(
+                return KeyAttribute.ofAttributeDescriptor(
                     entity,
                     a.getKey(),
                     entity.getAttribute(a.getAttributeDesc()),
+                    a.getSeqId(),
                     a.getAttribute());
               })
           .collect(Collectors.toList());
@@ -404,6 +408,7 @@ public class ProtoSerializerFactory implements ValueSerializerFactory {
                   .setAttributeDesc(a.getAttributeDescriptor().getName())
                   .setKey(a.getKey())
                   .setAttribute(a.getAttribute().orElse(""))
+                  .setSeqId(a.getSequenceId())
                   .build());
     }
 

@@ -84,7 +84,7 @@ public class TransactionResourceManagerTest {
                     latch.countDown();
                   });
               ExceptionUtils.ignoringInterrupted(latch::await);
-              manager.writeResponse(key, requestId, Response.open(), context::commit);
+              manager.writeResponse(key, requestId, Response.open(1L), context::commit);
             } else {
               context.confirm();
             }
@@ -94,7 +94,8 @@ public class TransactionResourceManagerTest {
       manager.begin(
           transactionId,
           (k, v) -> receivedResponses.add(Pair.of(k, v)),
-          Collections.singletonList(KeyAttribute.ofAttributeDescriptor(gateway, "gw1", status)));
+          Collections.singletonList(
+              KeyAttribute.ofAttributeDescriptor(gateway, "gw1", status, 1L)));
 
       assertEquals(1, receivedResponses.size());
       assertEquals(Response.Flags.OPEN, receivedResponses.get(0).getSecond().getFlags());
@@ -134,7 +135,7 @@ public class TransactionResourceManagerTest {
               } else {
                 manager.setCurrentState(
                     key, State.open(new HashSet<>(request.getInputAttributes())), commit);
-                manager.writeResponse(key, requestId, Response.open(), commit);
+                manager.writeResponse(key, requestId, Response.open(1L), commit);
               }
               ExceptionUtils.ignoringInterrupted(latch::await);
             } else {
@@ -146,12 +147,14 @@ public class TransactionResourceManagerTest {
       manager.begin(
           transactionId,
           (k, v) -> receivedResponses.add(Pair.of(k, v)),
-          Collections.singletonList(KeyAttribute.ofAttributeDescriptor(gateway, "gw1", status)));
+          Collections.singletonList(
+              KeyAttribute.ofAttributeDescriptor(gateway, "gw1", status, 1L)));
 
       receivedResponses.take();
       manager.commit(
           transactionId,
-          Collections.singletonList(KeyAttribute.ofAttributeDescriptor(gateway, "gw1", status)));
+          Collections.singletonList(
+              KeyAttribute.ofAttributeDescriptor(gateway, "gw1", status, 1L)));
 
       Pair<String, Response> response = receivedResponses.take();
       assertEquals("commit", response.getFirst());
@@ -187,7 +190,7 @@ public class TransactionResourceManagerTest {
               } else if (request.getFlags() == Request.Flags.OPEN) {
                 manager.setCurrentState(
                     key, State.open(new HashSet<>(request.getInputAttributes())), commit);
-                manager.writeResponse(key, requestId, Response.open(), commit);
+                manager.writeResponse(key, requestId, Response.open(1L), commit);
               }
               ExceptionUtils.ignoringInterrupted(latch::await);
             } else {
@@ -199,7 +202,8 @@ public class TransactionResourceManagerTest {
       manager.begin(
           transactionId,
           (k, v) -> receivedResponses.add(Pair.of(k, v)),
-          Collections.singletonList(KeyAttribute.ofAttributeDescriptor(gateway, "gw1", status)));
+          Collections.singletonList(
+              KeyAttribute.ofAttributeDescriptor(gateway, "gw1", status, 1L)));
 
       receivedResponses.take();
       manager.rollback(transactionId);

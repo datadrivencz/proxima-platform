@@ -130,29 +130,36 @@ public class TransactionIT {
     do {
       BlockingQueue<Response> responses = new ArrayBlockingQueue<>(1);
       String transactionId = UUID.randomUUID().toString();
+      Optional<KeyValue<Double>> firstAmount = view.get(userFirst, amount, stamp);
+      Optional<KeyValue<Double>> secondAmount = view.get(userSecond, amount, stamp);
+
       client.begin(
           transactionId,
           (id, resp) -> ExceptionUtils.unchecked(() -> responses.put(resp)),
           Arrays.asList(
-              KeyAttribute.ofAttributeDescriptor(user, userFirst, amount),
-              KeyAttribute.ofAttributeDescriptor(user, userSecond, amount)));
+              KeyAttribute.ofAttributeDescriptor(
+                  user, userFirst, amount, firstAmount.map(KeyValue::getSequentialId).orElse(1L)),
+              KeyAttribute.ofAttributeDescriptor(
+                  user,
+                  userSecond,
+                  amount,
+                  secondAmount.map(KeyValue::getSequentialId).orElse(1L))));
       Response response = responses.take();
       if (response.getFlags() != Flags.OPEN) {
         continue;
       }
+      long sequentialId = response.getSeqId();
 
       // we are inside transaction
 
-      Optional<KeyValue<Double>> firstAmount = view.get(userFirst, amount, stamp);
-      Optional<KeyValue<Double>> secondAmount = view.get(userSecond, amount, stamp);
       double firstWillHave = firstAmount.map(KeyValue::getParsedRequired).orElse(0.0) - swap;
       double secondWillHave = secondAmount.map(KeyValue::getParsedRequired).orElse(0.0) + swap;
 
       client.commit(
           transactionId,
           Arrays.asList(
-              KeyAttribute.ofAttributeDescriptor(user, userFirst, amount),
-              KeyAttribute.ofAttributeDescriptor(user, userSecond, amount)));
+              KeyAttribute.ofAttributeDescriptor(user, userFirst, amount, sequentialId),
+              KeyAttribute.ofAttributeDescriptor(user, userSecond, amount, sequentialId)));
 
       if (responses.take().getFlags() != Flags.COMMITTED) {
         continue;
