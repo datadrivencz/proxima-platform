@@ -16,6 +16,7 @@
 package cz.o2.proxima.direct.transaction.manager;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.MoreObjects;
 import cz.o2.proxima.direct.commitlog.LogObserver;
 import cz.o2.proxima.direct.core.CommitCallback;
 import cz.o2.proxima.direct.core.DirectDataOperator;
@@ -28,15 +29,16 @@ import cz.o2.proxima.transaction.Request;
 import cz.o2.proxima.transaction.Response;
 import cz.o2.proxima.transaction.State;
 import cz.o2.proxima.util.Pair;
-import java.util.Collections;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
-import java.util.SortedMap;
-import java.util.TreeMap;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 import javax.annotation.Nullable;
+import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -46,12 +48,22 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 class TransactionLogObserver implements LogObserver {
 
+  @Value
+  private static class KeyWithAttribute {
+
+    static KeyWithAttribute of(KeyAttribute ka) {
+      return new KeyWithAttribute(
+          ka.getKey(), ka.getAttribute().orElse(ka.getAttributeDescriptor().getName()));
+    }
+
+    String key;
+    String attribute;
+  }
+
   private final DirectDataOperator direct;
   private final ServerTransactionManager manager;
-  private final Map<String, Void> uncommittableTransactions = new ConcurrentHashMap<>();
   private final AtomicLong sequenceId = new AtomicLong(1000L);
-  private final SortedMap<Long, String> openTransactionsBySeqId =
-      Collections.synchronizedSortedMap(new TreeMap<>());
+  private final Map<KeyWithAttribute, Long> lastUpdateSeqId = new HashMap<>();
 
   TransactionLogObserver(DirectDataOperator direct) {
     this.direct = direct;
@@ -104,8 +116,7 @@ class TransactionLogObserver implements LogObserver {
       Response response = getResponseForNewState(currentState, newState);
       if (response.getFlags() == Response.Flags.OPEN) {
         // we need to advance our sequenceId for new transaction
-        long seqId = sequenceId.getAndIncrement();
-        openTransactionsBySeqId.put(seqId, transactionId);
+        long seqId = response.getSeqId();
       }
       CommitCallback commitCallback = CommitCallback.afterNumCommits(2, context::commit);
       manager.setCurrentState(transactionId, newState, commitCallback);
@@ -130,10 +141,12 @@ class TransactionLogObserver implements LogObserver {
     switch (state.getFlags()) {
       case OPEN:
         return oldState.getFlags() == State.Flags.UNKNOWN
-            ? Response.open(sequenceId.get())
+            ? Response.open(state.getSequentialId())
             : Response.updated();
       case COMMITTED:
         return Response.committed();
+      case ABORTED:
+        return Response.aborted();
     }
     throw new IllegalArgumentException("Cannot produce response for state " + state.getFlags());
   }
@@ -144,23 +157,43 @@ class TransactionLogObserver implements LogObserver {
     switch (currentState.getFlags()) {
       case UNKNOWN:
         if (request.getFlags() == Request.Flags.OPEN) {
-          return State.open(new HashSet<>(request.getInputAttributes()));
+          long seqId = sequenceId.getAndIncrement();
+          State proposedState = State.open(seqId, new HashSet<>(request.getInputAttributes()));
+          if (verifyNotInConflict(request.getInputAttributes())) {
+            return proposedState;
+          }
+          return proposedState.aborted();
         }
         break;
       case OPEN:
         if (request.getFlags() == Request.Flags.COMMIT) {
-          if (uncommittableTransactions.containsKey(transactionId)) {
-            return State.aborted();
+          if (!verifyNotInConflict(currentState.getInputAttributes())) {
+            return currentState.aborted();
           }
-          return State.committed(new HashSet<>(request.getOutputAttributes()));
+          State proposedState = currentState.committed(request.getOutputAttributes());
+          transactionPostCommit(proposedState);
+          return proposedState;
         } else if (request.getFlags() == Request.Flags.UPDATE) {
-          HashSet<KeyAttribute> newAttributes = new HashSet<>(currentState.getAttributes());
+          HashSet<KeyAttribute> newAttributes =
+              new HashSet<>(currentState.getCommittedAttributes());
           newAttributes.addAll(request.getInputAttributes());
-          return State.open(newAttributes);
+          return currentState.update(newAttributes);
         }
         break;
     }
     return null;
+  }
+
+  private boolean verifyNotInConflict(Collection<KeyAttribute> inputAttributes) {
+    Map<KeyWithAttribute, Long> requestSeqIds =
+        inputAttributes
+            .stream()
+            .collect(Collectors.toMap(KeyWithAttribute::of, KeyAttribute::getSequenceId));
+    return requestSeqIds
+        .entrySet()
+        .stream()
+        .noneMatch(
+            e -> MoreObjects.firstNonNull(lastUpdateSeqId.get(e.getKey()), 0L) > e.getValue());
   }
 
   private void stateUpdate(StreamElement newUpdate, Pair<Long, Object> oldValue) {
@@ -169,13 +202,33 @@ class TransactionLogObserver implements LogObserver {
       // on every commit transition uncommittable transactions to 'uncommitableTransactions'
       Optional<State> state = manager.getStateDesc().valueOf(newUpdate);
       if (state.isPresent() && state.get().getFlags() == State.Flags.COMMITTED) {
-        @Nullable State oldState = oldValue != null ? (State) oldValue.getSecond() : null;
-        if (oldState != null && oldState.getFlags() != State.Flags.COMMITTED) {
-          // transaction transitioned to committed
-          // we have to walk through
+        try {
+          @Nullable State oldState = oldValue != null ? (State) oldValue.getSecond() : null;
+          if (oldState != null && oldState.getFlags() != State.Flags.COMMITTED) {
+            // transaction transitioned to committed
+            // we have to walk through
+            // refreshUncommitableTransactions(state);
+          }
+        } catch (Exception ex) {
+          ex.printStackTrace(System.err);
+          throw ex;
         }
       }
     }
+  }
+
+  private void transactionPostCommit(State state) {
+    long committedSeqId = state.getSequentialId();
+    Set<KeyWithAttribute> committedAttributes =
+        state
+            .getCommittedAttributes()
+            .stream()
+            .map(KeyWithAttribute::of)
+            .collect(Collectors.toSet());
+
+    state
+        .getCommittedAttributes()
+        .forEach(ka -> lastUpdateSeqId.put(KeyWithAttribute.of(ka), committedSeqId));
   }
 
   public void run(String name) {

@@ -41,6 +41,7 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.Before;
@@ -74,8 +75,7 @@ public class TransactionIT {
     // we begin with all amounts equal to zero
     // we randomly reshuffle random amounts between users and then we verify, that the sum is zero
 
-    // FIXME: increase numThreads
-    int numThreads = 1;
+    int numThreads = 50;
     int numSwaps = 1000;
     int numUsers = 20;
     CountDownLatch latch = new CountDownLatch(numThreads);
@@ -87,7 +87,7 @@ public class TransactionIT {
           () -> {
             try {
               for (int j = 0; j < numSwaps / numThreads; j++) {
-                transferAmountRandomly(numUsers, j);
+                transferAmountRandomly(numUsers);
               }
             } catch (InterruptedException e) {
               Thread.currentThread().interrupt();
@@ -120,18 +120,18 @@ public class TransactionIT {
     assertTrue(nonZeros > 0);
   }
 
-  private void transferAmountRandomly(int numUsers, int transaction) throws InterruptedException {
+  private void transferAmountRandomly(int numUsers) throws InterruptedException {
     int first = random.nextInt(numUsers);
     int second = (first + 1 + random.nextInt(numUsers - 1)) % numUsers;
     String userFirst = "user" + first;
     String userSecond = "user" + second;
     double swap = random.nextDouble() * 1000;
-    long stamp = System.currentTimeMillis() * 1000 + transaction;
+    long abortWaitDuration = (long) (random.nextDouble() * 40 + 10);
     do {
       BlockingQueue<Response> responses = new ArrayBlockingQueue<>(1);
       String transactionId = UUID.randomUUID().toString();
-      Optional<KeyValue<Double>> firstAmount = view.get(userFirst, amount, stamp);
-      Optional<KeyValue<Double>> secondAmount = view.get(userSecond, amount, stamp);
+      Optional<KeyValue<Double>> firstAmount = view.get(userFirst, amount);
+      Optional<KeyValue<Double>> secondAmount = view.get(userSecond, amount);
 
       client.begin(
           transactionId,
@@ -144,8 +144,11 @@ public class TransactionIT {
                   userSecond,
                   amount,
                   secondAmount.map(KeyValue::getSequentialId).orElse(1L))));
+
       Response response = responses.take();
       if (response.getFlags() != Flags.OPEN) {
+        TimeUnit.MILLISECONDS.sleep(abortWaitDuration);
+        abortWaitDuration *= 2;
         continue;
       }
       long sequentialId = response.getSeqId();
@@ -161,12 +164,16 @@ public class TransactionIT {
               KeyAttribute.ofAttributeDescriptor(user, userFirst, amount, sequentialId),
               KeyAttribute.ofAttributeDescriptor(user, userSecond, amount, sequentialId)));
 
-      if (responses.take().getFlags() != Flags.COMMITTED) {
+      response = responses.take();
+      if (response.getFlags() != Flags.COMMITTED) {
+        TimeUnit.MILLISECONDS.sleep(abortWaitDuration);
+        abortWaitDuration *= 2;
         continue;
       }
 
       CountDownLatch latch = new CountDownLatch(2);
       CommitCallback callback = (succ, exc) -> latch.countDown();
+      long stamp = System.currentTimeMillis();
       view.write(amount.upsert(sequentialId, userFirst, stamp, firstWillHave), callback);
       view.write(amount.upsert(sequentialId, userSecond, stamp, secondWillHave), callback);
       latch.await();

@@ -79,7 +79,7 @@ public class TransactionResourceManagerTest {
               CountDownLatch latch = new CountDownLatch(1);
               manager.setCurrentState(
                   key,
-                  State.open(new HashSet<>(request.getInputAttributes())),
+                  State.open(1L, new HashSet<>(request.getInputAttributes())),
                   (succ, exc) -> {
                     latch.countDown();
                   });
@@ -130,11 +130,14 @@ public class TransactionResourceManagerTest {
                       });
               if (request.getFlags() == Request.Flags.COMMIT) {
                 manager.setCurrentState(
-                    key, State.committed(new HashSet<>(request.getOutputAttributes())), commit);
+                    key,
+                    State.open(1L, Collections.emptyList())
+                        .committed(new HashSet<>(request.getOutputAttributes())),
+                    commit);
                 manager.writeResponse(key, requestId, Response.committed(), commit);
               } else {
                 manager.setCurrentState(
-                    key, State.open(new HashSet<>(request.getInputAttributes())), commit);
+                    key, State.open(1L, new HashSet<>(request.getInputAttributes())), commit);
                 manager.writeResponse(key, requestId, Response.open(1L), commit);
               }
               ExceptionUtils.ignoringInterrupted(latch::await);
@@ -189,7 +192,7 @@ public class TransactionResourceManagerTest {
                 manager.writeResponse(key, requestId, Response.aborted(), commit);
               } else if (request.getFlags() == Request.Flags.OPEN) {
                 manager.setCurrentState(
-                    key, State.open(new HashSet<>(request.getInputAttributes())), commit);
+                    key, State.open(1L, new HashSet<>(request.getInputAttributes())), commit);
                 manager.writeResponse(key, requestId, Response.open(1L), commit);
               }
               ExceptionUtils.ignoringInterrupted(latch::await);

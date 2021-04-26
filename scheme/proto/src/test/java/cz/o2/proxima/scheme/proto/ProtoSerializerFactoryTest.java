@@ -170,10 +170,21 @@ public class ProtoSerializerFactoryTest {
             Pair.of(Response.aborted(), response),
             Pair.of(Response.duplicate(), response),
             Pair.of(Response.empty(), response),
-            Pair.of(State.committed(Sets.newHashSet(keyAttribute)), state),
+            Pair.of(State.open(1L, Sets.newHashSet(keyAttribute)), state),
+            Pair.of(
+                State.open(1L, Sets.newHashSet(keyAttribute, keyAttributeSingleWildcard))
+                    .committed(Sets.newHashSet(keyAttribute)),
+                state),
             Pair.of(State.empty(), state),
-            Pair.of(State.aborted(), state),
-            Pair.of(State.committed(Sets.newHashSet(keyAttributeSingleWildcard)), state));
+            Pair.of(
+                State.open(1L, Sets.newHashSet(keyAttribute))
+                    .update(Collections.singletonList(keyAttributeSingleWildcard)),
+                state),
+            Pair.of(State.open(1L, Sets.newHashSet(keyAttribute)).aborted(), state),
+            Pair.of(
+                State.open(1L, Sets.newHashSet(keyAttributeSingleWildcard))
+                    .committed(Sets.newHashSet(keyAttributeSingleWildcard)),
+                state));
 
     toVerify.forEach(
         p -> {

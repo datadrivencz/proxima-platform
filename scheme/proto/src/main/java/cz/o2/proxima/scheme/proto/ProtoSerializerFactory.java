@@ -249,12 +249,22 @@ public class ProtoSerializerFactory implements ValueSerializerFactory {
           return State.empty();
         case OPEN:
           return State.open(
-              new HashSet<>(getKeyAttributesFromProto(repository, state.getAttributesList())));
+              state.getSeqId(),
+              new HashSet<>(getKeyAttributesFromProto(repository, state.getInputAttributesList())));
         case COMMITTED:
-          return State.committed(
-              new HashSet<>(getKeyAttributesFromProto(repository, state.getAttributesList())));
+          return State.open(
+                  state.getSeqId(),
+                  new HashSet<>(
+                      getKeyAttributesFromProto(repository, state.getInputAttributesList())))
+              .committed(
+                  new HashSet<>(
+                      getKeyAttributesFromProto(repository, state.getCommittedAttributesList())));
         case ABORTED:
-          return State.aborted();
+          return State.open(
+                  state.getSeqId(),
+                  new HashSet<>(
+                      getKeyAttributesFromProto(repository, state.getInputAttributesList())))
+              .aborted();
         default:
           throw new IllegalStateException("Unknown flags: " + state.getFlags());
       }
@@ -263,7 +273,9 @@ public class ProtoSerializerFactory implements ValueSerializerFactory {
     private static ProtoState stateToProto(Repository repository, State state) {
       return ProtoState.newBuilder()
           .setFlags(asFlags(state.getFlags()))
-          .addAllAttributes(asProtoKeyAttributes(state.getAttributes()))
+          .addAllInputAttributes(asProtoKeyAttributes(state.getInputAttributes()))
+          .addAllCommittedAttributes(asProtoKeyAttributes(state.getCommittedAttributes()))
+          .setSeqId(state.getSequentialId())
           .build();
     }
 

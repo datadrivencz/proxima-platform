@@ -48,5 +48,7 @@ message ProtoResponse {
 
 message ProtoState {
   Flags flags = 1;
-  repeated KeyAttribute attributes = 2;
+  uint64 seqId = 2;
+  repeated KeyAttribute inputAttributes = 3;
+  repeated KeyAttribute committedAttributes = 4;
 }

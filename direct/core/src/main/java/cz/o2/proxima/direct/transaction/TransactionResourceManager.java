@@ -16,6 +16,7 @@
 package cz.o2.proxima.direct.transaction;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.Sets;
 import cz.o2.proxima.annotations.Internal;
 import cz.o2.proxima.direct.commitlog.LogObserver;
 import cz.o2.proxima.direct.commitlog.LogObservers;
@@ -47,6 +48,7 @@ import cz.o2.proxima.util.Pair;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -213,7 +215,6 @@ class TransactionResourceManager implements ClientTransactionManager, ServerTran
     }
 
     CachedView getStateView() {
-      checkThread();
       if (stateView == null) {
         DirectAttributeFamilyDescriptor family = attributeToFamily.get(requestDesc);
         stateView = getCachedAccessors(family).getOrCreateStateView();
@@ -451,10 +452,22 @@ class TransactionResourceManager implements ClientTransactionManager, ServerTran
   @Override
   public void setCurrentState(
       String transactionId, @Nullable State state, CommitCallback callback) {
+
     CachedTransaction cachedTransaction =
         openTransactionMap.computeIfAbsent(
             transactionId,
-            tmp -> new CachedTransaction(transactionId, state.getAttributes(), null));
+            tmp -> {
+              final Collection<KeyAttribute> attributes;
+              if (!state.getCommittedAttributes().isEmpty()) {
+                HashSet<KeyAttribute> committedSet =
+                    Sets.newHashSet(state.getCommittedAttributes());
+                committedSet.addAll(state.getInputAttributes());
+                attributes = committedSet;
+              } else {
+                attributes = state.getInputAttributes();
+              }
+              return new CachedTransaction(transactionId, attributes, null);
+            });
 
     final StreamElement update;
     if (state != null) {
