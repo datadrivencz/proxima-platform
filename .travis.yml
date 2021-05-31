@@ -40,5 +40,5 @@ before_cache: rm -rf ~/.m2/repository/cz/o2/proxima || /bin/true
 
 cache:
   directories:
-    - '$HOME/.m2/repository'
-    - '$HOME/.sonar/cache'
+    - $HOME/.m2/repository
+    - $HOME/.sonar/cache
