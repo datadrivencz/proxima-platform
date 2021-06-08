@@ -99,6 +99,16 @@ public class AttributeValueAccessorsTest {
       implements StructureValueAccessor<Map<String, Object>> {
 
     @Override
+    public AttributeValueAccessor<?, ?> getFieldAccessor(String name) {
+      throw new UnsupportedOperationException("Not implemented.");
+    }
+
+    @Override
+    public <OutputT> OutputT getRawFieldValue(String name, Map<String, Object> structure) {
+      throw new UnsupportedOperationException("Not implemented.");
+    }
+
+    @Override
     public StructureValue valueOf(Map<String, Object> object) {
       return StructureValue.of(object);
     }

@@ -157,6 +157,28 @@ public class AttributeValueAccessors {
 
   public interface StructureValueAccessor<T> extends AttributeValueAccessor<T, StructureValue> {
 
+    /**
+     * Get accessor for a given field. Please not that accessors only work on "raw values". See
+     * {@link #getRawFieldValue(String, Object)} for more details.
+     *
+     * @param name Name of the field to get accessor for.
+     * @return Field accessor.
+     */
+    AttributeValueAccessor<?, ?> getFieldAccessor(String name);
+
+    /**
+     * Get raw value of a given field. In this context, raw value means a value before applying a
+     * field accessor on it (for example it can be a byte representation, that would be converted to
+     * a string after "accessing"). This is intended for partial message parsing and to be used in
+     * combination with {@link #getFieldAccessor(String)}.
+     *
+     * @param name Name of the field.
+     * @param structure Structure to get a raw value from.
+     * @param <OutputT> Type of raw value. This is only to simplify casting of returned value.
+     * @return Raw value.
+     */
+    <OutputT> OutputT getRawFieldValue(String name, T structure);
+
     @Override
     default Type getType() {
       return Type.STRUCTURE;
