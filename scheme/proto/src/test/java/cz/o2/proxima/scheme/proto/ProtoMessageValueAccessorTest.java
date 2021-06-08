@@ -244,7 +244,8 @@ public class ProtoMessageValueAccessorTest {
   public void testFieldAccessors() {
     final StructureValueAccessor<ValueSchemeMessage> accessor =
         new ProtoMessageValueAccessor<>(ValueSchemeMessage::getDefaultInstance);
-    final InnerMessage innerMessage = InnerMessage.newBuilder().setInnerDoubleType(1.2).build();
+    final InnerMessage innerMessage =
+        InnerMessage.newBuilder().setInnerEnum(Directions.LEFT).setInnerDoubleType(1.2).build();
     final ValueSchemeMessage message =
         ValueSchemeMessage.newBuilder()
             .setStringType("test string")
@@ -261,6 +262,7 @@ public class ProtoMessageValueAccessorTest {
         (StructureValueAccessor<InnerMessage>) accessor.getFieldAccessor("inner_message");
     assertEquals(
         1.2d, innerMessageAccessor.getRawFieldValue("inner_double_type", innerMessage), 0.0);
+    assertEquals("LEFT", innerMessageAccessor.getRawFieldValue("inner_enum", innerMessage));
 
     // Test string type accessor.
     @SuppressWarnings("unchecked")
