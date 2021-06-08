@@ -21,8 +21,8 @@ import java.io.Serializable;
 /**
  * Interface for value accessors allowed create and get value of attribute
  *
- * @param <InputT> input type
- * @param <OutputT> output type
+ * @param <InputT> Type of "raw" input element, that we want to convert into normalized form.
+ * @param <OutputT> Normalized "output" type, eg. `bytes -> string` for schema type `string`.
  */
 @Experimental
 public interface AttributeValueAccessor<InputT, OutputT> extends Serializable {

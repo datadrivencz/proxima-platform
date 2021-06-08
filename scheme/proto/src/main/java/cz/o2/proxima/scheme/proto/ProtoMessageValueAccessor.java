@@ -70,6 +70,31 @@ public class ProtoMessageValueAccessor<T extends Message> implements StructureVa
   }
 
   @Override
+  public AttributeValueAccessor<?, ?> getFieldAccessor(String name) {
+    return fieldAccessors.get(name);
+  }
+
+  @Override
+  public <OutputT> OutputT getRawFieldValue(String name, T structure) {
+    for (FieldDescriptor field : structure.getDescriptorForType().getFields()) {
+      if (name.equals(field.getName())) {
+        final Object rawValue = structure.getField(field);
+        if (rawValue instanceof EnumValueDescriptor) {
+          final EnumValueDescriptor cast = (EnumValueDescriptor) rawValue;
+          @SuppressWarnings("unchecked")
+          final OutputT result = (OutputT) cast.getName();
+          return result;
+        }
+        @SuppressWarnings("unchecked")
+        final OutputT result = (OutputT) rawValue;
+        return result;
+      }
+    }
+    throw new IllegalStateException(
+        String.format("Field %s not found in %s.", name, structure.getClass()));
+  }
+
+  @Override
   public StructureValue valueOf(T object) {
     return StructureValue.of(
         object
