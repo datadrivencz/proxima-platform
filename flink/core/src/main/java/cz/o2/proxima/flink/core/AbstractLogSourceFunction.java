@@ -59,6 +59,7 @@ import org.apache.flink.streaming.api.watermark.Watermark;
  *   <li>Unified metrics for monitoring and alerting.
  * </ul>
  *
+ * @param <OptionsT> Source options.
  * @param <ReaderT> Reader to use, for reading data.
  * @param <ObserverT> Observer implementation.
  * @param <OffsetT> Offset used by the current reader.
@@ -67,6 +68,7 @@ import org.apache.flink.streaming.api.watermark.Watermark;
  */
 @Slf4j
 abstract class AbstractLogSourceFunction<
+        OptionsT extends FlinkDataOperator.LogOptions,
         ReaderT,
         ObserverT extends AbstractSourceLogObserver<OffsetT, ContextT, OutputT>,
         OffsetT extends Serializable,
@@ -110,6 +112,7 @@ abstract class AbstractLogSourceFunction<
 
   @Getter private final RepositoryFactory repositoryFactory;
   private final List<AttributeDescriptor<?>> attributeDescriptors;
+  @Getter private final OptionsT options;
   private final ResultExtractor<OutputT> resultExtractor;
 
   @Nullable private transient List<OffsetT> restoredOffsets;
@@ -133,9 +136,11 @@ abstract class AbstractLogSourceFunction<
   AbstractLogSourceFunction(
       RepositoryFactory repositoryFactory,
       List<AttributeDescriptor<?>> attributeDescriptors,
+      OptionsT options,
       ResultExtractor<OutputT> resultExtractor) {
     this.repositoryFactory = repositoryFactory;
     this.attributeDescriptors = attributeDescriptors;
+    this.options = options;
     this.resultExtractor = resultExtractor;
   }
 
@@ -290,14 +295,16 @@ abstract class AbstractLogSourceFunction<
     synchronized (sourceContext.getCheckpointLock()) {
       sourceContext.emitWatermark(new Watermark(Watermarks.MAX_WATERMARK));
     }
-    sourceContext.markAsTemporarilyIdle();
-    while (cancelled.getCount() > 0) {
-      try {
-        cancelled.await();
-      } catch (InterruptedException e) {
-        if (cancelled.getCount() == 0) {
-          // Re-interrupt if cancelled.
-          Thread.currentThread().interrupt();
+    if (!options.shutdownFinishedSources()) {
+      sourceContext.markAsTemporarilyIdle();
+      while (cancelled.getCount() > 0) {
+        try {
+          cancelled.await();
+        } catch (InterruptedException e) {
+          if (cancelled.getCount() == 0) {
+            // Re-interrupt if cancelled.
+            Thread.currentThread().interrupt();
+          }
         }
       }
     }

@@ -106,6 +106,7 @@ class BatchLogSourceFunctionTest {
         new BatchLogSourceFunction<StreamElement>(
             repository.asFactory(),
             Collections.singletonList(attribute),
+            FlinkDataOperator.BatchLogOptions.newBuilder().build(),
             ResultExtractor.identity()) {
 
           @Override
@@ -263,6 +264,7 @@ class BatchLogSourceFunctionTest {
         new BatchLogSourceFunction<StreamElement>(
             repository.asFactory(),
             Collections.singletonList(attributeDescriptor),
+            FlinkDataOperator.BatchLogOptions.newBuilder().build(),
             ResultExtractor.identity()) {
 
           @Override

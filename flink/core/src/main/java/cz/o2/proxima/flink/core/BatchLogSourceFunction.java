@@ -33,6 +33,7 @@ import org.apache.flink.shaded.guava18.com.google.common.annotations.VisibleForT
 @Slf4j
 public class BatchLogSourceFunction<OutputT>
     extends AbstractLogSourceFunction<
+        FlinkDataOperator.BatchLogOptions,
         BatchLogReader,
         BatchLogSourceFunction.LogObserver<OutputT>,
         Offset,
@@ -61,8 +62,9 @@ public class BatchLogSourceFunction<OutputT>
   public BatchLogSourceFunction(
       RepositoryFactory repositoryFactory,
       List<AttributeDescriptor<?>> attributeDescriptors,
+      FlinkDataOperator.BatchLogOptions options,
       ResultExtractor<OutputT> resultExtractor) {
-    super(repositoryFactory, attributeDescriptors, resultExtractor);
+    super(repositoryFactory, attributeDescriptors, options, resultExtractor);
   }
 
   @Override
@@ -82,7 +84,7 @@ public class BatchLogSourceFunction<OutputT>
 
   @Override
   List<Partition> getPartitions(BatchLogReader reader) {
-    return reader.getPartitions();
+    return reader.getPartitions(getOptions().startTimestamp(), getOptions().endTimestamp());
   }
 
   @Override
