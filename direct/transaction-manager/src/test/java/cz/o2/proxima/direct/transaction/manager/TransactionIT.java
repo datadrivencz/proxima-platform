@@ -18,6 +18,7 @@ package cz.o2.proxima.direct.transaction.manager;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import com.typesafe.config.Config;
 import com.typesafe.config.ConfigFactory;
 import cz.o2.proxima.direct.commitlog.ObserveHandle;
 import cz.o2.proxima.direct.core.CommitCallback;
@@ -25,10 +26,12 @@ import cz.o2.proxima.direct.core.DirectDataOperator;
 import cz.o2.proxima.direct.core.OnlineAttributeWriter;
 import cz.o2.proxima.direct.randomaccess.KeyValue;
 import cz.o2.proxima.direct.transaction.ClientTransactionManager;
+import cz.o2.proxima.direct.transaction.TransactionResourceManager;
 import cz.o2.proxima.direct.transaction.TransactionalOnlineAttributeWriter;
 import cz.o2.proxima.direct.transaction.TransactionalOnlineAttributeWriter.Transaction;
 import cz.o2.proxima.direct.transaction.TransactionalOnlineAttributeWriter.TransactionRejectedException;
 import cz.o2.proxima.direct.view.CachedView;
+import cz.o2.proxima.repository.ConfigConstants;
 import cz.o2.proxima.repository.EntityAwareAttributeDescriptor.Regular;
 import cz.o2.proxima.repository.EntityAwareAttributeDescriptor.Wildcard;
 import cz.o2.proxima.repository.EntityDescriptor;
@@ -46,6 +49,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Random;
 import java.util.UUID;
@@ -68,8 +72,8 @@ import org.junit.Test;
 public class TransactionIT {
 
   private final Random random = new Random();
-  private final Repository repo =
-      Repository.of(ConfigFactory.load("transactions-it.conf").resolve());
+  private final Config config = ConfigFactory.load("transactions-it.conf").resolve();
+  private final Repository repo = Repository.of(config);
   private final EntityDescriptor user = repo.getEntity("user");
   private final Regular<Double> amount = Regular.of(user, user.getAttribute("amount"));
   private final Wildcard<Integer> numDevices = Wildcard.of(user, user.getAttribute("numDevices.*"));
@@ -82,7 +86,11 @@ public class TransactionIT {
   @Before
   public void setUp() {
     TransactionLogObserver observer = new TransactionLogObserver(direct);
-    client = direct.getClientTransactionManager();
+    Map<String, Object> cfg =
+        config.hasPath(ConfigConstants.TRANSACTIONS)
+            ? config.getObject(ConfigConstants.TRANSACTIONS).unwrapped()
+            : Collections.emptyMap();
+    client = new TransactionResourceManager(direct, cfg);
     view = Optionals.get(direct.getCachedView(amount));
     view.assign(view.getPartitions());
     observer.run("transaction-observer");

@@ -20,7 +20,6 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.MultimapBuilder;
 import com.google.common.collect.Sets;
 import com.google.common.collect.SortedSetMultimap;
-import cz.o2.proxima.annotations.DeclaredThreadSafe;
 import cz.o2.proxima.annotations.Internal;
 import cz.o2.proxima.direct.commitlog.CommitLogObserver;
 import cz.o2.proxima.direct.core.CommitCallback;
@@ -34,7 +33,6 @@ import cz.o2.proxima.transaction.Response;
 import cz.o2.proxima.transaction.State;
 import cz.o2.proxima.util.Optionals;
 import cz.o2.proxima.util.Pair;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -54,7 +52,6 @@ import java.util.stream.Collectors;
 import javax.annotation.Nullable;
 import javax.annotation.concurrent.GuardedBy;
 import javax.annotation.concurrent.ThreadSafe;
-
 import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
 
@@ -65,7 +62,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Internal
 @ThreadSafe
-@DeclaredThreadSafe
+// @DeclaredThreadSafe
 public class TransactionLogObserver implements CommitLogObserver {
 
   @Value
@@ -87,11 +84,10 @@ public class TransactionLogObserver implements CommitLogObserver {
     static KeyWithAttribute ofWildcard(KeyWithAttribute wildcardKeyWithAttribute) {
       int dotPos = wildcardKeyWithAttribute.getAttribute().indexOf('.');
       Preconditions.checkArgument(
-          dotPos > 0,
-          "Attribute %s is not wildcard",
-          wildcardKeyWithAttribute.getAttribute());
+          dotPos > 0, "Attribute %s is not wildcard", wildcardKeyWithAttribute.getAttribute());
       return new KeyWithAttribute(
-          wildcardKeyWithAttribute.getKey(), wildcardKeyWithAttribute.getAttribute().substring(0, dotPos + 1));
+          wildcardKeyWithAttribute.getKey(),
+          wildcardKeyWithAttribute.getAttribute().substring(0, dotPos + 1));
     }
 
     String key;
@@ -179,17 +175,20 @@ public class TransactionLogObserver implements CommitLogObserver {
                             .stream()
                             .filter(e -> e.getValue().getTimestamp() < cleanup)
                             .collect(Collectors.toList());
-                    toCleanUp.forEach(e -> {
-                      lastUpdateSeqId.remove(e.getKey(), e.getValue());
-                      if (e.getKey().isWildcard()) {
-                        KeyWithAttribute wildcard = KeyWithAttribute.ofWildcard(e.getKey());
-                        Set<KeyWithAttribute> wildcardUpdates = updatesToWildcard.get(wildcard);
-                        wildcardUpdates.remove(e.getKey());
-                        if (wildcardUpdates.isEmpty()) {
-                          updatesToWildcard.remove(wildcard);
-                        }
-                      }
-                    });
+                    toCleanUp.forEach(
+                        e -> {
+                          lastUpdateSeqId.remove(e.getKey(), e.getValue());
+                          if (e.getKey().isWildcard()) {
+                            KeyWithAttribute wildcard = KeyWithAttribute.ofWildcard(e.getKey());
+                            Set<KeyWithAttribute> wildcardUpdates = updatesToWildcard.get(wildcard);
+                            if (wildcardUpdates != null) {
+                              wildcardUpdates.remove(e.getKey());
+                              if (wildcardUpdates.isEmpty()) {
+                                updatesToWildcard.remove(wildcard);
+                              }
+                            }
+                          }
+                        });
                     cleaned = toCleanUp.size();
                   }
                   long duration = System.currentTimeMillis() - now;

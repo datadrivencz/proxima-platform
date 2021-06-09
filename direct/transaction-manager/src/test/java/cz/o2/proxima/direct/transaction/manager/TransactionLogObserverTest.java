@@ -23,7 +23,6 @@ import com.typesafe.config.ConfigFactory;
 import cz.o2.proxima.direct.core.DirectDataOperator;
 import cz.o2.proxima.direct.transaction.ClientTransactionManager;
 import cz.o2.proxima.repository.AttributeDescriptor;
-import cz.o2.proxima.repository.EntityAwareAttributeDescriptor.Regular;
 import cz.o2.proxima.repository.EntityAwareAttributeDescriptor.Wildcard;
 import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.repository.Repository;
@@ -59,7 +58,6 @@ public class TransactionLogObserverTest {
       Wildcard.of(transaction, transaction.getAttribute("request.*"));
   private final Wildcard<Response> response =
       Wildcard.of(transaction, transaction.getAttribute("response.*"));
-  private final Regular<State> state = Regular.of(transaction, transaction.getAttribute("state"));
   private long now;
   private TransactionLogObserver observer;
 

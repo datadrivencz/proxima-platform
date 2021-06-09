@@ -377,8 +377,15 @@ public class TransactionResourceManager
       BiConsumer<StreamElement, Pair<Long, Object>> updateConsumer,
       CommitLogObserver requestObserver) {
 
+    final CommitLogObserver effectiveObserver;
     if (needsSynchronization(requestObserver)) {
-      requestObserver = LogObservers.synchronizedObserver(requestObserver);
+      effectiveObserver = LogObservers.synchronizedObserver(requestObserver);
+    } else {
+      effectiveObserver =
+          new ThreadPooledObserver(
+              direct.getContext().getExecutorService(),
+              requestObserver,
+              Runtime.getRuntime().availableProcessors());
     }
 
     List<Set<String>> families =
@@ -411,7 +418,7 @@ public class TransactionResourceManager
                   reader.observe(
                       name + "-" + requestFamily.getDesc().getName(),
                       repartitionHookForView(
-                          stateFamily, updateConsumer, requestObserver, initializedLatch)));
+                          stateFamily, updateConsumer, effectiveObserver, initializedLatch)));
             });
     ExceptionUtils.unchecked(initializedLatch::await);
   }
@@ -678,11 +685,12 @@ public class TransactionResourceManager
 
     CachedTransaction cachedTransaction = openTransactionMap.get(transactionId);
     if (cachedTransaction != null) {
-      cachedTransaction
-          .getResponseWriter()
-          .write(
-              responseDesc.upsert(transactionId, responseId, System.currentTimeMillis(), response),
-              callback);
+      final OnlineAttributeWriter writer = cachedTransaction.getResponseWriter();
+      synchronized (writer) {
+        writer.write(
+            responseDesc.upsert(transactionId, responseId, System.currentTimeMillis(), response),
+            callback);
+      }
     } else {
       log.warn(
           "Transaction {} is not open, don't have a writer to return response {}",
