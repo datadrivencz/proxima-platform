@@ -21,7 +21,6 @@ import com.google.common.collect.Iterables;
 import com.typesafe.config.ConfigFactory;
 import cz.o2.proxima.annotations.DeclaredThreadSafe;
 import cz.o2.proxima.direct.commitlog.CommitLogObserver;
-import cz.o2.proxima.direct.commitlog.CommitLogObserver.OnRepartitionContext;
 import cz.o2.proxima.direct.core.CommitCallback;
 import cz.o2.proxima.direct.core.DirectDataOperator;
 import cz.o2.proxima.direct.transaction.TransactionResourceManager.CachedTransaction;
@@ -57,7 +56,7 @@ public class TransactionResourceManagerTest {
   private final EntityDescriptor gateway = repo.getEntity("gateway");
   private final AttributeDescriptor<?> status = gateway.getAttribute("status");
   private final EntityDescriptor user = repo.getEntity("user");
-  private final AttributeDescriptor<byte[]> allGateways = user.getAttribute("gateway.*");
+  private final Wildcard<byte[]> allGateways = Wildcard.of(user, user.getAttribute("gateway.*"));
   private final EntityDescriptor transaction = repo.getEntity("_transaction");
   private final Wildcard<Request> requestDesc =
       Wildcard.of(transaction, transaction.getAttribute("request.*"));

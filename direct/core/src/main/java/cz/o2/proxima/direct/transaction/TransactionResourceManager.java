@@ -93,6 +93,15 @@ public class TransactionResourceManager
     return new TransactionResourceManager(direct, Collections.emptyMap());
   }
 
+  private class TransactionConfig implements ServerTransactionConfig {
+
+    @Override
+    public long getCleanupInterval() {
+      // FIXME: [PROXIMA-215]
+      return transactionTimeoutMs;
+    }
+  }
+
   private class CachedWriters implements AutoCloseable {
 
     private final DirectAttributeFamilyDescriptor family;
@@ -142,7 +151,6 @@ public class TransactionResourceManager
     @Getter final long created = System.currentTimeMillis();
     final Map<AttributeDescriptor<?>, DirectAttributeFamilyDescriptor> attributeToFamily =
         new HashMap<>();
-    final Thread owningThread = Thread.currentThread();
     final @Nullable BiConsumer<String, Response> responseConsumer;
     @Nullable OnlineAttributeWriter requestWriter;
     @Nullable OnlineAttributeWriter responseWriter;
@@ -164,7 +172,6 @@ public class TransactionResourceManager
     }
 
     void open(List<KeyAttribute> inputAttrs) {
-      checkThread();
       log.debug("Opening transaction {} with inputAttrs {}", transactionId, inputAttrs);
       Preconditions.checkState(responseConsumer != null);
       addTransactionResponseConsumer(
@@ -173,7 +180,6 @@ public class TransactionResourceManager
     }
 
     public void commit(List<KeyAttribute> outputAttributes) {
-      checkThread();
       log.debug(
           "Committing transaction {} with outputAttributes {}", transactionId, outputAttributes);
       sendRequest(
@@ -182,7 +188,6 @@ public class TransactionResourceManager
     }
 
     public void update(List<KeyAttribute> addedAttributes) {
-      checkThread();
       log.debug("Updating transaction {} with addedAttributes {}", transactionId, addedAttributes);
       sendRequest(
           Request.builder().flags(Request.Flags.UPDATE).inputAttributes(addedAttributes).build(),
@@ -190,7 +195,6 @@ public class TransactionResourceManager
     }
 
     public void rollback() {
-      checkThread();
       log.debug("Rolling back transaction {} (cached {})", transactionId, this);
       sendRequest(Request.builder().flags(Flags.ROLLBACK).build(), "rollback");
     }
@@ -234,7 +238,6 @@ public class TransactionResourceManager
     }
 
     Pair<List<Integer>, OnlineAttributeWriter> getRequestWriter() {
-      checkThread();
       if (requestWriter == null) {
         DirectAttributeFamilyDescriptor family = attributeToFamily.get(requestDesc);
         requestWriter = getCachedAccessors(family).getOrCreateRequestWriter();
@@ -246,7 +249,6 @@ public class TransactionResourceManager
     }
 
     OnlineAttributeWriter getResponseWriter() {
-      checkThread();
       if (responseWriter == null) {
         DirectAttributeFamilyDescriptor family = attributeToFamily.get(responseDesc);
         responseWriter = getCachedAccessors(family).getOrCreateResponseWriter();
@@ -260,15 +262,6 @@ public class TransactionResourceManager
         stateView = getCachedAccessors(family).getOrCreateStateView();
       }
       return stateView;
-    }
-
-    private void checkThread() {
-      Preconditions.checkState(
-          owningThread == Thread.currentThread(),
-          "Conflict in owning threads of transaction %s: %s and %s",
-          transactionId,
-          owningThread,
-          Thread.currentThread());
     }
 
     public State getState() {
@@ -312,18 +305,24 @@ public class TransactionResourceManager
       new ConcurrentHashMap<>();
   private final Map<String, BiConsumer<String, Response>> transactionResponseConsumers =
       new ConcurrentHashMap<>();
+  @Getter private final TransactionConfig cfg = new TransactionConfig();
 
   @Getter(AccessLevel.PACKAGE)
-  private final long transactionTimeoutMs;
+  private long transactionTimeoutMs;
 
   public TransactionResourceManager(DirectDataOperator direct, Map<String, Object> cfg) {
+    this(direct, getTransactionTimeout(cfg));
+  }
+
+  @VisibleForTesting
+  TransactionResourceManager(DirectDataOperator direct, long transactionTimeoutMs) {
     this.direct = direct;
     this.transaction = direct.getRepository().getEntity("_transaction");
     this.requestDesc = Wildcard.of(transaction, transaction.getAttribute("request.*"));
     this.responseDesc = Wildcard.of(transaction, transaction.getAttribute("response.*"));
     this.stateDesc = Regular.of(transaction, transaction.getAttribute("state"));
     this.commitDesc = Regular.of(transaction, transaction.getAttribute("commit"));
-    this.transactionTimeoutMs = getTransactionTimeout(cfg);
+    this.transactionTimeoutMs = transactionTimeoutMs;
 
     log.info(
         "Created {} with transaction timeout {} ms",
@@ -331,7 +330,12 @@ public class TransactionResourceManager
         transactionTimeoutMs);
   }
 
-  private long getTransactionTimeout(Map<String, Object> cfg) {
+  @VisibleForTesting
+  public void setTransactionTimeoutMs(long timeoutMs) {
+    this.transactionTimeoutMs = timeoutMs;
+  }
+
+  private static long getTransactionTimeout(Map<String, Object> cfg) {
     return Optional.ofNullable(cfg.get("timeout"))
         .map(Object::toString)
         .map(Long::parseLong)
@@ -459,7 +463,7 @@ public class TransactionResourceManager
 
       @Override
       public boolean onNext(StreamElement ingest, OnNextContext context) {
-        if (ingest.getStamp() > System.currentTimeMillis() - transactionTimeoutMs) {
+        if (ingest.getStamp() > System.currentTimeMillis() - 2 * transactionTimeoutMs) {
           super.onNext(ingest, context);
         } else {
           log.warn(

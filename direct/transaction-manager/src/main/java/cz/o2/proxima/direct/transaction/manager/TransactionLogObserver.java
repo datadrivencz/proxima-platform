@@ -52,6 +52,8 @@ import java.util.stream.Collectors;
 import javax.annotation.Nullable;
 import javax.annotation.concurrent.GuardedBy;
 import javax.annotation.concurrent.ThreadSafe;
+import lombok.AccessLevel;
+import lombok.Getter;
 import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
 
@@ -101,8 +103,9 @@ public class TransactionLogObserver implements CommitLogObserver {
   @Value
   private static class SeqIdWithTombstone implements Comparable<SeqIdWithTombstone> {
 
-    public static SeqIdWithTombstone create(long committedSeqId, boolean delete) {
-      return new SeqIdWithTombstone(committedSeqId, delete, System.currentTimeMillis());
+    public static SeqIdWithTombstone create(
+        TransactionLogObserver observer, long committedSeqId, boolean delete) {
+      return new SeqIdWithTombstone(committedSeqId, delete, observer.currentTimeMillis());
     }
 
     /** sequential ID of the update */
@@ -138,7 +141,10 @@ public class TransactionLogObserver implements CommitLogObserver {
   }
 
   private final DirectDataOperator direct;
+
+  @Getter(AccessLevel.PACKAGE)
   private final ServerTransactionManager manager;
+
   private final AtomicLong sequenceId = new AtomicLong(1000L);
   private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 
@@ -147,12 +153,18 @@ public class TransactionLogObserver implements CommitLogObserver {
       MultimapBuilder.hashKeys().treeSetValues().build();
 
   @GuardedBy("lock")
-  private final Map<KeyWithAttribute, Set<KeyWithAttribute>> updatesToWildcard = new HashMap<>();
+  private final Map<KeyWithAttribute, Map<KeyWithAttribute, Long>> updatesToWildcard =
+      new HashMap<>();
 
   public TransactionLogObserver(DirectDataOperator direct) {
     this.direct = direct;
-    this.manager = direct.getServerTransactionManager();
+    this.manager = getServerTransactionManager(direct);
     startHouseKeeping();
+  }
+
+  @VisibleForTesting
+  ServerTransactionManager getServerTransactionManager(DirectDataOperator direct) {
+    return direct.getServerTransactionManager();
   }
 
   private void startHouseKeeping() {
@@ -165,8 +177,9 @@ public class TransactionLogObserver implements CommitLogObserver {
                 try {
                   // FIXME: [PROXIMA-215]
                   manager.houseKeeping();
-                  long now = System.currentTimeMillis();
-                  long cleanup = now - 60000;
+                  long now = currentTimeMillis();
+                  long cleanupTimeout = manager.getCfg().getCleanupInterval();
+                  long cleanup = now - cleanupTimeout;
                   int cleaned;
                   try (Locker l = Locker.of(lock.writeLock())) {
                     List<Entry<KeyWithAttribute, SeqIdWithTombstone>> toCleanUp =
@@ -180,8 +193,13 @@ public class TransactionLogObserver implements CommitLogObserver {
                           lastUpdateSeqId.remove(e.getKey(), e.getValue());
                           if (e.getKey().isWildcard()) {
                             KeyWithAttribute wildcard = KeyWithAttribute.ofWildcard(e.getKey());
-                            Set<KeyWithAttribute> wildcardUpdates = updatesToWildcard.get(wildcard);
-                            if (wildcardUpdates != null) {
+                            Map<KeyWithAttribute, Long> wildcardUpdates =
+                                updatesToWildcard.get(wildcard);
+                            if (wildcardUpdates != null
+                                && Optional.ofNullable(wildcardUpdates.get(e.getKey()))
+                                    .map(v -> v < cleanup)
+                                    .orElse(false)) {
+
                               wildcardUpdates.remove(e.getKey());
                               if (wildcardUpdates.isEmpty()) {
                                 updatesToWildcard.remove(wildcard);
@@ -191,10 +209,10 @@ public class TransactionLogObserver implements CommitLogObserver {
                         });
                     cleaned = toCleanUp.size();
                   }
-                  long duration = System.currentTimeMillis() - now;
+                  long duration = currentTimeMillis() - now;
                   log.info("Finished housekeeping in {} ms, removed {} records", duration, cleaned);
-                  if (duration < 60000) {
-                    TimeUnit.MILLISECONDS.sleep(60000 - duration);
+                  if (duration < cleanupTimeout) {
+                    sleep(cleanupTimeout - duration);
                   }
                 } catch (InterruptedException ex) {
                   Thread.currentThread().interrupt();
@@ -203,6 +221,16 @@ public class TransactionLogObserver implements CommitLogObserver {
                 }
               }
             });
+  }
+
+  @VisibleForTesting
+  void sleep(long sleepMs) throws InterruptedException {
+    TimeUnit.MILLISECONDS.sleep(sleepMs);
+  }
+
+  @VisibleForTesting
+  long currentTimeMillis() {
+    return System.currentTimeMillis();
   }
 
   @Override
@@ -355,7 +383,7 @@ public class TransactionLogObserver implements CommitLogObserver {
   private State transitionToOpen(String transactionId, Request request) {
     long seqId = sequenceId.getAndIncrement();
     State proposedState =
-        State.open(seqId, System.currentTimeMillis(), new HashSet<>(request.getInputAttributes()));
+        State.open(seqId, currentTimeMillis(), new HashSet<>(request.getInputAttributes()));
     if (verifyNotInConflict(request.getInputAttributes())) {
       log.info("Transaction {} is now {}", transactionId, proposedState.getFlags());
       return proposedState;
@@ -374,8 +402,9 @@ public class TransactionLogObserver implements CommitLogObserver {
               .map(KeyWithAttribute::of)
               .map(updatesToWildcard::get)
               .filter(Objects::nonNull)
+              .map(Map::entrySet)
               .flatMap(Collection::stream)
-              .map(kwa -> Pair.of(kwa, lastIsNotTombstone(lastUpdateSeqId.get(kwa))))
+              .map(e -> Pair.of(e.getKey(), lastIsNotTombstone(lastUpdateSeqId.get(e.getKey()))))
               .collect(Collectors.toList());
     }
 
@@ -466,12 +495,14 @@ public class TransactionLogObserver implements CommitLogObserver {
           .forEach(
               ka -> {
                 KeyWithAttribute kwa = KeyWithAttribute.of(ka);
-                lastUpdateSeqId.put(kwa, SeqIdWithTombstone.create(committedSeqId, ka.isDelete()));
+                SeqIdWithTombstone seqIdWithTombstone =
+                    SeqIdWithTombstone.create(this, committedSeqId, ka.isDelete());
+                lastUpdateSeqId.put(kwa, seqIdWithTombstone);
                 if (ka.getAttributeDescriptor().isWildcard()) {
-                  Set<KeyWithAttribute> list =
+                  Map<KeyWithAttribute, Long> updated =
                       updatesToWildcard.computeIfAbsent(
-                          KeyWithAttribute.ofWildcard(ka), k -> new HashSet<>());
-                  list.add(kwa);
+                          KeyWithAttribute.ofWildcard(ka), k -> new HashMap<>());
+                  updated.put(kwa, seqIdWithTombstone.getTimestamp());
                 }
               });
     }

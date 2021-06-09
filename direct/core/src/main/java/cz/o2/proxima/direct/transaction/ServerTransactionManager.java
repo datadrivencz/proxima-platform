@@ -18,6 +18,7 @@ package cz.o2.proxima.direct.transaction;
 import cz.o2.proxima.direct.commitlog.CommitLogObserver;
 import cz.o2.proxima.direct.core.CommitCallback;
 import cz.o2.proxima.functional.BiConsumer;
+import cz.o2.proxima.repository.Repository;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.transaction.Response;
 import cz.o2.proxima.transaction.State;
@@ -25,6 +26,11 @@ import cz.o2.proxima.util.Pair;
 import javax.annotation.Nullable;
 
 public interface ServerTransactionManager extends AutoCloseable, TransactionManager {
+
+  interface ServerTransactionConfig {
+    /** Get cleanup interval in milliseconds. */
+    long getCleanupInterval();
+  }
 
   /**
    * Observe all transactional families with given observer.
@@ -93,4 +99,7 @@ public interface ServerTransactionManager extends AutoCloseable, TransactionMana
    * needed anymore.
    */
   void houseKeeping();
+
+  /** Retrieve a configuration read from the {@link Repository}. */
+  ServerTransactionConfig getCfg();
 }
