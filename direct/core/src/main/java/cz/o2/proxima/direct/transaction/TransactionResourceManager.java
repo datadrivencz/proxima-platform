@@ -19,6 +19,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
+import cz.o2.proxima.annotations.DeclaredThreadSafe;
 import cz.o2.proxima.annotations.Internal;
 import cz.o2.proxima.direct.commitlog.CommitLogObserver;
 import cz.o2.proxima.direct.commitlog.CommitLogReader;
@@ -376,7 +377,9 @@ public class TransactionResourceManager
       BiConsumer<StreamElement, Pair<Long, Object>> updateConsumer,
       CommitLogObserver requestObserver) {
 
-    CommitLogObserver synchronizedObserver = LogObservers.synchronizedObserver(requestObserver);
+    if (needsSynchronization(requestObserver)) {
+      requestObserver = LogObservers.synchronizedObserver(requestObserver);
+    }
 
     List<Set<String>> families =
         direct
@@ -408,9 +411,14 @@ public class TransactionResourceManager
                   reader.observe(
                       name + "-" + requestFamily.getDesc().getName(),
                       repartitionHookForView(
-                          stateFamily, updateConsumer, synchronizedObserver, initializedLatch)));
+                          stateFamily, updateConsumer, requestObserver, initializedLatch)));
             });
     ExceptionUtils.unchecked(initializedLatch::await);
+  }
+
+  @VisibleForTesting
+  static boolean needsSynchronization(CommitLogObserver requestObserver) {
+    return requestObserver.getClass().getDeclaredAnnotation(DeclaredThreadSafe.class) == null;
   }
 
   private Pair<DirectAttributeFamilyDescriptor, DirectAttributeFamilyDescriptor> toRequestStatePair(

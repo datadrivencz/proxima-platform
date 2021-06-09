@@ -15,11 +15,11 @@
  */
 package cz.o2.proxima.direct.transaction;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.*;
 
 import com.google.common.collect.Iterables;
 import com.typesafe.config.ConfigFactory;
+import cz.o2.proxima.annotations.DeclaredThreadSafe;
 import cz.o2.proxima.direct.commitlog.CommitLogObserver;
 import cz.o2.proxima.direct.commitlog.CommitLogObserver.OnRepartitionContext;
 import cz.o2.proxima.direct.core.CommitCallback;
@@ -374,5 +374,19 @@ public class TransactionResourceManagerTest {
     ServerTransactionManager manager =
         repo.getOrCreateOperator(DirectDataOperator.class).getServerTransactionManager();
     assertEquals(1000L, ((TransactionResourceManager) manager).getTransactionTimeoutMs());
+  }
+
+  @Test
+  public void testSynchronizationTesting() {
+    assertTrue(TransactionResourceManager.needsSynchronization((ingest, context) -> false));
+    assertFalse(TransactionResourceManager.needsSynchronization(new ThreadSafeCommitLogObserver()));
+  }
+
+  @DeclaredThreadSafe
+  private static class ThreadSafeCommitLogObserver implements CommitLogObserver {
+    @Override
+    public boolean onNext(StreamElement ingest, OnNextContext context) {
+      return false;
+    }
   }
 }
