@@ -380,7 +380,7 @@ public class CommitLogReaderTest {
   }
 
   @Test
-  public void testOrderedObserverLifycycle() {
+  public void testOrderedObserverLifecycle() {
     StreamElement update =
         StreamElement.upsert(
             entity,

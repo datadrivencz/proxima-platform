@@ -100,6 +100,7 @@ class CommitLogSourceFunctionTest {
         new CommitLogSourceFunction<>(
             repository.asFactory(),
             Collections.singletonList(attribute),
+            FlinkDataOperator.CommitLogOptions.newBuilder().build(),
             ResultExtractor.identity());
     final AbstractStreamOperatorTestHarness<StreamElement> testHarness =
         createTestHarness(sourceFunction, 1, 0);
@@ -141,6 +142,7 @@ class CommitLogSourceFunctionTest {
         new CommitLogSourceFunction<>(
             repository.asFactory(),
             Collections.singletonList(attributeDescriptor),
+            FlinkDataOperator.CommitLogOptions.newBuilder().build(),
             element -> {
               throw new IllegalStateException("Test failure.");
             });
@@ -284,6 +286,7 @@ class CommitLogSourceFunctionTest {
         new CommitLogSourceFunction<>(
             repository.asFactory(),
             Collections.singletonList(attributeDescriptor),
+            FlinkDataOperator.CommitLogOptions.newBuilder().build(),
             ResultExtractor.identity());
     final AbstractStreamOperatorTestHarness<StreamElement> testHarness =
         createTestHarness(sourceFunction, numSubtasks, subtaskIndex);

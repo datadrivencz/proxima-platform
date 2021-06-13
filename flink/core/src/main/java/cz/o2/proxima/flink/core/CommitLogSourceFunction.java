@@ -23,7 +23,6 @@ import cz.o2.proxima.direct.core.DirectDataOperator;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.Partition;
-import cz.o2.proxima.storage.commitlog.Position;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -32,6 +31,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class CommitLogSourceFunction<OutputT>
     extends AbstractLogSourceFunction<
+        FlinkDataOperator.CommitLogOptions,
         CommitLogReader,
         CommitLogSourceFunction.LogObserver<OutputT>,
         Offset,
@@ -63,8 +63,9 @@ public class CommitLogSourceFunction<OutputT>
   public CommitLogSourceFunction(
       RepositoryFactory repositoryFactory,
       List<AttributeDescriptor<?>> attributeDescriptors,
+      FlinkDataOperator.CommitLogOptions options,
       ResultExtractor<OutputT> resultExtractor) {
-    super(repositoryFactory, attributeDescriptors, resultExtractor);
+    super(repositoryFactory, attributeDescriptors, options, resultExtractor);
   }
 
   @Override
@@ -109,8 +110,10 @@ public class CommitLogSourceFunction<OutputT>
       List<Partition> partitions,
       List<AttributeDescriptor<?>> attributeDescriptors,
       LogObserver<OutputT> observer) {
+    final FlinkDataOperator.CommitLogOptions options = getOptions();
     final ObserveHandle commitLogHandle =
-        reader.observeBulkPartitions(partitions, Position.OLDEST, false, observer);
+        reader.observeBulkPartitions(
+            partitions, options.initialPosition(), options.stopAtCurrent(), observer);
     return new UnifiedObserveHandle<Offset>() {
 
       @Override
@@ -132,7 +135,7 @@ public class CommitLogSourceFunction<OutputT>
       List<AttributeDescriptor<?>> attributeDescriptors,
       LogObserver<OutputT> observer) {
     final cz.o2.proxima.direct.commitlog.ObserveHandle delegate =
-        reader.observeBulkOffsets(offsets, false, observer);
+        reader.observeBulkOffsets(offsets, getOptions().stopAtCurrent(), observer);
     return new UnifiedObserveHandle<Offset>() {
 
       @Override
