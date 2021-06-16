@@ -17,6 +17,7 @@ package cz.o2.proxima.direct.transaction.manager;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.Iterators;
 import com.google.common.collect.MultimapBuilder;
 import com.google.common.collect.Sets;
 import com.google.common.collect.SortedSetMultimap;
@@ -36,9 +37,9 @@ import cz.o2.proxima.util.Pair;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -182,32 +183,26 @@ public class TransactionLogObserver implements CommitLogObserver {
                   long cleanup = now - cleanupTimeout;
                   int cleaned;
                   try (Locker l = Locker.of(lock.writeLock())) {
-                    List<Entry<KeyWithAttribute, SeqIdWithTombstone>> toCleanUp =
+                    List<Map.Entry<KeyWithAttribute, SeqIdWithTombstone>> toCleanUp =
                         lastUpdateSeqId
                             .entries()
                             .stream()
                             .filter(e -> e.getValue().getTimestamp() < cleanup)
                             .collect(Collectors.toList());
-                    toCleanUp.forEach(
-                        e -> {
-                          lastUpdateSeqId.remove(e.getKey(), e.getValue());
-                          if (e.getKey().isWildcard()) {
-                            KeyWithAttribute wildcard = KeyWithAttribute.ofWildcard(e.getKey());
-                            Map<KeyWithAttribute, Long> wildcardUpdates =
-                                updatesToWildcard.get(wildcard);
-                            if (wildcardUpdates != null
-                                && Optional.ofNullable(wildcardUpdates.get(e.getKey()))
-                                    .map(v -> v < cleanup)
-                                    .orElse(false)) {
-
-                              wildcardUpdates.remove(e.getKey());
-                              if (wildcardUpdates.isEmpty()) {
-                                updatesToWildcard.remove(wildcard);
-                              }
-                            }
-                          }
-                        });
                     cleaned = toCleanUp.size();
+                    toCleanUp.forEach(e -> lastUpdateSeqId.remove(e.getKey(), e.getValue()));
+                  }
+                  // release and re-acquire lock to enable progress of any waiting threads
+                  try (Locker l = Locker.of(lock.writeLock())) {
+                    Iterator<Map<KeyWithAttribute, Long>> it =
+                        updatesToWildcard.values().iterator();
+                    while (it.hasNext()) {
+                      Map<KeyWithAttribute, Long> value = it.next();
+                      Iterators.removeIf(value.values().iterator(), e -> e < cleanup);
+                      if (value.isEmpty()) {
+                        it.remove();
+                      }
+                    }
                   }
                   long duration = currentTimeMillis() - now;
                   log.info("Finished housekeeping in {} ms, removed {} records", duration, cleaned);

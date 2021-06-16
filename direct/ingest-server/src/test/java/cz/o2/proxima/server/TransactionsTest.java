@@ -33,6 +33,7 @@ import cz.o2.proxima.proto.service.Rpc.IngestBulk;
 import cz.o2.proxima.proto.service.Rpc.StatusBulk;
 import cz.o2.proxima.proto.service.Rpc.TransactionCommitRequest;
 import cz.o2.proxima.proto.service.Rpc.TransactionCommitResponse;
+import cz.o2.proxima.repository.EntityAwareAttributeDescriptor.Regular;
 import cz.o2.proxima.repository.EntityAwareAttributeDescriptor.Wildcard;
 import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.repository.Repository;
@@ -65,6 +66,7 @@ public class TransactionsTest {
   private final Wildcard<byte[]> userGateways = Wildcard.of(user, user.getAttribute("gateway.*"));
   private final Wildcard<byte[]> gatewayUsers =
       Wildcard.of(gateway, gateway.getAttribute("user.*"));
+  private final Regular<Integer> intField = Regular.of(gateway, gateway.getAttribute("intField"));
   private final DirectDataOperator direct = repo.getOrCreateOperator(DirectDataOperator.class);
   private ScheduledThreadPoolExecutor scheduler;
   private ObserveHandle transformationHandle;
@@ -213,6 +215,28 @@ public class TransactionsTest {
     assertEquals(
         State.Flags.ABORTED,
         direct.getServerTransactionManager().getCurrentState(transactionId).getFlags());
+  }
+
+  @Test
+  public void testCommitInvalidIngest() {
+    BeginTransactionResponse response = begin();
+    String transactionId = response.getTransactionId();
+    long stamp = System.currentTimeMillis();
+    StatusBulk status =
+        ingestBulk(
+            transactionId,
+            StreamElement.upsert(
+                gateway,
+                intField,
+                UUID.randomUUID().toString(),
+                "gw1",
+                intField.getName(),
+                stamp,
+                new byte[] {}));
+
+    assertEquals(412, status.getStatus(0).getStatus());
+    TransactionCommitResponse commitResponse = commit(transactionId);
+    assertEquals(TransactionCommitResponse.Status.FAILED, commitResponse.getStatus());
   }
 
   private TransactionCommitResponse commit(String transactionId) {

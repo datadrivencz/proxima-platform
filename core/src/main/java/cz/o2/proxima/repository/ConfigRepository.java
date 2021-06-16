@@ -831,7 +831,7 @@ public final class ConfigRepository extends Repository {
                     + key
                     + " in entity "
                     + entityName
-                    + " must be proxy or contains "
+                    + " must be proxy or contain "
                     + SCHEME
                     + " definition.");
           }
