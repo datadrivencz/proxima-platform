@@ -615,11 +615,8 @@ public class TransactionResourceManager
 
   @Override
   public void rollback(String transactionId) {
-    CachedTransaction cachedTransaction =
-        openTransactionMap.computeIfAbsent(
-            transactionId,
-            k -> new CachedTransaction(transactionId, Collections.emptyList(), null));
-    cachedTransaction.rollback();
+    Optional.ofNullable(openTransactionMap.get(transactionId))
+        .ifPresent(CachedTransaction::rollback);
   }
 
   @Override

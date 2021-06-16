@@ -115,7 +115,7 @@ public class TransactionIT {
     // we randomly reshuffle random amounts between users and then we verify, that the sum is zero
 
     int numThreads = 20;
-    int numSwaps = 1000;
+    int numSwaps = 500;
     int numUsers = 20;
     CountDownLatch latch = new CountDownLatch(numThreads);
     ExecutorService service = direct.getContext().getExecutorService();
@@ -151,7 +151,7 @@ public class TransactionIT {
 
     int numWrites = 1000;
     int numThreads = 10;
-    int numUsers = 100;
+    int numUsers = 20;
 
     CountDownLatch latch = new CountDownLatch(numThreads);
     ExecutorService service = direct.getContext().getExecutorService();
@@ -177,6 +177,7 @@ public class TransactionIT {
     if (err.get() != null) {
       throw new RuntimeException(err.get());
     }
+    TimeUnit.SECONDS.sleep(1);
     verifyNumDevicesMatch(numWrites, numUsers);
   }
 
@@ -213,19 +214,20 @@ public class TransactionIT {
     }
 
     latch.await();
+    TimeUnit.SECONDS.sleep(1);
     if (err.get() != null) {
       throw new RuntimeException(err.get());
     }
     verifyNumDevicesMatch(numWrites, numUsers, true);
   }
 
-  @Test /* (timeout = 100_000) */
+  @Test(timeout = 100_000)
   public void testDeletedAttributeGet() throws InterruptedException {
     // check atomic swap of data between two attributes
     // a value is read from attribute X, incremented and written to attribute Y and deleted from X
     // if value is not present in attribute X, it is read from attribute Y, and written to X
 
-    int numWrites = 500;
+    int numWrites = 200;
     int numThreads = 10;
 
     CountDownLatch latch = new CountDownLatch(numThreads);
@@ -254,6 +256,7 @@ public class TransactionIT {
     }
 
     latch.await();
+    TimeUnit.SECONDS.sleep(1);
     if (err.get() != null) {
       throw new RuntimeException(err.get());
     }
@@ -266,7 +269,7 @@ public class TransactionIT {
     // a value is read from attribute X, incremented and written to attribute Y and deleted from X
     // if value is not present in attribute X, it is read from attribute Y, and written to X
 
-    int numWrites = 300;
+    int numWrites = 100;
     int numThreads = 10;
 
     CountDownLatch latch = new CountDownLatch(numThreads);
@@ -279,6 +282,7 @@ public class TransactionIT {
     // seed value
     writeSeedValue(attrA, key);
     AtomicInteger failedWrites = new AtomicInteger();
+    AtomicInteger succeeded = new AtomicInteger();
     for (int i = 0; i < numThreads; i++) {
       service.submit(
           () -> {
@@ -300,6 +304,7 @@ public class TransactionIT {
     }
 
     latch.await();
+    TimeUnit.SECONDS.sleep(1);
     if (err.get() != null) {
       throw new RuntimeException(err.get());
     }
@@ -329,7 +334,7 @@ public class TransactionIT {
   private boolean swapValueBetween(String key, String attrA, String attrB, boolean canFailWrite)
       throws InterruptedException {
 
-    long abortWaitDuration = (long) (random.nextDouble() * 40 + 10);
+    long retrySleep = 1;
     do {
       String transactionId = UUID.randomUUID().toString();
       BlockingQueue<Response> responses = new ArrayBlockingQueue<>(1);
@@ -352,9 +357,8 @@ public class TransactionIT {
           fetched);
 
       Response response = responses.take();
-      if (response.getFlags() != Flags.OPEN) {
-        TimeUnit.MILLISECONDS.sleep(abortWaitDuration);
-        abortWaitDuration = extendWaitDuration(abortWaitDuration, random);
+      if (response.getFlags() != Flags.OPEN) {;
+        TimeUnit.MILLISECONDS.sleep(Math.min(8, retrySleep *= 2));
         continue;
       }
       long sequentialId = response.getSeqId();
@@ -374,8 +378,7 @@ public class TransactionIT {
 
       response = responses.take();
       if (response.getFlags() != Flags.COMMITTED) {
-        TimeUnit.MILLISECONDS.sleep(abortWaitDuration);
-        abortWaitDuration = extendWaitDuration(abortWaitDuration, random);
+        TimeUnit.MILLISECONDS.sleep(Math.min(8, retrySleep *= 2));
         continue;
       }
 
@@ -424,7 +427,6 @@ public class TransactionIT {
   }
 
   private void removeSingleDevice(int numUsers) throws InterruptedException {
-    long abortWaitDuration = (long) (random.nextDouble() * 40 + 10);
     do {
       TransactionalOnlineAttributeWriter writer =
           Optionals.get(direct.getWriter(device)).transactional();
@@ -453,8 +455,7 @@ public class TransactionIT {
         latch.await();
         break;
       } catch (TransactionRejectedException e) {
-        TimeUnit.MILLISECONDS.sleep(abortWaitDuration);
-        abortWaitDuration = extendWaitDuration(abortWaitDuration, random);
+        // repeat
       }
 
     } while (true);
@@ -467,7 +468,6 @@ public class TransactionIT {
   private void writeSingleDevice(int numUsers, boolean intoAll) throws InterruptedException {
     String name = UUID.randomUUID().toString();
     String userId = "user" + random.nextInt(numUsers);
-    long abortWaitDuration = (long) (random.nextDouble() * 40 + 10);
     do {
       TransactionalOnlineAttributeWriter writer =
           Optionals.get(direct.getWriter(device)).transactional();
@@ -494,8 +494,7 @@ public class TransactionIT {
         latch.await();
         break;
       } catch (TransactionRejectedException e) {
-        TimeUnit.MILLISECONDS.sleep(abortWaitDuration);
-        abortWaitDuration = extendWaitDuration(abortWaitDuration, random);
+        // repeat
       }
     } while (true);
   }
@@ -545,7 +544,6 @@ public class TransactionIT {
     String userFirst = "user" + first;
     String userSecond = "user" + second;
     double swap = random.nextDouble() * 1000;
-    long abortWaitDuration = (long) (random.nextDouble() * 40 + 10);
     TransactionalOnlineAttributeWriter writer =
         Optionals.get(direct.getWriter(amount)).transactional();
     do {
@@ -573,13 +571,8 @@ public class TransactionIT {
         latch.await();
         break;
       } catch (TransactionRejectedException e) {
-        TimeUnit.MILLISECONDS.sleep(abortWaitDuration);
-        abortWaitDuration = extendWaitDuration(abortWaitDuration, random);
+        // repeat
       }
     } while (true);
-  }
-
-  private long extendWaitDuration(long abortWaitDuration, Random random) {
-    return (long) (abortWaitDuration * (random.nextDouble() / 2 + 1.75));
   }
 }

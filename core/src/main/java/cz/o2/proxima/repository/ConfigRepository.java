@@ -36,6 +36,7 @@ import cz.o2.proxima.storage.AccessType;
 import cz.o2.proxima.storage.StorageFilter;
 import cz.o2.proxima.storage.StorageType;
 import cz.o2.proxima.transaction.TransactionCommitTransformation;
+import cz.o2.proxima.transaction.TransactionPartitioner;
 import cz.o2.proxima.transaction.TransactionSerializerSchemeProvider;
 import cz.o2.proxima.transform.DataOperatorAware;
 import cz.o2.proxima.transform.ElementWiseProxyTransform;
@@ -1213,7 +1214,7 @@ public final class ConfigRepository extends Repository {
             .setType(type)
             .setAccess(access)
             .setStorageUri(storageUri)
-            .setCfg(cfg)
+            .setCfg(withTransactionalPartitioner(isTransactional, cfg))
             .setSource((String) cfg.get(FROM));
     Collection<AttributeDescriptor<?>> allAttributes = new HashSet<>();
     for (String attr : attributes) {
@@ -1227,6 +1228,17 @@ public final class ConfigRepository extends Repository {
     }
     allAttributes.forEach(family::addAttribute);
     insertFamily(family.build(), overwrite);
+  }
+
+  private Map<String, Object> withTransactionalPartitioner(
+      boolean isTransactional, Map<String, Object> cfg) {
+
+    if (isTransactional) {
+      Map<String, Object> cloned = new HashMap<>(cfg);
+      cloned.put(ConfigConstants.PARTITIONER, TransactionPartitioner.class.getName());
+      return cloned;
+    }
+    return cfg;
   }
 
   private StorageType getStorageType(Map<String, Object> cfg, boolean isTransactional) {

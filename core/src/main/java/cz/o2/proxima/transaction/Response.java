@@ -145,4 +145,8 @@ public class Response implements Serializable {
         targetPartitionId);
     return targetPartitionId;
   }
+
+  public boolean hasPartitionIdForResponse() {
+    return targetPartitionId >= 0;
+  }
 }
