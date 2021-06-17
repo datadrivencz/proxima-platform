@@ -95,10 +95,6 @@ public class TransactionLogObserver implements CommitLogObserver {
 
     String key;
     String attribute;
-
-    public boolean isWildcard() {
-      return attribute.indexOf('.') != -1;
-    }
   }
 
   @Value
@@ -294,9 +290,10 @@ public class TransactionLogObserver implements CommitLogObserver {
             transactionId, requestId, Response.forRequest(request).duplicate(), context::commit);
       } else {
         log.warn(
-            "Unexpected {} request for transaction {} when the state is {}",
+            "Unexpected {} request for transaction {} seqId {} when the state is {}",
             request.getFlags(),
             transactionId,
+            currentState.getSequentialId(),
             currentState.getFlags());
         manager.writeResponse(
             transactionId, requestId, Response.forRequest(request).aborted(), context::commit);
@@ -305,7 +302,7 @@ public class TransactionLogObserver implements CommitLogObserver {
   }
 
   private void abortTransaction(String transactionId, State state) {
-    log.info("Transaction {} rolled back", transactionId);
+    log.info("Transaction {} seqId {} rolled back", transactionId, state.getSequentialId());
     long seqId = state.getSequentialId();
     // we need to rollback all updates to lastUpdateSeqId with the same seqId
     try (Locker lock = Locker.of(this.lock.writeLock())) {
@@ -366,12 +363,12 @@ public class TransactionLogObserver implements CommitLogObserver {
 
   private State transitionToCommitted(String transactionId, State currentState, Request request) {
     if (!verifyNotInConflict(currentState.getInputAttributes())) {
-      log.info("Transaction {} aborted", transactionId);
+      log.info("Transaction {} seqId {} aborted", transactionId, currentState.getSequentialId());
       return currentState.aborted();
     }
     State proposedState = currentState.committed(request.getOutputAttributes());
     transactionPostCommit(proposedState);
-    log.info("Transaction {} committed", transactionId);
+    log.info("Transaction {} seqId {} committed", transactionId, currentState.getSequentialId());
     return proposedState;
   }
 
@@ -380,10 +377,10 @@ public class TransactionLogObserver implements CommitLogObserver {
     State proposedState =
         State.open(seqId, currentTimeMillis(), new HashSet<>(request.getInputAttributes()));
     if (verifyNotInConflict(request.getInputAttributes())) {
-      log.info("Transaction {} is now {}", transactionId, proposedState.getFlags());
+      log.info("Transaction {} seqId {} is now {}", transactionId, seqId, proposedState.getFlags());
       return proposedState;
     }
-    log.info("Transaction {} aborted", transactionId);
+    log.info("Transaction {} seqId {} aborted", seqId, transactionId);
     return proposedState.aborted();
   }
 
@@ -477,6 +474,7 @@ public class TransactionLogObserver implements CommitLogObserver {
         if (state.getFlags() == State.Flags.COMMITTED) {
           transactionPostCommit(state);
         }
+        sequenceId.accumulateAndGet(state.getSequentialId() + 1, Math::max);
         manager.ensureTransactionOpen(newUpdate.getKey(), state);
       }
     }
