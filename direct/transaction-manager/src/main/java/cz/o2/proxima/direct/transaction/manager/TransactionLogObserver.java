@@ -362,7 +362,7 @@ public class TransactionLogObserver implements CommitLogObserver {
   }
 
   private State transitionToCommitted(String transactionId, State currentState, Request request) {
-    if (!verifyNotInConflict(currentState.getInputAttributes())) {
+    if (!verifyNotInConflict(currentState.getSequentialId(), currentState.getInputAttributes())) {
       log.info("Transaction {} seqId {} aborted", transactionId, currentState.getSequentialId());
       return currentState.aborted();
     }
@@ -376,7 +376,7 @@ public class TransactionLogObserver implements CommitLogObserver {
     long seqId = sequenceId.getAndIncrement();
     State proposedState =
         State.open(seqId, currentTimeMillis(), new HashSet<>(request.getInputAttributes()));
-    if (verifyNotInConflict(request.getInputAttributes())) {
+    if (verifyNotInConflict(seqId, request.getInputAttributes())) {
       log.info("Transaction {} seqId {} is now {}", transactionId, seqId, proposedState.getFlags());
       return proposedState;
     }
@@ -384,7 +384,9 @@ public class TransactionLogObserver implements CommitLogObserver {
     return proposedState.aborted();
   }
 
-  private boolean verifyNotInConflict(Collection<KeyAttribute> inputAttributes) {
+  private boolean verifyNotInConflict(
+      long transactionSeqId, Collection<KeyAttribute> inputAttributes) {
+
     final List<Pair<KeyWithAttribute, Boolean>> affectedWildcards;
     try (Locker lock = Locker.of(this.lock.readLock())) {
       affectedWildcards =
@@ -451,10 +453,13 @@ public class TransactionLogObserver implements CommitLogObserver {
                 if (lastUpdated == null || lastUpdated.isEmpty()) {
                   return false;
                 }
-                return lastUpdated.last().getSeqId() > ka.getSequenceId()
-                    // we can accept somewhat stale data if the state is equal => both agree that
-                    // the field was deleted
-                    && (!lastUpdated.last().isTombstone() || !ka.isDelete());
+                long lastUpdatedSeqId = lastUpdated.last().getSeqId();
+                return lastUpdatedSeqId > transactionSeqId
+                    || (lastUpdatedSeqId > ka.getSequenceId()
+                        // we can accept somewhat stale data if the state is equal => both agree
+                        // that
+                        // the field was deleted
+                        && (!lastUpdated.last().isTombstone() || !ka.isDelete()));
               });
     }
   }
