@@ -22,9 +22,9 @@ import com.google.common.collect.Sets;
 import cz.o2.proxima.annotations.DeclaredThreadSafe;
 import cz.o2.proxima.annotations.Internal;
 import cz.o2.proxima.direct.commitlog.CommitLogObserver;
+import cz.o2.proxima.direct.commitlog.CommitLogObservers;
+import cz.o2.proxima.direct.commitlog.CommitLogObservers.ForwardingObserver;
 import cz.o2.proxima.direct.commitlog.CommitLogReader;
-import cz.o2.proxima.direct.commitlog.LogObservers;
-import cz.o2.proxima.direct.commitlog.LogObservers.ForwardingObserver;
 import cz.o2.proxima.direct.commitlog.ObserveHandle;
 import cz.o2.proxima.direct.core.CommitCallback;
 import cz.o2.proxima.direct.core.DirectAttributeFamilyDescriptor;
@@ -383,7 +383,7 @@ public class TransactionResourceManager
 
     final CommitLogObserver effectiveObserver;
     if (needsSynchronization(requestObserver)) {
-      effectiveObserver = LogObservers.synchronizedObserver(requestObserver);
+      effectiveObserver = CommitLogObservers.synchronizedObserver(requestObserver);
     } else {
       effectiveObserver =
           new ThreadPooledObserver(
