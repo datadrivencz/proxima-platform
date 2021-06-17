@@ -49,4 +49,12 @@ public interface ObserveHandle extends AutoCloseable {
    * @throws InterruptedException when interrupted before the wait is done
    */
   void waitUntilReady() throws InterruptedException;
+
+  /**
+   * Check if consumption is at current head. Head is defined as moment when there is no elements in
+   * backlog.
+   */
+  default boolean isAtHead() {
+    throw new UnsupportedOperationException("Operation not supported");
+  }
 }

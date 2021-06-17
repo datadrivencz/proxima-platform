@@ -40,6 +40,7 @@ import cz.o2.proxima.storage.Partition;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.storage.commitlog.Position;
 import cz.o2.proxima.time.WatermarkEstimator;
+import cz.o2.proxima.time.Watermarks;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
@@ -222,6 +223,7 @@ public class ListCommitLog implements CommitLogReader {
   @VisibleForTesting
   static final class ListObserveHandle implements ObserveHandle {
 
+    private final String listUuid;
     @Getter private final String consumerName;
 
     @Getter private volatile boolean closed = false;
@@ -229,6 +231,7 @@ public class ListCommitLog implements CommitLogReader {
     private final Map<String, Consumer> consumers;
 
     ListObserveHandle(String listUuid, String consumerName) {
+      this.listUuid = listUuid;
       this.consumerName = Objects.requireNonNull(consumerName);
       consumers = CONSUMERS.get(listUuid);
     }
@@ -261,6 +264,15 @@ public class ListCommitLog implements CommitLogReader {
     @VisibleForTesting
     Consumer getConsumer() {
       return consumers.get(consumerName);
+    }
+
+    @Override
+    public boolean isAtHead() {
+      int size = Objects.requireNonNull(UUID_TO_DATA.get(listUuid)).size();
+      return getCurrentOffsets()
+          .stream()
+          .map(ListOffset.class::cast)
+          .allMatch(l -> l.getOffset() == size - 1 || l.getWatermark() >= Watermarks.MAX_WATERMARK);
     }
   }
 

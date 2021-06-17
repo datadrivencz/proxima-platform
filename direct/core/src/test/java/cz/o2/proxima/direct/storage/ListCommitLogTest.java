@@ -34,6 +34,7 @@ import cz.o2.proxima.repository.Repository;
 import cz.o2.proxima.scheme.SerializationException;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.time.WatermarkEstimator;
+import cz.o2.proxima.util.ExceptionUtils;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -66,6 +67,54 @@ public class ListCommitLogTest {
     assertEquals(10, data.size());
     assertTrue(handle.getCommittedOffsets().isEmpty());
     assertFalse(handle.getCurrentOffsets().isEmpty());
+  }
+
+  @Test(timeout = 10000)
+  public void testObserveExternalizableIsAtHead() throws InterruptedException {
+    CommitLogReader reader = ListCommitLog.of(data(10), direct.getContext());
+    List<StreamElement> data = new ArrayList<>();
+    CountDownLatch latch = new CountDownLatch(1);
+    CountDownLatch continueLatch = new CountDownLatch(1);
+    ObserveHandle handle =
+        reader.observe(
+            null,
+            toList(
+                data,
+                b -> latch.countDown(),
+                b -> {
+                  if (b.getKey().equals("key0")) {
+                    ExceptionUtils.ignoringInterrupted(continueLatch::await);
+                  }
+                  return true;
+                }));
+    assertFalse(handle.isAtHead());
+    continueLatch.countDown();
+    latch.await();
+    assertTrue(handle.isAtHead());
+  }
+
+  @Test(timeout = 10000)
+  public void testObserveNonExternalizableIsAtHead() throws InterruptedException {
+    CommitLogReader reader = ListCommitLog.ofNonExternalizable(data(10), direct.getContext());
+    List<StreamElement> data = new ArrayList<>();
+    CountDownLatch latch = new CountDownLatch(1);
+    CountDownLatch continueLatch = new CountDownLatch(1);
+    ObserveHandle handle =
+        reader.observe(
+            null,
+            toList(
+                data,
+                b -> latch.countDown(),
+                b -> {
+                  if (b.getKey().equals("key0")) {
+                    ExceptionUtils.ignoringInterrupted(continueLatch::await);
+                  }
+                  return true;
+                }));
+    assertFalse(handle.isAtHead());
+    continueLatch.countDown();
+    latch.await();
+    assertTrue(handle.isAtHead());
   }
 
   @Test(timeout = 10000)

@@ -20,6 +20,7 @@ import static cz.o2.proxima.direct.commitlog.ObserverUtils.asOnNextContext;
 import static cz.o2.proxima.direct.commitlog.ObserverUtils.asRepartitionContext;
 
 import com.google.common.base.MoreObjects;
+import com.google.common.base.Preconditions;
 import cz.o2.proxima.direct.commitlog.CommitLogObserver;
 import cz.o2.proxima.direct.commitlog.CommitLogObserver.OnNextContext;
 import cz.o2.proxima.functional.BiConsumer;
@@ -32,6 +33,9 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import javax.annotation.Nullable;
@@ -48,6 +52,9 @@ class ElementConsumers {
 
     final Map<TopicPartition, Long> committed = Collections.synchronizedMap(new HashMap<>());
     final Map<TopicPartition, Long> processing = Collections.synchronizedMap(new HashMap<>());
+    final AtomicReference<CompletableFuture<Map<PartitionWithTopic, Long>>> endOffsetsFuture =
+        new AtomicReference<>();
+
     long watermark;
 
     @Override
@@ -92,6 +99,19 @@ class ElementConsumers {
     @Override
     public List<TopicOffset> getCommittedOffsets() {
       return TopicOffset.fromMap(committed, watermark);
+    }
+
+    @Override
+    public Future<Map<PartitionWithTopic, Long>> requestEndOffsets() {
+      Preconditions.checkState(endOffsetsFuture.get() == null);
+      endOffsetsFuture.set(new CompletableFuture<>());
+      return endOffsetsFuture.get();
+    }
+
+    @Nullable
+    @Override
+    public CompletableFuture<Map<PartitionWithTopic, Long>> getEndOffsetRequest() {
+      return endOffsetsFuture.getAndSet(null);
     }
 
     abstract CommitLogObserver observer();

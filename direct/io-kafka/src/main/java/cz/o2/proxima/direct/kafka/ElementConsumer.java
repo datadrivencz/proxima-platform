@@ -21,6 +21,8 @@ import cz.o2.proxima.time.WatermarkSupplier;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Future;
 import java.util.function.Consumer;
 import javax.annotation.Nullable;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -90,4 +92,11 @@ interface ElementConsumer<K, V> {
 
   /** Called when consumer is idle. */
   void onIdle(WatermarkSupplier watermarkSupplier);
+
+  /** Request end offsets for current assignement. */
+  Future<Map<PartitionWithTopic, Long>> requestEndOffsets();
+
+  /** CompletableFuture that needs completing to return value to the request for end offsets. */
+  @Nullable
+  CompletableFuture<Map<PartitionWithTopic, Long>> getEndOffsetRequest();
 }

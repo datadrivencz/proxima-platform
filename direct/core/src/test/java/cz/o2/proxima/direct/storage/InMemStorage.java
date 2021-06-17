@@ -482,6 +482,12 @@ public class InMemStorage implements DataAccessorFactory {
         public void waitUntilReady() {
           // nop
         }
+
+        @Override
+        public boolean isAtHead() {
+          // we feed the data directly to the consumers, so there is no backlog
+          return true;
+        }
       };
     }
 
