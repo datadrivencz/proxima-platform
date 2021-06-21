@@ -37,6 +37,7 @@ import cz.o2.proxima.storage.StorageFilter;
 import cz.o2.proxima.storage.StorageType;
 import cz.o2.proxima.transaction.TransactionCommitTransformation;
 import cz.o2.proxima.transaction.TransactionSerializerSchemeProvider;
+import cz.o2.proxima.transform.CopyIndexTransform;
 import cz.o2.proxima.transform.DataOperatorAware;
 import cz.o2.proxima.transform.ElementWiseProxyTransform;
 import cz.o2.proxima.transform.ElementWiseProxyTransform.ProxySetupContext;
@@ -1569,7 +1570,6 @@ public final class ConfigRepository extends Repository {
         TransformationDescriptor.newBuilder()
             .setName(transform)
             .addAttributes(source.getAttributes())
-            .setEntity(entity)
             .setFilter(replicated.getFilter())
             .setTransformation(
                 renameTransform(
@@ -1619,7 +1619,6 @@ public final class ConfigRepository extends Repository {
         TransformationDescriptor.newBuilder()
             .setName(transform)
             .addAttributes(write.getAttributes())
-            .setEntity(entity)
             .setFilter(targetFamily.getFilter())
             .setTransformation(
                 renameTransform(
@@ -1653,7 +1652,6 @@ public final class ConfigRepository extends Repository {
         TransformationDescriptor.newBuilder()
             .setName(transform)
             .addAttributes(write.getAttributes())
-            .setEntity(entity)
             .setFilter(replicated.getFilter())
             .setTransformation(
                 renameTransform(
@@ -2013,15 +2011,29 @@ public final class ConfigRepository extends Repository {
       return;
     }
     Map<String, Object> cfgTransforms =
-        Optional.ofNullable(cfg.root().get("transformations"))
-            .map(v -> toMap("transformations", v.unwrapped()))
+        Optional.ofNullable(cfg.root().get(TRANSFORMATIONS))
+            .map(v -> toMap(TRANSFORMATIONS, v.unwrapped()))
             .orElse(null);
 
     if (cfgTransforms == null) {
-      log.info("Skipping empty transformations configuration.");
-      return;
+      log.debug("Skipping empty transformations configuration.");
+    } else {
+      processTransformConfig(cfgTransforms);
     }
 
+    Map<String, Object> cfgIndices =
+        Optional.ofNullable(cfg.root().get(INDICES))
+            .map(v -> toMap(INDICES, v.unwrapped()))
+            .orElse(null);
+
+    if (cfgIndices == null) {
+      log.debug("Skipping empty transformations configuration.");
+    } else {
+      processIndexConfig(cfgIndices);
+    }
+  }
+
+  private void processTransformConfig(Map<String, Object> cfgTransforms) {
     cfgTransforms.forEach(
         (name, v) -> {
           Map<String, Object> transformation = toMap(name, v);
@@ -2036,13 +2048,7 @@ public final class ConfigRepository extends Repository {
             return;
           }
 
-          EntityDescriptor entity =
-              findEntity(readStr(ENTITY, transformation, name))
-                  .orElseThrow(
-                      () ->
-                          new IllegalArgumentException(
-                              String.format(
-                                  "Entity `%s` doesn't exist", transformation.get(ENTITY))));
+          EntityDescriptor entity = getEntity(readStr(ENTITY, transformation, name));
 
           Transformation t =
               Classpath.newInstance(readStr("using", transformation, name), Transformation.class);
@@ -2057,7 +2063,6 @@ public final class ConfigRepository extends Repository {
               TransformationDescriptor.newBuilder()
                   .setName(name)
                   .addAttributes(attrs)
-                  .setEntity(entity)
                   .setTransformation(t);
 
           Optional.ofNullable(transformation.get(FILTER))
@@ -2071,13 +2076,75 @@ public final class ConfigRepository extends Repository {
         });
   }
 
+  private void processIndexConfig(Map<String, Object> cfgIndices) {
+    cfgIndices.forEach(
+        (name, v) -> {
+          Map<String, Object> index = toMap(name, v);
+
+          boolean disabled =
+              Optional.ofNullable(index.get(DISABLED))
+                  .map(d -> Boolean.valueOf(d.toString()))
+                  .orElse(false);
+
+          if (disabled) {
+            log.info("Skipping load of disabled index {}", name);
+            return;
+          }
+
+          @SuppressWarnings({"unchecked", "rawtypes"})
+          List<String> copies = (List) index.get("copy");
+
+          Preconditions.checkArgument(
+              copies != null, "Missing required argument copy in index %s", name);
+
+          @SuppressWarnings({"unchecked", "rawtypes"})
+          List<Pair<EntityDescriptor, AttributeDescriptor<?>>> attrList =
+              (List)
+                  copies
+                      .stream()
+                      .map(
+                          s -> {
+                            String[] parts = s.split("\\.", 2);
+                            EntityDescriptor entity = getEntity(parts[0]);
+                            return Pair.of(entity, entity.getAttribute(parts[1]));
+                          })
+                      .collect(Collectors.toList());
+
+          Preconditions.checkArgument(
+              attrList.size() == 2,
+              "List of attributes for index transform has to have 2 items, got [ %s ]",
+              attrList);
+
+          Transformation t = new CopyIndexTransform(attrList);
+
+          for (int i = 0; i < 2; i++) {
+            String transformName = name + "-" + (i + 1);
+            TransformationDescriptor.Builder desc =
+                TransformationDescriptor.newBuilder()
+                    .setName(transformName)
+                    .addAttributes(Collections.singletonList(attrList.get(i).getSecond()))
+                    .setTransformation(t)
+                    .disallowTransactions()
+                    .preservesData();
+
+            Optional.ofNullable(index.get(FILTER))
+                .map(Object::toString)
+                .map(s -> Classpath.newInstance(s, StorageFilter.class))
+                .ifPresent(desc::setFilter);
+
+            TransformationDescriptor transformationDescriptor = desc.build();
+            setupTransform(transformationDescriptor.getTransformation(), index);
+            this.transformations.put(transformName, transformationDescriptor);
+          }
+        });
+  }
+
   private void createTransactionCommitTransformation() {
     EntityDescriptor transaction = getEntity(TRANSACTION_ENTITY);
     String name = "_transaction-commit";
     TransformationDescriptor descriptor =
         TransformationDescriptor.newBuilder()
             .setTransformation(new TransactionCommitTransformation())
-            .setEntity(transaction)
             .addAttributes(transaction.getAttribute(COMMIT_ATTRIBUTE))
             .setName(name)
             .disallowTransactions()

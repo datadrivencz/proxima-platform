@@ -36,6 +36,7 @@ import cz.o2.proxima.storage.StorageType;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.transaction.Request;
 import cz.o2.proxima.transaction.TransactionCommitTransformation;
+import cz.o2.proxima.transform.CopyIndexTransform;
 import cz.o2.proxima.transform.ElementWiseProxyTransform.ProxySetupContext;
 import cz.o2.proxima.transform.ElementWiseTransformation;
 import cz.o2.proxima.transform.EventDataToDummy;
@@ -94,7 +95,6 @@ public class ConfigRepositoryTest {
     TransformationDescriptor transform =
         Iterables.getOnlyElement(repo.getTransformations().values());
     assertEquals(PassthroughFilter.class, transform.getFilter().getClass());
-    assertEquals(event, transform.getEntity());
     assertEquals(Collections.singletonList(event.getAttribute("data")), transform.getAttributes());
     assertEquals(EventDataToDummy.class, transform.getTransformation().getClass());
 
@@ -621,8 +621,8 @@ public class ConfigRepositoryTest {
     assertNotNull(serialized);
     assertTrue(request.getValueSerializer().deserialize(serialized).isPresent());
 
-    assertEquals(1, repo.getTransformations().size());
     TransformationDescriptor desc = repo.getTransformations().get("_transaction-commit");
+    assertNotNull(desc);
     assertEquals("_transaction-commit", desc.getName());
     assertEquals(TransactionCommitTransformation.class, desc.getTransformation().getClass());
     assertFalse(desc.isSupportTransactions());
@@ -638,6 +638,28 @@ public class ConfigRepositoryTest {
     assertEquals(1, nameToFamily.get("all-transaction-commit-log-request").getAttributes().size());
     assertNotNull(nameToFamily.get("global-transaction-commit-log"));
     assertEquals(3, nameToFamily.get("global-transaction-commit-log").getAttributes().size());
+  }
+
+  @Test
+  public void testTransactionIndex() {
+    ConfigRepository.dropCached();
+    Repository repo = Repository.of(ConfigFactory.load("test-transactions.conf").resolve());
+    TransformationDescriptor indexTransform = repo.getTransformations().get("user-gateway-1");
+    assertNotNull("Missing user-gateway transform in " + repo.getTransformations(), indexTransform);
+    assertTrue(indexTransform.isPreservesData());
+    assertFalse(indexTransform.isSupportTransactions());
+    assertEquals(1, indexTransform.getAttributes().size());
+    assertEquals(
+        repo.getEntity("user").getAttribute("gateway.*"), indexTransform.getAttributes().get(0));
+    assertEquals(CopyIndexTransform.class, indexTransform.getTransformation().getClass());
+
+    indexTransform = repo.getTransformations().get("user-gateway-2");
+    assertNotNull("Missing user-gateway transform in " + repo.getTransformations(), indexTransform);
+    assertTrue(indexTransform.isPreservesData());
+    assertFalse(indexTransform.isSupportTransactions());
+    assertEquals(
+        repo.getEntity("gateway").getAttribute("user.*"), indexTransform.getAttributes().get(0));
+    assertEquals(CopyIndexTransform.class, indexTransform.getTransformation().getClass());
   }
 
   @Test(expected = IllegalArgumentException.class)
@@ -706,7 +728,6 @@ public class ConfigRepositoryTest {
     assertTrue(
         "Entity " + entity + " doesn't contain attribute " + toAttrDesc,
         entity.findAttribute(toAttrDesc, true).isPresent());
-    assertEquals(transform.getEntity(), entity);
     assertEquals(
         toAttr,
         collectSingleAttributeUpdate(

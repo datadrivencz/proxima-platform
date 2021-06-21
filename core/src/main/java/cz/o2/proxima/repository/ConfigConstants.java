@@ -54,6 +54,8 @@ public class ConfigConstants {
   public static final String TRANSACTIONS = "transactions";
   public static final String SCHEME_PROVIDER = "scheme-provider";
   public static final String TRANSACTION_ENTITY = "_transaction";
+  public static final String TRANSFORMATIONS = "transformations";
+  public static final String INDICES = "indices";
 
   public static final String REQUEST_ATTRIBUTE = "request.*";
   public static final String RESPONSE_ATTRIBUTE = "response.*";
