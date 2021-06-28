@@ -70,6 +70,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -425,41 +426,39 @@ public class InMemStorageTest implements Serializable {
   }
 
   @Test(timeout = 10000)
-  public void testFetchOffsets() throws InterruptedException {
+  public void testFetchOffsetsSinglePartition() throws InterruptedException {
+    testFetchOffsets(1);
+  }
+
+  @Test(timeout = 10000)
+  public void testFetchOffsetsMultiplePartitions() throws InterruptedException {
+    testFetchOffsets(3);
+  }
+
+  private void testFetchOffsets(int numPartitions) throws InterruptedException {
     InMemStorage storage = new InMemStorage();
     DataAccessor accessor =
         storage.createAccessor(
-            direct, createFamilyDescriptor(URI.create("inmem:///inmemstoragetest")));
+            direct, createFamilyDescriptor(URI.create("inmem:///test"), numPartitions));
     CommitLogReader reader = Optionals.get(accessor.getCommitLogReader(direct.getContext()));
     AttributeWriterBase writer = Optionals.get(accessor.getWriter(direct.getContext()));
     long now = System.currentTimeMillis();
-    writer
-        .online()
-        .write(
-            StreamElement.upsert(
-                entity,
-                data,
-                UUID.randomUUID().toString(),
-                "key1",
-                data.getName(),
-                now,
-                new byte[] {1, 2, 3}),
-            (succ, exc) -> {});
-    writer
-        .online()
-        .write(
-            StreamElement.upsert(
-                entity,
-                data,
-                UUID.randomUUID().toString(),
-                "key2",
-                data.getName(),
-                now + 1, // we must ensure the stamp is higher
-                new byte[] {1, 2, 3}),
-            (succ, exc) -> {});
+    List<StreamElement> updates = new ArrayList<>();
+    for (int i = 0; i < 2 * numPartitions; i++) {
+      updates.add(
+          StreamElement.upsert(
+              entity,
+              data,
+              UUID.randomUUID().toString(),
+              "key" + (i + 1),
+              data.getName(),
+              now + i,
+              new byte[] {1, 2, 3}));
+    }
+    updates.forEach(el -> writer.online().write(el, (succ, exc) -> {}));
     Map<Partition, Offset> startingOffsets =
         reader.fetchOffsets(Position.OLDEST, reader.getPartitions());
-    assertEquals(1, startingOffsets.size());
+    assertEquals(numPartitions, startingOffsets.size());
     List<StreamElement> elements = new ArrayList<>();
     CountDownLatch latch = new CountDownLatch(1);
     CountDownLatch startLatch = new CountDownLatch(1);
@@ -475,21 +474,32 @@ public class InMemStorageTest implements Serializable {
     assertFalse(ObserveHandleUtils.isAtHead(handle, reader));
     startLatch.countDown();
     latch.await();
-    assertEquals(2, elements.size());
+    assertEquals(2 * numPartitions, elements.size());
+    List<Offset> committed = handle.getCommittedOffsets();
+    Map<Partition, Offset> endOffsets2 =
+        reader.fetchOffsets(
+            Position.NEWEST,
+            committed.stream().map(Offset::getPartition).collect(Collectors.toList()));
     assertTrue(ObserveHandleUtils.isAtHead(handle, reader));
     assertEquals(
-        Arrays.asList("key1", "key2"),
+        IntStream.range(0, 2 * numPartitions)
+            .mapToObj(i -> "key" + (i + 1))
+            .collect(Collectors.toList()),
         elements.stream().map(StreamElement::getKey).collect(Collectors.toList()));
     elements.clear();
     Map<Partition, Offset> endOffsets =
         reader.fetchOffsets(Position.NEWEST, reader.getPartitions());
-    assertEquals(1, endOffsets.size());
+    assertEquals(numPartitions, endOffsets.size());
     CountDownLatch latch2 = new CountDownLatch(1);
     observer = LogObserverUtils.toList(elements, ign -> latch2.countDown());
     reader.observeBulkOffsets(endOffsets.values(), true, observer);
     latch2.await();
-    assertEquals(1, elements.size());
-    assertEquals("key2", elements.get(0).getKey());
+    assertEquals(numPartitions, elements.size());
+    assertEquals(
+        IntStream.range(numPartitions, 2 * numPartitions)
+            .mapToObj(i -> "key" + (i + 1))
+            .collect(Collectors.toList()),
+        elements.stream().map(StreamElement::getKey).collect(Collectors.toList()));
   }
 
   @Test

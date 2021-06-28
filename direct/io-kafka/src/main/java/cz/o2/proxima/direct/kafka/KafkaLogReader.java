@@ -166,7 +166,11 @@ public class KafkaLogReader extends AbstractStorage implements CommitLogReader {
 
   @Override
   public Map<Partition, Offset> fetchOffsets(Position position, List<Partition> partitions) {
-    List<TopicPartition> topicPartitins =
+    Preconditions.checkArgument(
+        position == Position.NEWEST || position == Position.OLDEST,
+        "Position %s does not have well defined offsets.",
+        position);
+    List<TopicPartition> topicPartitions =
         partitions
             .stream()
             .map(PartitionWithTopic.class::cast)
@@ -175,12 +179,9 @@ public class KafkaLogReader extends AbstractStorage implements CommitLogReader {
     final Map<TopicPartition, Long> res;
     try (KafkaConsumer<?, ?> consumer = createConsumer()) {
       if (position == Position.OLDEST) {
-        res = consumer.beginningOffsets(topicPartitins);
-      } else if (position == Position.NEWEST) {
-        res = consumer.endOffsets(topicPartitins);
+        res = consumer.beginningOffsets(topicPartitions);
       } else {
-        throw new UnsupportedOperationException(
-            position + " does not have correctly defined offsets");
+        res = consumer.endOffsets(topicPartitions);
       }
     }
     return res.entrySet()

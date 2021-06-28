@@ -146,6 +146,7 @@ public class InMemStorage implements DataAccessorFactory {
     @Override
     public String toString() {
       return MoreObjects.toStringHelper(this)
+          .add("partition", partition)
           .add("offset", consumedKeyAttr.size())
           .add("watermark", watermark)
           .toString();
@@ -692,26 +693,27 @@ public class InMemStorage implements DataAccessorFactory {
     private StreamElement getStreamElement(Entry<String, Pair<Long, byte[]>> e, int prefixLength) {
       String keyAttr = e.getKey().substring(prefixLength);
       final long stamp = e.getValue().getFirst();
-      final String[] parts = keyAttr.split("#");
+      final String[] parts = keyAttr.split("#", 2);
+      Preconditions.checkArgument(parts.length == 2);
       final String key = parts[0];
       final String attribute = parts[1];
       final AttributeDescriptor<?> desc = getEntityDescriptor().getAttribute(attribute, true);
-      final StreamElement element =
-          StreamElement.upsert(
-              getEntityDescriptor(),
-              desc,
-              UUID.randomUUID().toString(),
-              key,
-              attribute,
-              stamp,
-              e.getValue().getSecond());
-      return element;
+      return StreamElement.upsert(
+          getEntityDescriptor(),
+          desc,
+          UUID.randomUUID().toString(),
+          key,
+          attribute,
+          stamp,
+          e.getValue().getSecond());
     }
 
     private String toConsumedOffset(Partition partition, StreamElement element) {
       return String.format(
-          "%d-%s#%s:%d",
-          partition.getId(), element.getKey(), element.getAttribute(), element.getStamp());
+          "%d-%s:%d",
+          partition.getId(),
+          toKeyAttribute(element.getKey(), element.getAttribute()),
+          element.getStamp());
     }
 
     @Override
@@ -739,9 +741,22 @@ public class InMemStorage implements DataAccessorFactory {
       int prefixLength = prefix.length();
       // we filter out the element with highest timestamp, so that observeOffsets(endOffsets) will
       // retrieve the last element
-      long maxStamp =
-          getData().values().stream().mapToLong(Pair::getFirst).max().orElse(Long.MIN_VALUE);
-      AtomicLong lastStamp = new AtomicLong(maxStamp);
+      Map<Integer, AtomicLong> maxStamps =
+          getData()
+              .entrySet()
+              .stream()
+              .filter(e -> e.getKey().startsWith(prefix))
+              .map(e -> getStreamElement(e, prefixLength))
+              .collect(
+                  Collectors.groupingBy(
+                      e -> Partitioners.getTruncatedPartitionId(partitioner, e, numPartitions),
+                      Collectors.mapping(
+                          StreamElement::getStamp,
+                          Collectors.reducing(
+                              new AtomicLong(Long.MIN_VALUE),
+                              AtomicLong::new,
+                              (a, b) -> (a.longValue() < b.longValue()) ? b : a))));
+
       return getData()
           .entrySet()
           .stream()
@@ -754,7 +769,11 @@ public class InMemStorage implements DataAccessorFactory {
                         Partitioners.getTruncatedPartitionId(partitioner, element, numPartitions));
                 return Pair.of(part, element);
               })
-          .filter(p -> !lastStamp.compareAndSet(p.getSecond().getStamp(), Long.MIN_VALUE))
+          .filter(
+              p ->
+                  !maxStamps
+                      .get(p.getFirst().getId())
+                      .compareAndSet(p.getSecond().getStamp(), Long.MIN_VALUE))
           .collect(
               Collectors.groupingBy(
                   Pair::getFirst,
@@ -764,7 +783,7 @@ public class InMemStorage implements DataAccessorFactory {
           .stream()
           .collect(
               Collectors.toMap(
-                  e -> e.getKey(),
+                  Map.Entry::getKey,
                   e -> new ConsumedOffset(e.getKey(), e.getValue(), Watermarks.MIN_WATERMARK)));
     }
 
@@ -1289,7 +1308,11 @@ public class InMemStorage implements DataAccessorFactory {
   }
 
   private static String toMapKey(URI uri, String key, String attribute) {
-    return toStoragePrefix(uri) + key + "#" + attribute;
+    return toStoragePrefix(uri) + toKeyAttribute(key, attribute);
+  }
+
+  private static String toKeyAttribute(String key, String attribute) {
+    return key + "#" + attribute;
   }
 
   private static CommitLogObserver.OnNextContext asOnNextContext(
