@@ -138,8 +138,7 @@ public class TransactionLogObserverTest {
         ExceptionUtils.uncheckedBiConsumer((k, v) -> responseQueue.put(Pair.of(k, v))),
         Collections.singletonList(
             KeyAttributes.ofAttributeDescriptor(user, "user", userGateways, 1L, "1")));
-    // discard this
-    responseQueue.take();
+    Pair<String, Response> firstResponse = responseQueue.take();
     clientManager.begin(
         transactionId,
         ExceptionUtils.uncheckedBiConsumer((k, v) -> responseQueue.put(Pair.of(k, v))),
@@ -148,6 +147,7 @@ public class TransactionLogObserverTest {
     Pair<String, Response> response = responseQueue.take();
     assertEquals("open", response.getFirst());
     assertEquals(Response.Flags.DUPLICATE, response.getSecond().getFlags());
+    assertEquals(firstResponse.getSecond().getSeqId(), response.getSecond().getSeqId());
   }
 
   @Test(timeout = 10000)
@@ -253,6 +253,103 @@ public class TransactionLogObserverTest {
             this.user, "user", userGateways, Collections.emptyList()));
     assertEquals(Response.Flags.ABORTED, queue.take().getSecond().getFlags());
     assertTrue(queue.isEmpty());
+  }
+
+  @Test(timeout = 10000)
+  public void testCreateTransactionCommitAfterFailover() throws InterruptedException {
+    String transactionId = UUID.randomUUID().toString();
+    BlockingQueue<Pair<String, Response>> responseQueue = new ArrayBlockingQueue<>(1);
+    try (ClientTransactionManager clientManager =
+        new TransactionResourceManager(direct, Collections.emptyMap())) {
+      createObserver();
+      clientManager.begin(
+          transactionId,
+          ExceptionUtils.uncheckedBiConsumer((k, v) -> responseQueue.put(Pair.of(k, v))),
+          Collections.singletonList(
+              KeyAttributes.ofAttributeDescriptor(user, "user", userGateways, 1L, "1")));
+      responseQueue.take();
+      observer.getManager().close();
+      createObserver();
+      clientManager.commit(
+          transactionId,
+          Collections.singletonList(
+              KeyAttributes.ofAttributeDescriptor(user, "user", userGateways, 2L, "1")));
+      Pair<String, Response> response = responseQueue.take();
+      assertEquals("commit", response.getFirst());
+      assertEquals(Response.Flags.COMMITTED, response.getSecond().getFlags());
+    }
+  }
+
+  @Test(timeout = 10000)
+  public void testCreateTransactionRollbackAfterFailover() throws InterruptedException {
+    String t1 = UUID.randomUUID().toString();
+    String t2 = UUID.randomUUID().toString();
+    BlockingQueue<Pair<String, Response>> responseQueue = new ArrayBlockingQueue<>(1);
+    try (ClientTransactionManager clientManager =
+        new TransactionResourceManager(direct, Collections.emptyMap())) {
+      createObserver();
+      clientManager.begin(
+          t1,
+          ExceptionUtils.uncheckedBiConsumer((k, v) -> responseQueue.put(Pair.of(k, v))),
+          Collections.singletonList(
+              KeyAttributes.ofAttributeDescriptor(user, "user", userGateways, 1L, "1")));
+      responseQueue.take();
+      clientManager.begin(
+          t2,
+          // we can throw away responses from this transaction, this is tested in different tests
+          (a, b) -> {},
+          Collections.singletonList(
+              KeyAttributes.ofAttributeDescriptor(user, "user", userGateways, 1L, "1")));
+      clientManager.commit(
+          t2,
+          Collections.singletonList(
+              KeyAttributes.ofAttributeDescriptor(user, "user", userGateways, 2L, "1")));
+      observer.getManager().close();
+      createObserver();
+      clientManager.commit(
+          t1,
+          Collections.singletonList(
+              KeyAttributes.ofAttributeDescriptor(user, "user", userGateways, 2L, "1")));
+      Pair<String, Response> response = responseQueue.take();
+      assertEquals("commit", response.getFirst());
+      assertEquals(Response.Flags.ABORTED, response.getSecond().getFlags());
+    }
+  }
+
+  @Test(timeout = 10000)
+  public void testCreateTransactionCommitAfterFailoverDuplicateTransaction()
+      throws InterruptedException {
+
+    String transactionId = UUID.randomUUID().toString();
+    BlockingQueue<Pair<String, Response>> responseQueue = new ArrayBlockingQueue<>(1);
+    try (ClientTransactionManager clientManager =
+        new TransactionResourceManager(direct, Collections.emptyMap())) {
+      createObserver();
+      clientManager.begin(
+          transactionId,
+          ExceptionUtils.uncheckedBiConsumer((k, v) -> responseQueue.put(Pair.of(k, v))),
+          Collections.singletonList(
+              KeyAttributes.ofAttributeDescriptor(user, "user", userGateways, 1L, "1")));
+      Pair<String, Response> firstResponse = responseQueue.take();
+      long firstSeqId = firstResponse.getSecond().getSeqId();
+      observer.getManager().close();
+      createObserver();
+      clientManager.begin(
+          transactionId,
+          ExceptionUtils.uncheckedBiConsumer((k, v) -> responseQueue.put(Pair.of(k, v))),
+          Collections.singletonList(
+              KeyAttributes.ofAttributeDescriptor(user, "user", userGateways, 1L, "1")));
+      Pair<String, Response> secondResponse = responseQueue.take();
+      assertEquals(firstResponse.getSecond().getSeqId(), secondResponse.getSecond().getSeqId());
+      assertEquals(Response.Flags.DUPLICATE, secondResponse.getSecond().getFlags());
+      clientManager.commit(
+          transactionId,
+          Collections.singletonList(
+              KeyAttributes.ofAttributeDescriptor(user, "user", userGateways, 2L, "1")));
+      Pair<String, Response> commitResponse = responseQueue.take();
+      assertEquals("commit", commitResponse.getFirst());
+      assertEquals(Response.Flags.COMMITTED, commitResponse.getSecond().getFlags());
+    }
   }
 
   static class WithTransactionTimeout implements TransactionLogObserverFactory {

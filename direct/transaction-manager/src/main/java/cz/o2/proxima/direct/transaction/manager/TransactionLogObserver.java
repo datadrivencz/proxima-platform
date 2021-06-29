@@ -287,7 +287,10 @@ public class TransactionLogObserver implements CommitLogObserver {
           && (currentState.getFlags() == State.Flags.OPEN
               || currentState.getFlags() == State.Flags.COMMITTED)) {
         manager.writeResponse(
-            transactionId, requestId, Response.forRequest(request).duplicate(), context::commit);
+            transactionId,
+            requestId,
+            Response.forRequest(request).duplicate(currentState.getSequentialId()),
+            context::commit);
       } else {
         log.warn(
             "Unexpected {} request for transaction {} seqId {} when the state is {}",
@@ -476,11 +479,11 @@ public class TransactionLogObserver implements CommitLogObserver {
     if (newUpdate.getAttributeDescriptor().equals(manager.getStateDesc())) {
       if (!newUpdate.isDelete()) {
         State state = Optionals.get(manager.getStateDesc().valueOf(newUpdate));
+        sequenceId.accumulateAndGet(state.getSequentialId() + 1, Math::max);
+        manager.ensureTransactionOpen(newUpdate.getKey(), state);
         if (state.getFlags() == State.Flags.COMMITTED) {
           transactionPostCommit(state);
         }
-        sequenceId.accumulateAndGet(state.getSequentialId() + 1, Math::max);
-        manager.ensureTransactionOpen(newUpdate.getKey(), state);
       }
     }
   }

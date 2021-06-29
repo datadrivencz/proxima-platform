@@ -212,7 +212,7 @@ public class ProtoSerializerFactoryTest {
             Pair.of(Response.forRequest(someRequest).updated(), response),
             Pair.of(Response.forRequest(someRequest).committed(), response),
             Pair.of(Response.forRequest(someRequest).aborted(), response),
-            Pair.of(Response.forRequest(someRequest).duplicate(), response),
+            Pair.of(Response.forRequest(someRequest).duplicate(100L), response),
             Pair.of(Response.empty(), response),
             Pair.of(
                 Commit.of(1L, System.currentTimeMillis(), Arrays.asList(update, delete)), commit),

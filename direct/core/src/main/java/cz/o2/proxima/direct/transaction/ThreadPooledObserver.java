@@ -16,6 +16,8 @@
 package cz.o2.proxima.direct.transaction;
 
 import cz.o2.proxima.direct.commitlog.CommitLogObserver;
+import cz.o2.proxima.direct.commitlog.Offset;
+import cz.o2.proxima.storage.Partition;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.util.ExceptionUtils;
 import cz.o2.proxima.util.Pair;
@@ -26,6 +28,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import javax.annotation.Nullable;
 
 public class ThreadPooledObserver implements CommitLogObserver {
 
@@ -91,10 +94,45 @@ public class ThreadPooledObserver implements CommitLogObserver {
 
   @Override
   public boolean onNext(StreamElement ingest, OnNextContext context) {
-    workQueues
-        .get((ingest.getKey().hashCode() & Integer.MAX_VALUE) % workQueues.size())
-        .offer(Pair.of(ingest, context));
-    return true;
+    OnNextContext synchronizedContext = synchronize(context);
+    return !ExceptionUtils.ignoringInterrupted(
+        () ->
+            workQueues
+                .get((ingest.getKey().hashCode() & Integer.MAX_VALUE) % workQueues.size())
+                .put(Pair.of(ingest, synchronizedContext)));
+  }
+
+  private OnNextContext synchronize(OnNextContext context) {
+    OffsetCommitter synchronizedCommitter =
+        new OffsetCommitter() {
+          @Override
+          public void commit(boolean success, @Nullable Throwable error) {
+            synchronized (this) {
+              context.commit(success, error);
+            }
+          }
+        };
+    return new OnNextContext() {
+      @Override
+      public OffsetCommitter committer() {
+        return synchronizedCommitter;
+      }
+
+      @Override
+      public Partition getPartition() {
+        return context.getPartition();
+      }
+
+      @Override
+      public Offset getOffset() {
+        return context.getOffset();
+      }
+
+      @Override
+      public long getWatermark() {
+        return context.getWatermark();
+      }
+    };
   }
 
   @Override

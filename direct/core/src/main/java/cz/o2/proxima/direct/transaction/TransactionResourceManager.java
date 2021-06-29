@@ -310,6 +310,7 @@ public class TransactionResourceManager
   @Getter(AccessLevel.PACKAGE)
   private long transactionTimeoutMs;
 
+  @VisibleForTesting
   public TransactionResourceManager(DirectDataOperator direct, Map<String, Object> cfg) {
     this(direct, getTransactionTimeout(cfg));
   }
