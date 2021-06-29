@@ -131,7 +131,12 @@ public interface RepositoryFactory extends Serializable {
 
     @Override
     public Repository apply() {
-      return localMap.computeIfAbsent(hashCode, k -> factory.apply());
+      synchronized (localMap) {
+        if (localMap.get(hashCode) == null) {
+          localMap.put(hashCode, factory.apply());
+        }
+      }
+      return localMap.get(hashCode);
     }
 
     @Override

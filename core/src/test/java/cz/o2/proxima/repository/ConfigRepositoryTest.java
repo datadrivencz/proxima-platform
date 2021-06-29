@@ -562,7 +562,12 @@ public class ConfigRepositoryTest {
     Repository second = first.asFactory().apply();
     assertSame(second, first);
     first.drop();
-    second = first.asFactory().apply();
+    try {
+      second = first.asFactory().apply();
+    } catch (Exception ex) {
+      ex.printStackTrace(System.err);
+      throw ex;
+    }
     assertNotSame(second, first);
   }
 
