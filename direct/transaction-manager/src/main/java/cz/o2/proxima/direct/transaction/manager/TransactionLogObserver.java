@@ -21,13 +21,18 @@ import com.google.common.collect.Iterators;
 import com.google.common.collect.MultimapBuilder;
 import com.google.common.collect.Sets;
 import com.google.common.collect.SortedSetMultimap;
+import cz.o2.proxima.annotations.DeclaredThreadSafe;
 import cz.o2.proxima.annotations.Internal;
 import cz.o2.proxima.direct.commitlog.CommitLogObserver;
 import cz.o2.proxima.direct.core.CommitCallback;
 import cz.o2.proxima.direct.core.DirectDataOperator;
 import cz.o2.proxima.direct.transaction.ServerTransactionManager;
+import cz.o2.proxima.functional.BiConsumer;
+import cz.o2.proxima.repository.EntityAwareAttributeDescriptor.Regular;
 import cz.o2.proxima.repository.EntityAwareAttributeDescriptor.Wildcard;
+import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.storage.StreamElement;
+import cz.o2.proxima.transaction.Commit;
 import cz.o2.proxima.transaction.KeyAttribute;
 import cz.o2.proxima.transaction.Request;
 import cz.o2.proxima.transaction.Response;
@@ -53,8 +58,6 @@ import java.util.stream.Collectors;
 import javax.annotation.Nullable;
 import javax.annotation.concurrent.GuardedBy;
 import javax.annotation.concurrent.ThreadSafe;
-import lombok.AccessLevel;
-import lombok.Getter;
 import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
 
@@ -65,7 +68,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Internal
 @ThreadSafe
-// @DeclaredThreadSafe
+@DeclaredThreadSafe
 public class TransactionLogObserver implements CommitLogObserver {
 
   @Value
@@ -138,12 +141,11 @@ public class TransactionLogObserver implements CommitLogObserver {
   }
 
   private final DirectDataOperator direct;
-
-  @Getter(AccessLevel.PACKAGE)
+  private final ServerTransactionManager unsynchronizedManager;
   private final ServerTransactionManager manager;
-
   private final AtomicLong sequenceId = new AtomicLong(1000L);
   private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
+  private final Object commitLock = new Object();
 
   @GuardedBy("lock")
   private final SortedSetMultimap<KeyWithAttribute, SeqIdWithTombstone> lastUpdateSeqId =
@@ -155,8 +157,87 @@ public class TransactionLogObserver implements CommitLogObserver {
 
   public TransactionLogObserver(DirectDataOperator direct) {
     this.direct = direct;
-    this.manager = getServerTransactionManager(direct);
+    this.unsynchronizedManager = getServerTransactionManager(direct);
+    this.manager = synchronizedManager(unsynchronizedManager);
     startHouseKeeping();
+  }
+
+  private ServerTransactionManager synchronizedManager(ServerTransactionManager delegate) {
+    return new ServerTransactionManager() {
+
+      @Override
+      public void runObservations(
+          String name,
+          BiConsumer<StreamElement, Pair<Long, Object>> updateConsumer,
+          CommitLogObserver requestObserver) {
+
+        delegate.runObservations(name, updateConsumer, requestObserver);
+      }
+
+      @Override
+      public synchronized State getCurrentState(String transactionId) {
+        return delegate.getCurrentState(transactionId);
+      }
+
+      @Override
+      public synchronized void setCurrentState(
+          String transactionId, @Nullable State state, CommitCallback callback) {
+
+        delegate.setCurrentState(transactionId, state, callback);
+      }
+
+      @Override
+      public synchronized void ensureTransactionOpen(String transactionId, State state) {
+        delegate.ensureTransactionOpen(transactionId, state);
+      }
+
+      @Override
+      public synchronized void writeResponse(
+          String transactionId, String responseId, Response response, CommitCallback callback) {
+
+        delegate.writeResponse(transactionId, responseId, response, callback);
+      }
+
+      @Override
+      public void close() {
+        delegate.close();
+      }
+
+      @Override
+      public void houseKeeping() {
+        delegate.houseKeeping();
+      }
+
+      @Override
+      public ServerTransactionConfig getCfg() {
+        return delegate.getCfg();
+      }
+
+      @Override
+      public EntityDescriptor getTransaction() {
+        return delegate.getTransaction();
+      }
+
+      @Override
+      public Wildcard<Request> getRequestDesc() {
+        return delegate.getRequestDesc();
+      }
+
+      @Override
+      public Wildcard<Response> getResponseDesc() {
+        return delegate.getResponseDesc();
+      }
+
+      @Override
+      public Regular<State> getStateDesc() {
+        return delegate.getStateDesc();
+      }
+
+      @Override
+      public Regular<Commit> getCommitDesc() {
+        return delegate.getCommitDesc();
+      }
+    };
   }
 
   @VisibleForTesting
@@ -365,14 +446,16 @@ public class TransactionLogObserver implements CommitLogObserver {
   }
 
   private State transitionToCommitted(String transactionId, State currentState, Request request) {
-    if (!verifyNotInConflict(currentState.getSequentialId(), currentState.getInputAttributes())) {
-      log.info("Transaction {} seqId {} aborted", transactionId, currentState.getSequentialId());
-      return currentState.aborted();
+    synchronized (commitLock) {
+      if (!verifyNotInConflict(currentState.getSequentialId(), currentState.getInputAttributes())) {
+        log.info("Transaction {} seqId {} aborted", transactionId, currentState.getSequentialId());
+        return currentState.aborted();
+      }
+      State proposedState = currentState.committed(request.getOutputAttributes());
+      transactionPostCommit(proposedState);
+      log.info("Transaction {} seqId {} committed", transactionId, currentState.getSequentialId());
+      return proposedState;
     }
-    State proposedState = currentState.committed(request.getOutputAttributes());
-    transactionPostCommit(proposedState);
-    log.info("Transaction {} seqId {} committed", transactionId, currentState.getSequentialId());
-    return proposedState;
   }
 
   private State transitionToOpen(String transactionId, Request request) {
@@ -511,5 +594,10 @@ public class TransactionLogObserver implements CommitLogObserver {
 
   public void run(String name) {
     manager.runObservations(name, this::stateUpdate, this);
+  }
+
+  @VisibleForTesting
+  ServerTransactionManager getRawManager() {
+    return unsynchronizedManager;
   }
 }

@@ -209,7 +209,7 @@ public class TransactionLogObserverTest {
     now = System.currentTimeMillis();
     AtomicLong stamp = new AtomicLong(now);
     createObserver(new WithTransactionTimeout(100, 50, stamp));
-    TransactionResourceManager manager = (TransactionResourceManager) observer.getManager();
+    TransactionResourceManager manager = (TransactionResourceManager) observer.getRawManager();
     manager.houseKeeping();
     String transactionId = "t1";
     StreamElement wildcardUpsert = userGateways.upsert(1000L, "user", "1", now, new byte[] {});
@@ -268,7 +268,7 @@ public class TransactionLogObserverTest {
           Collections.singletonList(
               KeyAttributes.ofAttributeDescriptor(user, "user", userGateways, 1L, "1")));
       responseQueue.take();
-      observer.getManager().close();
+      observer.getRawManager().close();
       createObserver();
       clientManager.commit(
           transactionId,
@@ -282,8 +282,8 @@ public class TransactionLogObserverTest {
 
   @Test(timeout = 10000)
   public void testCreateTransactionRollbackAfterFailover() throws InterruptedException {
-    String t1 = UUID.randomUUID().toString();
-    String t2 = UUID.randomUUID().toString();
+    String t1 = "t1-" + UUID.randomUUID();
+    String t2 = "t2-" + UUID.randomUUID();
     BlockingQueue<Pair<String, Response>> responseQueue = new ArrayBlockingQueue<>(1);
     try (ClientTransactionManager clientManager =
         new TransactionResourceManager(direct, Collections.emptyMap())) {
@@ -296,15 +296,16 @@ public class TransactionLogObserverTest {
       responseQueue.take();
       clientManager.begin(
           t2,
-          // we can throw away responses from this transaction, this is tested in different tests
-          (a, b) -> {},
+          ExceptionUtils.uncheckedBiConsumer((k, v) -> responseQueue.put(Pair.of(k, v))),
           Collections.singletonList(
               KeyAttributes.ofAttributeDescriptor(user, "user", userGateways, 1L, "1")));
+      responseQueue.take();
       clientManager.commit(
           t2,
           Collections.singletonList(
               KeyAttributes.ofAttributeDescriptor(user, "user", userGateways, 2L, "1")));
-      observer.getManager().close();
+      responseQueue.take();
+      observer.getRawManager().close();
       createObserver();
       clientManager.commit(
           t1,
@@ -313,6 +314,7 @@ public class TransactionLogObserverTest {
       Pair<String, Response> response = responseQueue.take();
       assertEquals("commit", response.getFirst());
       assertEquals(Response.Flags.ABORTED, response.getSecond().getFlags());
+      tearDown();
     }
   }
 
@@ -331,8 +333,7 @@ public class TransactionLogObserverTest {
           Collections.singletonList(
               KeyAttributes.ofAttributeDescriptor(user, "user", userGateways, 1L, "1")));
       Pair<String, Response> firstResponse = responseQueue.take();
-      long firstSeqId = firstResponse.getSecond().getSeqId();
-      observer.getManager().close();
+      observer.getRawManager().close();
       createObserver();
       clientManager.begin(
           transactionId,

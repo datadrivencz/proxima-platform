@@ -330,7 +330,7 @@ public class TransactionResourceManagerTest {
     KeyAttribute ka = KeyAttributes.ofAttributeDescriptor(user, "u", allGateways, 1L, "gw");
     long stamp = System.currentTimeMillis();
     try (TransactionResourceManager manager = TransactionResourceManager.create(direct)) {
-      CountDownLatch repatitionLatch = new CountDownLatch(1);
+      CountDownLatch repartitionLatch = new CountDownLatch(1);
       manager.runObservations(
           "name",
           new CommitLogObserver() {
@@ -341,7 +341,7 @@ public class TransactionResourceManagerTest {
 
             @Override
             public void onRepartition(OnRepartitionContext context) {
-              repatitionLatch.countDown();
+              repartitionLatch.countDown();
             }
           });
       CachedTransaction transaction =
@@ -351,7 +351,7 @@ public class TransactionResourceManagerTest {
                   .committed(Collections.singletonList(ka)),
               (a, b) -> {});
       transaction.open(Collections.singletonList(ka));
-      repatitionLatch.await();
+      repartitionLatch.await();
       assertEquals(
           Optionals.get(direct.getFamilyByName("all-transaction-commit-log-request").getWriter()),
           transaction.getRequestWriter().getSecond());
@@ -379,9 +379,17 @@ public class TransactionResourceManagerTest {
   public void testSynchronizationTesting() {
     assertTrue(TransactionResourceManager.needsSynchronization((ingest, context) -> false));
     assertFalse(TransactionResourceManager.needsSynchronization(new ThreadSafeCommitLogObserver()));
+    assertFalse(
+        TransactionResourceManager.getDeclaredParallelism((ingest, context) -> false).isPresent());
+    assertEquals(
+        5,
+        (int)
+            Optionals.get(
+                TransactionResourceManager.getDeclaredParallelism(
+                    new ThreadSafeCommitLogObserver())));
   }
 
-  @DeclaredThreadSafe
+  @DeclaredThreadSafe(allowedParallelism = 5)
   private static class ThreadSafeCommitLogObserver implements CommitLogObserver {
     @Override
     public boolean onNext(StreamElement ingest, OnNextContext context) {

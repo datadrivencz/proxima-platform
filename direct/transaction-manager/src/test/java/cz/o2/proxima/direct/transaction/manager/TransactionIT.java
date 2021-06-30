@@ -20,6 +20,7 @@ import static org.junit.Assert.assertTrue;
 
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigFactory;
+import cz.o2.proxima.annotations.DeclaredThreadSafe;
 import cz.o2.proxima.direct.commitlog.ObserveHandle;
 import cz.o2.proxima.direct.core.CommitCallback;
 import cz.o2.proxima.direct.core.DirectDataOperator;
@@ -85,7 +86,7 @@ public class TransactionIT {
 
   @Before
   public void setUp() {
-    TransactionLogObserver observer = new TransactionLogObserver(direct);
+    TransactionLogObserver observer = new LimitedParallelismTransactionLogObserver(direct);
     Map<String, Object> cfg =
         config.hasPath(ConfigConstants.TRANSACTIONS)
             ? config.getObject(ConfigConstants.TRANSACTIONS).unwrapped()
@@ -574,5 +575,12 @@ public class TransactionIT {
         // repeat
       }
     } while (true);
+  }
+
+  @DeclaredThreadSafe(allowedParallelism = 4)
+  private static class LimitedParallelismTransactionLogObserver extends TransactionLogObserver {
+    public LimitedParallelismTransactionLogObserver(DirectDataOperator direct) {
+      super(direct);
+    }
   }
 }

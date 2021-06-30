@@ -15,9 +15,8 @@
  */
 package cz.o2.proxima.direct.transaction;
 
+import cz.o2.proxima.annotations.Internal;
 import cz.o2.proxima.direct.commitlog.CommitLogObserver;
-import cz.o2.proxima.direct.commitlog.Offset;
-import cz.o2.proxima.storage.Partition;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.util.ExceptionUtils;
 import cz.o2.proxima.util.Pair;
@@ -28,38 +27,46 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import javax.annotation.Nullable;
+import java.util.concurrent.atomic.AtomicBoolean;
+import lombok.extern.slf4j.Slf4j;
 
+@Internal
+@Slf4j
 public class ThreadPooledObserver implements CommitLogObserver {
 
-  private final ExecutorService executor;
   private final CommitLogObserver delegate;
   private final List<BlockingQueue<Pair<StreamElement, OnNextContext>>> workQueues =
       new ArrayList<>();
+  private final List<AtomicBoolean> processing = new ArrayList<>();
   private final List<Future<?>> futures = new ArrayList<>();
 
   public ThreadPooledObserver(
       ExecutorService executorService, CommitLogObserver requestObserver, int parallelism) {
 
-    this.executor = executorService;
     this.delegate = requestObserver;
     for (int i = 0; i < parallelism; i++) {
       BlockingQueue<Pair<StreamElement, OnNextContext>> queue = new ArrayBlockingQueue<>(50);
       workQueues.add(queue);
-      futures.add(executor.submit(() -> processQueue(queue)));
+      AtomicBoolean processingFlag = new AtomicBoolean();
+      processing.add(processingFlag);
+      futures.add(executorService.submit(() -> processQueue(queue, processingFlag)));
     }
   }
 
-  private void processQueue(BlockingQueue<Pair<StreamElement, OnNextContext>> queue) {
+  private void processQueue(
+      BlockingQueue<Pair<StreamElement, OnNextContext>> queue, AtomicBoolean processingFlag) {
     try {
       while (!Thread.currentThread().isInterrupted()) {
         ExceptionUtils.ignoringInterrupted(
             () -> {
               Pair<StreamElement, OnNextContext> polled = queue.take();
+              processingFlag.set(true);
               delegate.onNext(polled.getFirst(), polled.getSecond());
+              processingFlag.set(false);
             });
       }
     } catch (Throwable err) {
+      log.error("Error processing input queue.", err);
       onError(err);
     }
   }
@@ -84,6 +91,7 @@ public class ThreadPooledObserver implements CommitLogObserver {
 
   @Override
   public boolean onError(Throwable error) {
+    waitTillQueueEmpty();
     exitThreads();
     return delegate.onError(error);
   }
@@ -94,50 +102,16 @@ public class ThreadPooledObserver implements CommitLogObserver {
 
   @Override
   public boolean onNext(StreamElement ingest, OnNextContext context) {
-    OnNextContext synchronizedContext = synchronize(context);
     return !ExceptionUtils.ignoringInterrupted(
         () ->
             workQueues
                 .get((ingest.getKey().hashCode() & Integer.MAX_VALUE) % workQueues.size())
-                .put(Pair.of(ingest, synchronizedContext)));
-  }
-
-  private OnNextContext synchronize(OnNextContext context) {
-    OffsetCommitter synchronizedCommitter =
-        new OffsetCommitter() {
-          @Override
-          public void commit(boolean success, @Nullable Throwable error) {
-            synchronized (this) {
-              context.commit(success, error);
-            }
-          }
-        };
-    return new OnNextContext() {
-      @Override
-      public OffsetCommitter committer() {
-        return synchronizedCommitter;
-      }
-
-      @Override
-      public Partition getPartition() {
-        return context.getPartition();
-      }
-
-      @Override
-      public Offset getOffset() {
-        return context.getOffset();
-      }
-
-      @Override
-      public long getWatermark() {
-        return context.getWatermark();
-      }
-    };
+                .put(Pair.of(ingest, context)));
   }
 
   @Override
   public void onRepartition(OnRepartitionContext context) {
-    workQueues.forEach(BlockingQueue::clear);
+    waitTillQueueEmpty();
     delegate.onRepartition(context);
   }
 
@@ -152,8 +126,12 @@ public class ThreadPooledObserver implements CommitLogObserver {
     return workQueues.stream().allMatch(BlockingQueue::isEmpty);
   }
 
+  private boolean anyInProgress() {
+    return processing.stream().anyMatch(AtomicBoolean::get);
+  }
+
   private void waitTillQueueEmpty() {
-    while (!workQueueEmpty() && !Thread.currentThread().isInterrupted()) {
+    while (anyInProgress() && !workQueueEmpty() && !Thread.currentThread().isInterrupted()) {
       ExceptionUtils.ignoringInterrupted(() -> TimeUnit.MILLISECONDS.sleep(100));
     }
   }

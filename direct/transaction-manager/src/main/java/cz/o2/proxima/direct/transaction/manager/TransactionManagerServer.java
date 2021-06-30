@@ -25,8 +25,8 @@ import cz.o2.proxima.direct.core.DirectDataOperator;
 import cz.o2.proxima.direct.transaction.ServerTransactionManager;
 import cz.o2.proxima.repository.ConfigRepository;
 import cz.o2.proxima.repository.Repository;
+import cz.o2.proxima.util.ExceptionUtils;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.locks.LockSupport;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -59,8 +59,10 @@ public class TransactionManagerServer {
     TransactionManagerServer server = TransactionManagerServer.of(config);
     try {
       Runtime.getRuntime().addShutdownHook(new Thread(server::stop));
-      server.run();
-      LockSupport.park();
+      Thread runServer = new Thread(server::run);
+      runServer.setDaemon(true);
+      runServer.start();
+      ExceptionUtils.ignoringInterrupted(runServer::join);
     } finally {
       server.stop();
     }
@@ -82,11 +84,11 @@ public class TransactionManagerServer {
   }
 
   public void run() {
-    manager.runObservations("transaction-manager", newTransformationLogObserver());
+    manager.runObservations("transaction-manager", newTransactionLogObserver());
     log.info("Started {}", getClass().getSimpleName());
   }
 
-  private CommitLogObserver newTransformationLogObserver() {
+  private CommitLogObserver newTransactionLogObserver() {
     return new ForwardingObserver(observerFactory.create(direct)) {
       @Override
       public boolean onError(Throwable error) {

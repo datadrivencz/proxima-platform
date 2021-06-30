@@ -54,6 +54,7 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
@@ -67,6 +68,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import javax.annotation.Nullable;
@@ -138,7 +140,10 @@ public class TransactionResourceManager
       if (stateView == null) {
         stateView = stateViews.get(family);
         Preconditions.checkState(
-            stateView != null, "StateView not initialized for family %s", family);
+            stateView != null,
+            "StateView not initialized for family %s. Initialized families are %s",
+            family,
+            stateViews.keySet());
       }
       return stateView;
     }
@@ -306,6 +311,8 @@ public class TransactionResourceManager
   private final Map<String, BiConsumer<String, Response>> transactionResponseConsumers =
       new ConcurrentHashMap<>();
   @Getter private final TransactionConfig cfg = new TransactionConfig();
+  private final Map<AttributeFamilyDescriptor, AtomicBoolean> activeForFamily =
+      new ConcurrentHashMap<>();
 
   @Getter(AccessLevel.PACKAGE)
   private long transactionTimeoutMs;
@@ -347,8 +354,10 @@ public class TransactionResourceManager
   public void close() {
     openTransactionMap.forEach((k, v) -> v.close());
     cachedAccessors.forEach((k, v) -> v.close());
+    stateViews.forEach((k, v) -> v.close());
     openTransactionMap.clear();
     cachedAccessors.clear();
+    stateViews.clear();
     transactionResponseConsumers.clear();
     serverObservedFamilies.values().forEach(ObserveHandle::close);
     serverObservedFamilies.clear();
@@ -390,7 +399,8 @@ public class TransactionResourceManager
           new ThreadPooledObserver(
               direct.getContext().getExecutorService(),
               requestObserver,
-              Runtime.getRuntime().availableProcessors());
+              getDeclaredParallelism(requestObserver)
+                  .orElse(Runtime.getRuntime().availableProcessors()));
     }
 
     List<Set<String>> families =
@@ -406,6 +416,7 @@ public class TransactionResourceManager
             .collect(Collectors.toList());
 
     CountDownLatch initializedLatch = new CountDownLatch(families.size());
+
     families
         .stream()
         .map(this::toRequestStatePair)
@@ -414,16 +425,27 @@ public class TransactionResourceManager
               DirectAttributeFamilyDescriptor requestFamily = p.getFirst();
               DirectAttributeFamilyDescriptor stateFamily = p.getSecond();
               log.info(
-                  "Starting to observe family {} with URI {}",
+                  "Starting to observe family {} with URI {} and associated state family {}",
                   requestFamily,
-                  requestFamily.getDesc().getStorageUri());
+                  requestFamily.getDesc().getStorageUri(),
+                  stateFamily);
               CommitLogReader reader = Optionals.get(requestFamily.getCommitLogReader());
+
+              CachedView view = stateViews.get(stateFamily);
+              if (view == null) {
+                view = Optionals.get(stateFamily.getCachedView());
+                Duration ttl = Duration.ofMillis(transactionTimeoutMs);
+                view.assign(view.getPartitions(), updateConsumer, ttl);
+                stateViews.put(stateFamily, view);
+              }
+              initializedLatch.countDown();
+
               serverObservedFamilies.put(
                   requestFamily,
                   reader.observe(
                       name + "-" + requestFamily.getDesc().getName(),
-                      repartitionHookForView(
-                          stateFamily, updateConsumer, effectiveObserver, initializedLatch)));
+                      repartitionHookForBeingActive(
+                          stateFamily, reader.getPartitions().size(), effectiveObserver)));
             });
     ExceptionUtils.unchecked(initializedLatch::await);
   }
@@ -431,6 +453,16 @@ public class TransactionResourceManager
   @VisibleForTesting
   static boolean needsSynchronization(CommitLogObserver requestObserver) {
     return requestObserver.getClass().getDeclaredAnnotation(DeclaredThreadSafe.class) == null;
+  }
+
+  @VisibleForTesting
+  static Optional<Integer> getDeclaredParallelism(CommitLogObserver requestObserver) {
+    return Arrays.stream(requestObserver.getClass().getAnnotations())
+        .filter(a -> a.annotationType().equals(DeclaredThreadSafe.class))
+        .map(DeclaredThreadSafe.class::cast)
+        .findAny()
+        .map(DeclaredThreadSafe::allowedParallelism)
+        .filter(i -> i != -1);
   }
 
   private Pair<DirectAttributeFamilyDescriptor, DirectAttributeFamilyDescriptor> toRequestStatePair(
@@ -454,16 +486,15 @@ public class TransactionResourceManager
         : Pair.of(candidates.get(1), candidates.get(0));
   }
 
-  private CommitLogObserver repartitionHookForView(
-      DirectAttributeFamilyDescriptor stateFamily,
-      BiConsumer<StreamElement, Pair<Long, Object>> updateConsumer,
-      CommitLogObserver delegate,
-      CountDownLatch initializedLatch) {
+  private CommitLogObserver repartitionHookForBeingActive(
+      DirectAttributeFamilyDescriptor stateFamily, int numPartitions, CommitLogObserver delegate) {
 
+    activeForFamily.putIfAbsent(stateFamily.getDesc(), new AtomicBoolean());
     return new ForwardingObserver(delegate) {
 
       @Override
       public boolean onNext(StreamElement ingest, OnNextContext context) {
+        Preconditions.checkArgument(activeForFamily.get(stateFamily.getDesc()).get());
         if (ingest.getStamp() > System.currentTimeMillis() - 2 * transactionTimeoutMs) {
           super.onNext(ingest, context);
         } else {
@@ -478,24 +509,30 @@ public class TransactionResourceManager
 
       @Override
       public void onRepartition(OnRepartitionContext context) {
-        CachedView view =
-            stateViews.computeIfAbsent(stateFamily, f -> Optionals.get(f.getCachedView()));
-        Set<Integer> partitionIds =
-            context.partitions().stream().map(Partition::getId).collect(Collectors.toSet());
-        if (!partitionIds.isEmpty()) {
-          Duration ttl = Duration.ofMillis(transactionTimeoutMs);
-          view.assign(
-              view.getPartitions()
-                  .stream()
-                  .filter(p -> partitionIds.contains(p.getId()))
-                  .collect(Collectors.toList()),
-              updateConsumer,
-              ttl);
-          initializedLatch.countDown();
+        Preconditions.checkArgument(
+            context.partitions().isEmpty() || context.partitions().size() == numPartitions,
+            "At least all or none partitions need to be assigned to the consumer. Got %s partitions from %s",
+            context.partitions().size(),
+            numPartitions);
+        if (!context.partitions().isEmpty()) {
+          transitionToActive(stateFamily.getDesc());
+        } else {
+          transitionToInactive(stateFamily.getDesc());
         }
         super.onRepartition(context);
       }
     };
+  }
+
+  private void transitionToActive(AttributeFamilyDescriptor desc) {
+    log.info("Transitioning to ACTIVE state for {}", desc);
+    // FIXME: add wait till all views are at HEAD
+    activeForFamily.get(desc).set(true);
+  }
+
+  private void transitionToInactive(AttributeFamilyDescriptor desc) {
+    log.info("Transitioning to INACTIVE state for {}", desc);
+    activeForFamily.get(desc).set(false);
   }
 
   private void addTransactionResponseConsumer(

@@ -50,6 +50,7 @@ import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.junit.After;
 import org.junit.Before;
@@ -73,6 +74,7 @@ public class TransactionsTest {
   private TransactionContext transactionContext;
   private IngestService ingest;
   private RetrieveService retrieve;
+  private TransactionLogObserver observer;
 
   @Before
   public void setUp() {
@@ -82,9 +84,8 @@ public class TransactionsTest {
             "_transaction-commit",
             repo.getTransformations().get("_transaction-commit"),
             ign -> {});
-    direct
-        .getServerTransactionManager()
-        .runObservations("testObserver", new TransactionLogObserver(direct));
+    observer = new TransactionLogObserver(direct);
+    observer.run("testObserver");
     scheduler = new ScheduledThreadPoolExecutor(1);
     transactionContext = new TransactionContext(direct);
     ingest = new IngestService(repo, direct, transactionContext, scheduler);
@@ -94,8 +95,8 @@ public class TransactionsTest {
   @After
   public void tearDown() {
     scheduler.shutdown();
+    observer.onCancelled();
     transformationHandle.close();
-    direct.close();
   }
 
   @Test(timeout = 10000)
@@ -206,15 +207,17 @@ public class TransactionsTest {
   @Test(timeout = 10000)
   public void testTransactionRollbackOnClose() {
     ListStreamObserver<BeginTransactionResponse> beginObserver = intoList();
-    ListStreamObserver<StatusBulk> ingestObserver = intoList();
     retrieve.begin(BeginTransactionRequest.newBuilder().build(), beginObserver);
     List<BeginTransactionResponse> responses = beginObserver.getOutputs();
     assertEquals(1, responses.size());
     String transactionId = responses.get(0).getTransactionId();
     transactionContext.close();
-    assertEquals(
-        State.Flags.ABORTED,
-        direct.getServerTransactionManager().getCurrentState(transactionId).getFlags());
+    while (direct.getServerTransactionManager().getCurrentState(transactionId).getFlags()
+        != State.Flags.ABORTED) {
+      if (ExceptionUtils.ignoringInterrupted(() -> TimeUnit.MILLISECONDS.sleep(100))) {
+        break;
+      }
+    }
   }
 
   @Test

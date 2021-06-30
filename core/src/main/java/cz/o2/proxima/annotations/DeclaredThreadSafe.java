@@ -25,4 +25,6 @@ import java.lang.annotation.Target;
 @Documented
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
-public @interface DeclaredThreadSafe {}
+public @interface DeclaredThreadSafe {
+  int allowedParallelism() default -1;
+}
