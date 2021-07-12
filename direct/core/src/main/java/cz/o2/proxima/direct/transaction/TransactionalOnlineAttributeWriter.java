@@ -24,6 +24,7 @@ import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.repository.TransactionMode;
 import cz.o2.proxima.repository.TransformationDescriptor;
+import cz.o2.proxima.repository.TransformationDescriptor.InputTransactionMode;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.transaction.Commit;
 import cz.o2.proxima.transaction.KeyAttribute;
@@ -275,7 +276,7 @@ public class TransactionalOnlineAttributeWriter implements OnlineAttributeWriter
             .getTransformations()
             .values()
             .stream()
-            .filter(TransformationDescriptor::isTransactional)
+            .filter(d -> d.getInputTransactionMode() == InputTransactionMode.TRANSACTIONAL)
             .flatMap(t -> t.getAttributes().stream().map(a -> Pair.of(a, t)))
             .collect(
                 Collectors.groupingBy(
