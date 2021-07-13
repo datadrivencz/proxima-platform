@@ -16,6 +16,7 @@
 package cz.o2.proxima.direct.transaction.manager;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.Sets;
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigFactory;
 import cz.o2.proxima.annotations.Experimental;
@@ -25,7 +26,9 @@ import cz.o2.proxima.direct.core.DirectDataOperator;
 import cz.o2.proxima.direct.transaction.ServerTransactionManager;
 import cz.o2.proxima.repository.ConfigRepository;
 import cz.o2.proxima.repository.Repository;
+import cz.o2.proxima.repository.TransactionMode;
 import cz.o2.proxima.util.ExceptionUtils;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.extern.slf4j.Slf4j;
 
@@ -77,6 +80,22 @@ public class TransactionManagerServer {
     this.direct = repo.getOrCreateOperator(DirectDataOperator.class);
     this.manager = direct.getServerTransactionManager();
     this.observerFactory = getObserverFactory(conf);
+
+    validateModeSupported(repo);
+  }
+
+  private void validateModeSupported(Repository repo) {
+    Set<TransactionMode> supportedModes =
+        Sets.newHashSet(TransactionMode.ALL, TransactionMode.NONE);
+    repo.getAllEntities()
+        .flatMap(e -> e.getAllAttributes().stream())
+        .filter(a -> !supportedModes.contains(a.getTransactionMode()))
+        .findAny()
+        .ifPresent(
+            a -> {
+              throw new UnsupportedOperationException(
+                  "Transaction mode of attribute " + a + " is not yet supported");
+            });
   }
 
   private TransactionLogObserverFactory getObserverFactory(Config conf) {
