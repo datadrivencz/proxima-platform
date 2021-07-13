@@ -16,7 +16,6 @@
 package cz.o2.proxima.direct.transaction.manager;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterators;
 import com.google.common.collect.MultimapBuilder;
 import com.google.common.collect.Sets;
@@ -76,28 +75,33 @@ public class TransactionLogObserver implements CommitLogObserver {
 
     static KeyWithAttribute of(KeyAttribute ka) {
       if (ka.isWildcardQuery()) {
-        return new KeyWithAttribute(ka.getKey(), ka.getAttributeDescriptor().toAttributePrefix());
+        return new KeyWithAttribute(
+            ka.getAttributeDescriptor().getEntity(),
+            ka.getAttributeDescriptor().toAttributePrefix(),
+            ka.getKey());
       }
       return new KeyWithAttribute(
-          ka.getKey(),
-          ka.getAttributeDescriptor().toAttributePrefix() + ka.getAttributeSuffix().orElse(""));
+          ka.getAttributeDescriptor().getEntity(),
+          ka.getAttributeDescriptor().toAttributePrefix() + ka.getAttributeSuffix().orElse(""),
+          ka.getKey());
     }
 
     static KeyWithAttribute ofWildcard(KeyAttribute ka) {
-      return new KeyWithAttribute(ka.getKey(), ka.getAttributeDescriptor().toAttributePrefix());
-    }
-
-    static KeyWithAttribute ofWildcard(KeyWithAttribute wildcardKeyWithAttribute) {
-      int dotPos = wildcardKeyWithAttribute.getAttribute().indexOf('.');
-      Preconditions.checkArgument(
-          dotPos > 0, "Attribute %s is not wildcard", wildcardKeyWithAttribute.getAttribute());
       return new KeyWithAttribute(
-          wildcardKeyWithAttribute.getKey(),
-          wildcardKeyWithAttribute.getAttribute().substring(0, dotPos + 1));
+          ka.getAttributeDescriptor().getEntity(),
+          ka.getAttributeDescriptor().toAttributePrefix(),
+          ka.getKey());
     }
 
-    String key;
+    private KeyWithAttribute(String entity, String attribute, String key) {
+      this.attribute = entity + "." + attribute;
+      this.key = key;
+    }
+
+    // attribute including entity in dot notation
     String attribute;
+    // primary key
+    String key;
   }
 
   @Value
@@ -152,7 +156,7 @@ public class TransactionLogObserver implements CommitLogObserver {
       MultimapBuilder.hashKeys().treeSetValues().build();
 
   @GuardedBy("lock")
-  private final Map<KeyWithAttribute, Map<KeyWithAttribute, Long>> updatesToWildcard =
+  private final Map<KeyWithAttribute, Map<KeyWithAttribute, SeqIdWithTombstone>> updatesToWildcard =
       new HashMap<>();
 
   public TransactionLogObserver(DirectDataOperator direct) {
@@ -271,11 +275,12 @@ public class TransactionLogObserver implements CommitLogObserver {
                   }
                   // release and re-acquire lock to enable progress of any waiting threads
                   try (Locker l = Locker.of(lock.writeLock())) {
-                    Iterator<Map<KeyWithAttribute, Long>> it =
+                    Iterator<Map<KeyWithAttribute, SeqIdWithTombstone>> it =
                         updatesToWildcard.values().iterator();
                     while (it.hasNext()) {
-                      Map<KeyWithAttribute, Long> value = it.next();
-                      Iterators.removeIf(value.values().iterator(), e -> e < cleanup);
+                      Map<KeyWithAttribute, SeqIdWithTombstone> value = it.next();
+                      Iterators.removeIf(
+                          value.values().iterator(), e -> e.getTimestamp() < cleanup);
                       if (value.isEmpty()) {
                         it.remove();
                       }
@@ -390,6 +395,16 @@ public class TransactionLogObserver implements CommitLogObserver {
     long seqId = state.getSequentialId();
     // we need to rollback all updates to lastUpdateSeqId with the same seqId
     try (Locker lock = Locker.of(this.lock.writeLock())) {
+      state
+          .getCommittedAttributes()
+          .stream()
+          .map(KeyWithAttribute::ofWildcard)
+          .map(updatesToWildcard::get)
+          .filter(Objects::nonNull)
+          .forEach(
+              map ->
+                  Iterators.removeIf(
+                      map.entrySet().iterator(), e -> e.getValue().getSeqId() == seqId));
       state
           .getCommittedAttributes()
           .stream()
@@ -566,6 +581,8 @@ public class TransactionLogObserver implements CommitLogObserver {
         manager.ensureTransactionOpen(newUpdate.getKey(), state);
         if (state.getFlags() == State.Flags.COMMITTED) {
           transactionPostCommit(state);
+        } else if (state.getFlags() == State.Flags.ABORTED) {
+          abortTransaction(newUpdate.getKey(), state);
         }
       }
     }
@@ -583,10 +600,10 @@ public class TransactionLogObserver implements CommitLogObserver {
                     SeqIdWithTombstone.create(this, committedSeqId, ka.isDelete());
                 lastUpdateSeqId.put(kwa, seqIdWithTombstone);
                 if (ka.getAttributeDescriptor().isWildcard()) {
-                  Map<KeyWithAttribute, Long> updated =
+                  Map<KeyWithAttribute, SeqIdWithTombstone> updated =
                       updatesToWildcard.computeIfAbsent(
                           KeyWithAttribute.ofWildcard(ka), k -> new HashMap<>());
-                  updated.put(kwa, seqIdWithTombstone.getTimestamp());
+                  updated.put(kwa, seqIdWithTombstone);
                 }
               });
     }

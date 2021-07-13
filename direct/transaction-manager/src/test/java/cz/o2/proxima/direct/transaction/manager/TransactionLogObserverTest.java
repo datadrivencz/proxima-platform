@@ -353,6 +353,43 @@ public class TransactionLogObserverTest {
     }
   }
 
+  @Test(timeout = 10000)
+  public void testCreateTransactionCommitRollback() throws InterruptedException {
+    createObserver();
+    ClientTransactionManager clientManager = direct.getClientTransactionManager();
+    String transactionId = UUID.randomUUID().toString();
+    BlockingQueue<Pair<String, Response>> responseQueue = new ArrayBlockingQueue<>(1);
+    clientManager.begin(
+        transactionId,
+        ExceptionUtils.uncheckedBiConsumer((k, v) -> responseQueue.put(Pair.of(k, v))),
+        Collections.singletonList(
+            KeyAttributes.ofAttributeDescriptor(user, "user", userGateways, 1L, "1")));
+    responseQueue.take();
+    clientManager.commit(
+        transactionId,
+        Collections.singletonList(
+            KeyAttributes.ofAttributeDescriptor(user, "user", userGateways, 2L, "1")));
+    responseQueue.take();
+    clientManager.rollback(transactionId);
+    Pair<String, Response> response = responseQueue.take();
+    assertEquals(Response.Flags.ABORTED, response.getSecond().getFlags());
+
+    // now, when we start new transaction, it must be let through
+    transactionId = UUID.randomUUID().toString();
+    responseQueue.clear();
+    clientManager.begin(
+        transactionId,
+        ExceptionUtils.uncheckedBiConsumer((k, v) -> responseQueue.put(Pair.of(k, v))),
+        KeyAttributes.ofWildcardQueryElements(user, "user", userGateways, Collections.emptyList()));
+    responseQueue.take();
+    clientManager.commit(
+        transactionId,
+        Collections.singletonList(
+            KeyAttributes.ofAttributeDescriptor(user, "user", userGateways, 2L, "1")));
+    response = responseQueue.take();
+    assertEquals(Response.Flags.COMMITTED, response.getSecond().getFlags());
+  }
+
   static class WithTransactionTimeout implements TransactionLogObserverFactory {
 
     private final long timeout;
