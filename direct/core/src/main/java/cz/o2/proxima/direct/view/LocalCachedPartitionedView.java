@@ -418,8 +418,8 @@ public class LocalCachedPartitionedView implements CachedView {
   }
 
   @Override
-  public Collection<Partition> getPartitions() {
-    return reader.getPartitions();
+  public CommitLogReader getUnderlyingReader() {
+    return reader;
   }
 
   @Override

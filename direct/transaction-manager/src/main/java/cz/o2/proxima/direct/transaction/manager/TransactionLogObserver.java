@@ -391,7 +391,6 @@ public class TransactionLogObserver implements CommitLogObserver {
   }
 
   private void abortTransaction(String transactionId, State state) {
-    log.info("Transaction {} seqId {} rolled back", transactionId, state.getSequentialId());
     long seqId = state.getSequentialId();
     // we need to rollback all updates to lastUpdateSeqId with the same seqId
     try (Locker lock = Locker.of(this.lock.writeLock())) {
@@ -448,12 +447,17 @@ public class TransactionLogObserver implements CommitLogObserver {
         break;
       case COMMITTED:
         if (request.getFlags() == Request.Flags.ROLLBACK) {
-          abortTransaction(transactionId, currentState);
-          return currentState.aborted();
+          return transitionToAborted(transactionId, currentState);
         }
         break;
     }
     return null;
+  }
+
+  private State transitionToAborted(String transactionId, State state) {
+    log.info("Transaction {} seqId {} rolled back", transactionId, state.getSequentialId());
+    abortTransaction(transactionId, state);
+    return state.aborted();
   }
 
   private State transitionToUpdated(State currentState, Request request) {

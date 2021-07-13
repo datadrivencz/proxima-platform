@@ -26,6 +26,7 @@ import cz.o2.proxima.direct.commitlog.CommitLogObservers;
 import cz.o2.proxima.direct.commitlog.CommitLogObservers.ForwardingObserver;
 import cz.o2.proxima.direct.commitlog.CommitLogReader;
 import cz.o2.proxima.direct.commitlog.ObserveHandle;
+import cz.o2.proxima.direct.commitlog.ObserveHandleUtils;
 import cz.o2.proxima.direct.core.CommitCallback;
 import cz.o2.proxima.direct.core.DirectAttributeFamilyDescriptor;
 import cz.o2.proxima.direct.core.DirectDataOperator;
@@ -68,6 +69,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
@@ -515,24 +517,37 @@ public class TransactionResourceManager
             context.partitions().size(),
             numPartitions);
         if (!context.partitions().isEmpty()) {
-          transitionToActive(stateFamily.getDesc());
+          transitionToActive(stateFamily);
         } else {
-          transitionToInactive(stateFamily.getDesc());
+          transitionToInactive(stateFamily);
         }
         super.onRepartition(context);
       }
     };
   }
 
-  private void transitionToActive(AttributeFamilyDescriptor desc) {
+  private void transitionToActive(DirectAttributeFamilyDescriptor desc) {
     log.info("Transitioning to ACTIVE state for {}", desc);
-    // FIXME: add wait till all views are at HEAD
-    activeForFamily.get(desc).set(true);
+    while (!Thread.currentThread().isInterrupted()) {
+      ObserveHandle handle = serverObservedFamilies.get(desc);
+      CommitLogReader reader = stateViews.get(desc).getUnderlyingReader();
+      if (handle != null && reader != null) {
+        boolean isAtHead = ObserveHandleUtils.isAtHead(handle, reader);
+        if (!isAtHead) {
+          ExceptionUtils.ignoringInterrupted(() -> TimeUnit.MILLISECONDS.sleep(100));
+          continue;
+        }
+      } else {
+        log.warn("Got null handle ({}) or reader ({}), terminating HEAD check", handle, reader);
+      }
+      break;
+    }
+    activeForFamily.get(desc.getDesc()).set(true);
   }
 
-  private void transitionToInactive(AttributeFamilyDescriptor desc) {
+  private void transitionToInactive(DirectAttributeFamilyDescriptor desc) {
     log.info("Transitioning to INACTIVE state for {}", desc);
-    activeForFamily.get(desc).set(false);
+    activeForFamily.get(desc.getDesc()).set(false);
   }
 
   private void addTransactionResponseConsumer(
