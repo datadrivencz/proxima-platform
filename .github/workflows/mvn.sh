@@ -19,7 +19,7 @@
 set -e
 
 IS_PR=$([[ ! -z $GITHUB_HEAD_REF ]] && echo ${GITHUB_HEAD_REF} || echo false)
-BRANCH=${GITHUB_HEAD_REF##*/}
+BRANCH=${GITHUB_REF##*/}
 
 echo "${BRANCH} ${IS_PR}" $(.github/mvn-build-changed-modules.sh ${BRANCH} ${IS_PR}})
 
@@ -27,7 +27,7 @@ mvn spotless:check -B -V && mvn install -B -V -Pallow-snapshots,with-coverage,ci
 
 if [[ $1 != "8" ]]; then
   if [ "${IS_PR}" != "false" ] || [ "${BRANCH}" == "master" ]; then
-    mvn sonar:sonar -B -V -Pallow-snapshots,with-coverage,ci $(.github/mvn-build-changed-modules.sh sonar ${BRANCH} ${IS_PR});
+    mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -B -V -Pallow-snapshots,with-coverage,ci $(.github/mvn-build-changed-modules.sh sonar ${BRANCH} ${IS_PR});
   fi
 fi
 
