@@ -20,8 +20,6 @@ import com.google.common.collect.Sets;
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigFactory;
 import cz.o2.proxima.annotations.Experimental;
-import cz.o2.proxima.direct.commitlog.CommitLogObserver;
-import cz.o2.proxima.direct.commitlog.CommitLogObservers.ForwardingObserver;
 import cz.o2.proxima.direct.core.DirectDataOperator;
 import cz.o2.proxima.direct.transaction.ServerTransactionManager;
 import cz.o2.proxima.repository.ConfigRepository;
@@ -29,6 +27,7 @@ import cz.o2.proxima.repository.Repository;
 import cz.o2.proxima.repository.TransactionMode;
 import cz.o2.proxima.util.ExceptionUtils;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.extern.slf4j.Slf4j;
 
@@ -62,10 +61,10 @@ public class TransactionManagerServer {
     TransactionManagerServer server = TransactionManagerServer.of(config);
     try {
       Runtime.getRuntime().addShutdownHook(new Thread(server::stop));
-      Thread runServer = new Thread(server::run);
-      runServer.setDaemon(true);
-      runServer.start();
-      ExceptionUtils.ignoringInterrupted(runServer::join);
+      server.run();
+      while (!Thread.currentThread().isInterrupted() && !server.isStopped()) {
+        ExceptionUtils.ignoringInterrupted(() -> TimeUnit.SECONDS.sleep(10));
+      }
     } finally {
       server.stop();
     }
@@ -76,7 +75,8 @@ public class TransactionManagerServer {
   private final TransactionLogObserverFactory observerFactory;
   private final AtomicBoolean closed = new AtomicBoolean();
 
-  private TransactionManagerServer(Config conf, Repository repo) {
+  @VisibleForTesting
+  TransactionManagerServer(Config conf, Repository repo) {
     this.direct = repo.getOrCreateOperator(DirectDataOperator.class);
     this.manager = direct.getServerTransactionManager();
     this.observerFactory = getObserverFactory(conf);
@@ -84,7 +84,8 @@ public class TransactionManagerServer {
     validateModeSupported(repo);
   }
 
-  private void validateModeSupported(Repository repo) {
+  @VisibleForTesting
+  void validateModeSupported(Repository repo) {
     Set<TransactionMode> supportedModes =
         Sets.newHashSet(TransactionMode.ALL, TransactionMode.NONE);
     repo.getAllEntities()
@@ -99,24 +100,22 @@ public class TransactionManagerServer {
   }
 
   private TransactionLogObserverFactory getObserverFactory(Config conf) {
-    return new TransactionLogObserverFactory.Default();
+    return new TransactionLogObserverFactory.WithOnErrorHandler(
+        error -> {
+          log.error("Error processing transactions. Bailing out for safety.", error);
+          stop();
+          System.exit(1);
+        });
   }
 
   public void run() {
-    manager.runObservations("transaction-manager", newTransactionLogObserver());
+    TransactionLogObserver observer = newTransactionLogObserver();
+    observer.run("transaction-manager");
     log.info("Started {}", getClass().getSimpleName());
   }
 
-  private CommitLogObserver newTransactionLogObserver() {
-    return new ForwardingObserver(observerFactory.create(direct)) {
-      @Override
-      public boolean onError(Throwable error) {
-        super.onError(error);
-        log.error("Error processing transactions. Bailing out for safety.", error);
-        System.exit(1);
-        return false;
-      }
-    };
+  private TransactionLogObserver newTransactionLogObserver() {
+    return observerFactory.create(direct);
   }
 
   public void stop() {

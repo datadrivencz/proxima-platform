@@ -36,16 +36,6 @@ public interface ServerTransactionManager extends AutoCloseable, TransactionMana
    * Observe all transactional families with given observer.
    *
    * @param name name of the observer (will be appended with name of the family)
-   * @param requestObserver the observer (need not be synchronized)
-   */
-  default void runObservations(String name, CommitLogObserver requestObserver) {
-    runObservations(name, (elem, p) -> {}, requestObserver);
-  }
-
-  /**
-   * Observe all transactional families with given observer.
-   *
-   * @param name name of the observer (will be appended with name of the family)
    * @param updateConsumer consumer of updates to the view of transaction states
    * @param requestObserver the observer (need not be synchronized)
    */

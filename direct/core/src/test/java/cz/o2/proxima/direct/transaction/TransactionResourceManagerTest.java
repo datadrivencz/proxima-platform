@@ -75,7 +75,8 @@ public class TransactionResourceManagerTest {
       List<Pair<String, Response>> receivedResponses = new ArrayList<>();
 
       // create a simple ping-pong communication
-      manager.runObservations(
+      runObservations(
+          manager,
           "requests",
           (ingest, context) -> {
             if (ingest.getAttributeDescriptor().equals(requestDesc)) {
@@ -122,7 +123,8 @@ public class TransactionResourceManagerTest {
       BlockingQueue<Pair<String, Response>> receivedResponses = new ArrayBlockingQueue<>(1);
 
       // create a simple ping-pong communication
-      manager.runObservations(
+      runObservations(
+          manager,
           "requests",
           (ingest, context) -> {
             if (ingest.getAttributeDescriptor().equals(requestDesc)) {
@@ -186,7 +188,8 @@ public class TransactionResourceManagerTest {
       BlockingQueue<Pair<String, Response>> receivedResponses = new ArrayBlockingQueue<>(1);
 
       // create a simple ping-pong communication
-      manager.runObservations(
+      runObservations(
+          manager,
           "requests",
           (ingest, context) -> {
             if (ingest.getAttributeDescriptor().equals(requestDesc)) {
@@ -246,7 +249,8 @@ public class TransactionResourceManagerTest {
       BlockingQueue<Pair<String, Response>> receivedResponses = new ArrayBlockingQueue<>(1);
 
       // create a simple ping-pong communication
-      manager.runObservations(
+      runObservations(
+          manager,
           "requests",
           (ingest, context) -> {
             if (ingest.getAttributeDescriptor().equals(requestDesc)) {
@@ -331,7 +335,8 @@ public class TransactionResourceManagerTest {
     long stamp = System.currentTimeMillis();
     try (TransactionResourceManager manager = TransactionResourceManager.create(direct)) {
       CountDownLatch repartitionLatch = new CountDownLatch(1);
-      manager.runObservations(
+      runObservations(
+          manager,
           "name",
           new CommitLogObserver() {
             @Override
@@ -387,6 +392,12 @@ public class TransactionResourceManagerTest {
             Optionals.get(
                 TransactionResourceManager.getDeclaredParallelism(
                     new ThreadSafeCommitLogObserver())));
+  }
+
+  public static void runObservations(
+      ServerTransactionManager manager, String name, CommitLogObserver observer) {
+
+    manager.runObservations(name, (a, b) -> {}, observer);
   }
 
   @DeclaredThreadSafe(allowedParallelism = 5)
