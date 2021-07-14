@@ -23,6 +23,7 @@ import cz.o2.proxima.direct.transaction.ThreadPooledObserver;
 import cz.o2.proxima.repository.EntityAwareAttributeDescriptor.Wildcard;
 import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.repository.Repository;
+import cz.o2.proxima.util.ExceptionUtils;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -39,7 +40,7 @@ public class ThreadPooledObserverTest {
   private final EntityDescriptor gateway = repo.getEntity("gateway");
   private final Wildcard<byte[]> device = Wildcard.of(gateway, gateway.getAttribute("device.*"));
 
-  @Test(timeout = 20_000)
+  @Test(timeout = 200_000)
   public void testParallelObserve() throws InterruptedException {
     List<Integer> elements = Collections.synchronizedList(new ArrayList<>());
     Set<Integer> confirmed = Collections.synchronizedSet(new TreeSet<>());
@@ -61,6 +62,7 @@ public class ThreadPooledObserverTest {
       int threadId = i;
       executor.submit(
           () -> {
+            CountDownLatch confirmedLatch = new CountDownLatch(numElements / parallelism);
             for (int j = threadId; j < numElements; j += parallelism) {
               int item = j;
               observer.onNext(
@@ -70,9 +72,11 @@ public class ThreadPooledObserverTest {
                         assertTrue(succ);
                         assertNull(exc);
                         confirmed.add(item);
+                        confirmedLatch.countDown();
                       },
                       null));
             }
+            ExceptionUtils.ignoringInterrupted(confirmedLatch::await);
             latch.countDown();
           });
     }
@@ -82,7 +86,7 @@ public class ThreadPooledObserverTest {
   }
 
   @Test(timeout = 20_000)
-  public void testParallelObserveWithRepartition() {
+  public void testParallelObserveWithRepartition() throws InterruptedException {
     List<Integer> elements = Collections.synchronizedList(new ArrayList<>());
     Set<Integer> confirmed = Collections.synchronizedSet(new TreeSet<>());
     ExecutorService executor = Executors.newCachedThreadPool();
@@ -98,6 +102,7 @@ public class ThreadPooledObserverTest {
             },
             parallelism);
     long now = System.currentTimeMillis();
+    CountDownLatch confirmedLatch = new CountDownLatch(numElements);
     for (int i = 0; i < numElements; i++) {
       int item = i;
       observer.onNext(
@@ -107,12 +112,14 @@ public class ThreadPooledObserverTest {
                 assertTrue(succ);
                 assertNull(exc);
                 confirmed.add(item);
+                confirmedLatch.countDown();
               },
               null));
       if (item % 83 == 0) {
         observer.onRepartition(Collections::emptyList);
       }
     }
+    confirmedLatch.await();
     observer.onCompleted();
     assertEquals(numElements, elements.stream().distinct().count());
     assertEquals(numElements, confirmed.size());
