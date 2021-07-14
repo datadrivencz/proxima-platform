@@ -68,7 +68,7 @@ public class TransactionalOnlineAttributeWriter implements OnlineAttributeWriter
     };
   }
 
-  public class TransactionRejectedException extends Exception {
+  public static class TransactionRejectedException extends Exception {
     @Getter private final String transactionId;
 
     private TransactionRejectedException(String transactionId) {
@@ -115,11 +115,7 @@ public class TransactionalOnlineAttributeWriter implements OnlineAttributeWriter
         default:
           throw new TransactionRejectedException(transactionId);
       }
-      Response response =
-          Optional.ofNullable(
-                  ExceptionUtils.uncheckedFactory(() -> responseQueue.poll(5, TimeUnit.SECONDS)))
-              .orElse(Response.empty());
-
+      Response response = takeResponse();
       if (response.getFlags() != expectedResponse) {
         throw new TransactionRejectedException(transactionId);
       }
@@ -153,7 +149,7 @@ public class TransactionalOnlineAttributeWriter implements OnlineAttributeWriter
       List<KeyAttribute> keyAttributes =
           injected.stream().map(KeyAttributes::ofStreamElement).collect(Collectors.toList());
       manager.commit(transactionId, keyAttributes);
-      Response response = ExceptionUtils.uncheckedFactory(responseQueue::take);
+      Response response = takeResponse();
       if (response.getFlags() != Response.Flags.COMMITTED) {
         if (response.getFlags() == Response.Flags.ABORTED) {
           state = State.Flags.ABORTED;
@@ -169,6 +165,12 @@ public class TransactionalOnlineAttributeWriter implements OnlineAttributeWriter
           };
       state = State.Flags.COMMITTED;
       writer.write(toWrite, compositeCallback);
+    }
+
+    private Response takeResponse() {
+      return Optional.ofNullable(
+              ExceptionUtils.uncheckedFactory(() -> responseQueue.poll(5, TimeUnit.SECONDS)))
+          .orElse(Response.empty());
     }
 
     private StreamElement getSingleOrCommit(List<StreamElement> outputs) {

@@ -189,9 +189,7 @@ public class RetrieveService extends RetrieveServiceGrpc.RetrieveServiceImplBase
         Optional<KeyValue<Object>> maybeValue =
             reader.get(request.getKey(), request.getAttribute(), attribute);
 
-        if (!request.getTransactionId().isEmpty()) {
-          noticeGetResult(request, entity, attribute, maybeValue);
-        }
+        noticeGetResult(request, entity, attribute, maybeValue);
         KeyValue<Object> kv =
             maybeValue.orElseThrow(
                 () ->

@@ -382,6 +382,21 @@ public class IngestService extends IngestServiceGrpc.IngestServiceImplBase {
                   + " not found"));
       return null;
     }
+
+    boolean valid =
+        request.getDelete() /* delete is always valid */
+            || attr.get().getValueSerializer().isValid(request.getValue().toByteArray());
+
+    if (!valid) {
+      log.info("Request {} is not valid", TextFormat.shortDebugString(request));
+      consumer.accept(
+          status(
+              request.getUuid(),
+              412,
+              "Invalid scheme for " + entity.get().getName() + "." + attr.get().getName()));
+      return null;
+    }
+
     return toStreamElement(request, entity.get(), attr.get());
   }
 
@@ -436,6 +451,7 @@ public class IngestService extends IngestServiceGrpc.IngestServiceImplBase {
                                 ? TransactionCommitResponse.Status.COMMITTED
                                 : TransactionCommitResponse.Status.FAILED)
                         .build());
+                responseObserver.onCompleted();
               });
     } catch (TransactionRejectedException e) {
       log.info("Transaction {} rejected.", request.getTransactionId());
@@ -443,14 +459,15 @@ public class IngestService extends IngestServiceGrpc.IngestServiceImplBase {
           TransactionCommitResponse.newBuilder()
               .setStatus(TransactionCommitResponse.Status.REJECTED)
               .build());
+      responseObserver.onCompleted();
     } catch (Exception err) {
       log.error("Error during committing transaction {}", request.getTransactionId(), err);
       responseObserver.onNext(
           TransactionCommitResponse.newBuilder()
               .setStatus(TransactionCommitResponse.Status.FAILED)
               .build());
+      responseObserver.onCompleted();
     }
-    responseObserver.onCompleted();
   }
 
   private static StreamElement toStreamElement(

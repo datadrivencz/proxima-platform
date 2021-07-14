@@ -147,7 +147,7 @@ public class ReplicationController {
     @Override
     public void onRepartition(OnRepartitionContext context) {
       log.info(
-          "Consumer {}: restarting bulk processing of {} from {}, rollbacking the writer",
+          "Consumer {}: restarting bulk processing of {} from {}, rolling back the writer",
           consumerName,
           writer.getUri(),
           context.partitions());

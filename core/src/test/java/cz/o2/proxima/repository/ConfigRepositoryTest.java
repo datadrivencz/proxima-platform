@@ -36,6 +36,7 @@ import cz.o2.proxima.storage.StorageType;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.transaction.Request;
 import cz.o2.proxima.transaction.TransactionCommitTransformation;
+import cz.o2.proxima.transaction.TransactionPartitioner;
 import cz.o2.proxima.transform.ElementWiseProxyTransform.ProxySetupContext;
 import cz.o2.proxima.transform.ElementWiseTransformation;
 import cz.o2.proxima.transform.EventDataToDummy;
@@ -561,7 +562,12 @@ public class ConfigRepositoryTest {
     Repository second = first.asFactory().apply();
     assertSame(second, first);
     first.drop();
-    second = first.asFactory().apply();
+    try {
+      second = first.asFactory().apply();
+    } catch (Exception ex) {
+      ex.printStackTrace(System.err);
+      throw ex;
+    }
     assertNotSame(second, first);
   }
 
@@ -589,6 +595,12 @@ public class ConfigRepositoryTest {
     assertTrue(repo.getEntity("_transaction").isSystemEntity());
     assertTrue(repo.findFamilyByName("gateway-transaction-commit-log").isPresent());
     assertTrue(repo.findFamilyByName("all-transaction-commit-log-request").isPresent());
+    assertEquals(
+        TransactionPartitioner.class.getName(),
+        repo.findFamilyByName("gateway-transaction-commit-log")
+            .get()
+            .getCfg()
+            .get(ConfigConstants.PARTITIONER));
 
     EntityDescriptor gateway = repo.getEntity("gateway");
     assertTrue(gateway.isTransactional());
