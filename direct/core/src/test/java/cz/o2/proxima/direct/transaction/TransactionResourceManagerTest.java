@@ -68,7 +68,7 @@ public class TransactionResourceManagerTest {
     direct.getWriter(requestDesc);
   }
 
-  @Test
+  @Test(timeout = 10000)
   public void testTransactionRequestResponse() {
     try (TransactionResourceManager manager = TransactionResourceManager.create(direct)) {
       String transactionId = UUID.randomUUID().toString();
@@ -116,7 +116,7 @@ public class TransactionResourceManagerTest {
     }
   }
 
-  @Test
+  @Test(timeout = 10000)
   public void testTransactionRequestCommit() throws InterruptedException {
     try (TransactionResourceManager manager = TransactionResourceManager.create(direct)) {
       String transactionId = UUID.randomUUID().toString();

@@ -437,8 +437,8 @@ public class TransactionResourceManager
               if (view == null) {
                 view = Optionals.get(stateFamily.getCachedView());
                 Duration ttl = Duration.ofMillis(transactionTimeoutMs);
-                view.assign(view.getPartitions(), updateConsumer, ttl);
                 stateViews.put(stateFamily, view);
+                view.assign(view.getPartitions(), updateConsumer, ttl);
               }
               initializedLatch.countDown();
 
@@ -527,22 +527,22 @@ public class TransactionResourceManager
   }
 
   private void transitionToActive(DirectAttributeFamilyDescriptor desc) {
-    log.info("Transitioning to ACTIVE state for {}", desc);
-    while (!Thread.currentThread().isInterrupted()) {
-      ObserveHandle handle = serverObservedFamilies.get(desc);
-      CommitLogReader reader = stateViews.get(desc).getUnderlyingReader();
-      if (handle != null && reader != null) {
-        boolean isAtHead = ObserveHandleUtils.isAtHead(handle, reader);
-        if (!isAtHead) {
-          ExceptionUtils.ignoringInterrupted(() -> TimeUnit.MILLISECONDS.sleep(100));
-          continue;
-        }
-      } else {
-        log.warn("Got null handle ({}) or reader ({}), terminating HEAD check", handle, reader);
+    boolean isAtHead = false;
+    while (!Thread.currentThread().isInterrupted() && !isAtHead) {
+      CachedView view = Objects.requireNonNull(stateViews.get(desc));
+      CommitLogReader reader = view.getUnderlyingReader();
+      Optional<ObserveHandle> handle = view.getRunningHandle();
+      if (handle.isPresent()) {
+        isAtHead = ObserveHandleUtils.isAtHead(handle.get(), reader);
       }
-      break;
+      if (!isAtHead) {
+        ExceptionUtils.ignoringInterrupted(() -> TimeUnit.MILLISECONDS.sleep(100));
+      }
     }
-    activeForFamily.get(desc.getDesc()).set(true);
+    if (isAtHead) {
+      log.info("Transitioned to ACTIVE state for {}", desc);
+      activeForFamily.get(desc.getDesc()).set(true);
+    }
   }
 
   private void transitionToInactive(DirectAttributeFamilyDescriptor desc) {

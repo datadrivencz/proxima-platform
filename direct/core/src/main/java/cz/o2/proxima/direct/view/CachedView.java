@@ -17,6 +17,7 @@ package cz.o2.proxima.direct.view;
 
 import cz.o2.proxima.annotations.Stable;
 import cz.o2.proxima.direct.commitlog.CommitLogReader;
+import cz.o2.proxima.direct.commitlog.ObserveHandle;
 import cz.o2.proxima.direct.core.OnlineAttributeWriter;
 import cz.o2.proxima.direct.randomaccess.RandomAccessReader;
 import cz.o2.proxima.functional.BiConsumer;
@@ -26,6 +27,7 @@ import cz.o2.proxima.util.Pair;
 import java.io.Serializable;
 import java.time.Duration;
 import java.util.Collection;
+import java.util.Optional;
 import javax.annotation.Nullable;
 
 /**
@@ -126,6 +128,9 @@ public interface CachedView extends RandomAccessReader, OnlineAttributeWriter {
 
   /** Retrieve underlying {@link CommitLogReader}. */
   CommitLogReader getUnderlyingReader();
+
+  /** Retrieve a running handle (if present). */
+  Optional<ObserveHandle> getRunningHandle();
 
   /**
    * Convert instance of this view to {@link Factory} suitable for serialization.

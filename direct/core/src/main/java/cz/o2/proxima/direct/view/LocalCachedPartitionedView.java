@@ -423,6 +423,11 @@ public class LocalCachedPartitionedView implements CachedView {
   }
 
   @Override
+  public Optional<ObserveHandle> getRunningHandle() {
+    return Optional.ofNullable(handle.get());
+  }
+
+  @Override
   public Factory asFactory() {
     final CommitLogReader.Factory<?> readerFactory = reader.asFactory();
     final OnlineAttributeWriter.Factory<?> writerFactory = writer.asFactory();
