@@ -33,8 +33,8 @@
 
   <properties>
     <shadePattern>cz.o2.proxima.bigtable.shaded</shadePattern>
-    <bigtable.version>1.12.0</bigtable.version>
-    <grpc.version>1.21.0</grpc.version>
+    <bigtable.version>1.19.0</bigtable.version>
+    <grpc.version>1.33.1</grpc.version>
   </properties>
 
   <profiles>
@@ -219,7 +219,7 @@
 
     <dependency>
       <groupId>com.google.cloud.bigtable</groupId>
-      <artifactId>bigtable-hbase-1.x</artifactId>
+      <artifactId>bigtable-hbase-2.x</artifactId>
       <version>${bigtable.version}</version>
       <exclusions>
         <exclusion>
