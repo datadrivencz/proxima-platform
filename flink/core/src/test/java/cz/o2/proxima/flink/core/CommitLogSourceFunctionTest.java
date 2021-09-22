@@ -30,14 +30,15 @@ import cz.o2.proxima.storage.commitlog.Partitioners;
 import cz.o2.proxima.util.Optionals;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.stream.Collectors;
 import javax.annotation.Nullable;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.flink.core.testutils.CheckedThread;
 import org.apache.flink.runtime.checkpoint.OperatorSubtaskState;
 import org.apache.flink.shaded.guava18.com.google.common.base.Preconditions;
@@ -47,21 +48,23 @@ import org.apache.flink.streaming.util.AbstractStreamOperatorTestHarness;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-class CommitLogSourceFunctionTest {
+@Slf4j
+class CommitLogSourceFunctionTest extends AbstractLogSourceFunctionTest {
 
   private static final String MODEL =
       "{\n"
           + "  entities: {\n"
           + "    test {\n"
           + "      attributes {\n"
-          + "        data: { scheme: \"string\" }\n"
+          + "        first: { scheme: \"string\" }\n"
+          + "        second: { scheme: \"string\" }\n"
           + "      }\n"
           + "    }\n"
           + "  }\n"
           + "  attributeFamilies: {\n"
           + "    test_storage_stream {\n"
           + "      entity: test\n"
-          + "      attributes: [ data ]\n"
+          + "      attributes: [ first, second ]\n"
           + "      storage: \"inmem:///test_inmem\"\n"
           + "      type: primary\n"
           + "      access: commit-log\n"
@@ -78,28 +81,16 @@ class CommitLogSourceFunctionTest {
         new StreamSource<>(source), maxParallelism, numSubtasks, subtaskIndex);
   }
 
-  private static StreamElement newData(
-      Repository repository, String key, Instant timestamp, String value) {
-    final EntityDescriptor entity = repository.getEntity("test");
-    final AttributeDescriptor<String> attribute = entity.getAttribute("data");
-    return StreamElement.upsert(
-        entity,
-        attribute,
-        UUID.randomUUID().toString(),
-        key,
-        attribute.getName(),
-        timestamp.toEpochMilli(),
-        attribute.getValueSerializer().serialize(value));
-  }
-
   @Test
   void testRunAndClose() throws Exception {
     final Repository repository = Repository.ofTest(ConfigFactory.parseString(MODEL));
-    final AttributeDescriptor<?> attribute = repository.getEntity("test").getAttribute("data");
+    final AttributeDescriptor<?> attribute = repository.getEntity("test").getAttribute("first");
     final CommitLogSourceFunction<StreamElement> sourceFunction =
         new CommitLogSourceFunction<>(
+            "test-consumer",
             repository.asFactory(),
             Collections.singletonList(attribute),
+            FlinkDataOperator.newCommitLogOptions().build(),
             ResultExtractor.identity());
     final AbstractStreamOperatorTestHarness<StreamElement> testHarness =
         createTestHarness(sourceFunction, 1, 0);
@@ -135,12 +126,14 @@ class CommitLogSourceFunctionTest {
   void testObserverErrorPropagatesToTheMainThread() throws Exception {
     final Repository repository = Repository.ofTest(ConfigFactory.parseString(MODEL));
     final DirectDataOperator direct = repository.getOrCreateOperator(DirectDataOperator.class);
-    final AttributeDescriptor<?> attributeDescriptor =
-        repository.getEntity("test").getAttribute("data");
+    final EntityDescriptor entity = repository.getEntity("test");
+    final AttributeDescriptor<String> attributeDescriptor = entity.getAttribute("first");
     final CommitLogSourceFunction<StreamElement> sourceFunction =
         new CommitLogSourceFunction<>(
+            "test-consumer",
             repository.asFactory(),
             Collections.singletonList(attributeDescriptor),
+            FlinkDataOperator.newCommitLogOptions().build(),
             element -> {
               throw new IllegalStateException("Test failure.");
             });
@@ -165,7 +158,8 @@ class CommitLogSourceFunctionTest {
           }
         };
 
-    final StreamElement element = newData(repository, "key", Instant.now(), "value");
+    final StreamElement element =
+        createUpsertElement(entity, attributeDescriptor, "key", Instant.now(), "value");
     final OnlineAttributeWriter writer = Optionals.get(direct.getWriter(attributeDescriptor));
     writer.write(element, CommitCallback.noop());
 
@@ -175,6 +169,7 @@ class CommitLogSourceFunctionTest {
     final IllegalStateException exception =
         Assertions.assertThrows(IllegalStateException.class, runThread::sync);
     Assertions.assertEquals("Test failure.", exception.getCause().getMessage());
+    testHarness.close();
   }
 
   @Test
@@ -192,11 +187,57 @@ class CommitLogSourceFunctionTest {
     testSnapshotAndRestore(1, 3);
   }
 
+  @Test
+  void testReadFilteredAttributesFromSource() throws Exception {
+    final Repository repository = Repository.ofTest(ConfigFactory.parseString(MODEL));
+    final DirectDataOperator direct = repository.getOrCreateOperator(DirectDataOperator.class);
+    final EntityDescriptor testEntity = repository.getEntity("test");
+    final AttributeDescriptor<String> first = testEntity.getAttribute("first");
+    final AttributeDescriptor<String> second = testEntity.getAttribute("second");
+
+    final OnlineAttributeWriter writerForFirst = Optionals.get(direct.getWriter(first));
+    final OnlineAttributeWriter writerForSecond = Optionals.get(direct.getWriter(second));
+    final Instant now = Instant.now();
+    final int numElements = 1000;
+    CommitCallback callback =
+        (success, error) -> {
+          if (error != null) {
+            log.error("Error during write {}.", error.toString());
+          }
+          Assertions.assertTrue(success);
+        };
+    // let's write numElements of first and second into same commitlog
+    for (int i = 0; i < numElements; i++) {
+      writerForFirst.write(
+          createUpsertElement(testEntity, first, "key_" + i, now, "value_" + i),
+          CommitCallback.afterNumCommits(numElements, callback));
+      writerForSecond.write(
+          createUpsertElement(testEntity, second, "key_" + i, now, "value_" + i),
+          CommitCallback.afterNumCommits(numElements, callback));
+    }
+
+    final List<StreamElement> result = Collections.synchronizedList(new ArrayList<>());
+    final RunReadTestSubtask runTest =
+        (List<AttributeDescriptor<?>> attributes, int expectedElements) -> {
+          result.clear();
+          runSubtask(repository, attributes, null, result::add, 1, 0, expectedElements);
+          Assertions.assertEquals(expectedElements, result.size());
+          Assertions.assertFalse(
+              result.stream().anyMatch(e -> !attributes.contains(e.getAttributeDescriptor())));
+        };
+    // try read just first
+    runTest.run(Collections.singletonList(first), numElements);
+    // try read just second
+    runTest.run(Collections.singletonList(second), numElements);
+    // try read both
+    runTest.run(Arrays.asList(first, second), 2 * numElements);
+  }
+
   private void testSnapshotAndRestore(int numSubtasks, int numRestoredSubtasks) throws Exception {
     final Repository repository = Repository.ofTest(ConfigFactory.parseString(MODEL));
     final DirectDataOperator direct = repository.getOrCreateOperator(DirectDataOperator.class);
-    final AttributeDescriptor<?> attributeDescriptor =
-        repository.getEntity("test").getAttribute("data");
+    final EntityDescriptor entity = repository.getEntity("test");
+    final AttributeDescriptor<String> attributeDescriptor = entity.getAttribute("first");
     final Instant now = Instant.now();
 
     final OnlineAttributeWriter writer = Optionals.get(direct.getWriter(attributeDescriptor));
@@ -207,7 +248,8 @@ class CommitLogSourceFunctionTest {
     final Map<Integer, Integer> partitionElements = new HashMap<>();
     final List<StreamElement> emittedElements = new ArrayList<>();
     for (int i = 0; i < numElements; i++) {
-      final StreamElement element = newData(repository, "key_" + i, now, "value_" + i);
+      final StreamElement element =
+          createUpsertElement(entity, attributeDescriptor, "key_" + i, now, "value_" + i);
       emittedElements.add(element);
       partitionElements.merge(
           Partitioners.getTruncatedPartitionId(
@@ -226,7 +268,7 @@ class CommitLogSourceFunctionTest {
       snapshots.add(
           runSubtask(
               repository,
-              attributeDescriptor,
+              Collections.singletonList(attributeDescriptor),
               null,
               result::add,
               numSubtasks,
@@ -241,7 +283,8 @@ class CommitLogSourceFunctionTest {
     // Run second iteration - restored from snapshot.
     partitionElements.clear();
     for (int i = 0; i < numElements; i++) {
-      final StreamElement element = newData(repository, "second_key_" + i, now, "value_" + i);
+      final StreamElement element =
+          createUpsertElement(entity, attributeDescriptor, "second_key_" + i, now, "value_" + i);
       emittedElements.add(element);
       partitionElements.merge(
           Partitioners.getTruncatedPartitionId(
@@ -256,7 +299,7 @@ class CommitLogSourceFunctionTest {
       final int expectedElements = partitionElements.getOrDefault(subtaskIndex, 0);
       runSubtask(
           repository,
-          attributeDescriptor,
+          Collections.singletonList(attributeDescriptor),
           mergedState,
           result::add,
           numRestoredSubtasks,
@@ -273,7 +316,7 @@ class CommitLogSourceFunctionTest {
 
   private OperatorSubtaskState runSubtask(
       Repository repository,
-      AttributeDescriptor<?> attributeDescriptor,
+      List<AttributeDescriptor<?>> attributeDescriptors,
       @Nullable OperatorSubtaskState state,
       Consumer<StreamElement> outputConsumer,
       int numSubtasks,
@@ -282,8 +325,10 @@ class CommitLogSourceFunctionTest {
       throws Exception {
     final CommitLogSourceFunction<StreamElement> sourceFunction =
         new CommitLogSourceFunction<>(
+            "test-consumer",
             repository.asFactory(),
-            Collections.singletonList(attributeDescriptor),
+            attributeDescriptors,
+            FlinkDataOperator.newCommitLogOptions().build(),
             ResultExtractor.identity());
     final AbstractStreamOperatorTestHarness<StreamElement> testHarness =
         createTestHarness(sourceFunction, numSubtasks, subtaskIndex);
@@ -293,6 +338,7 @@ class CommitLogSourceFunctionTest {
       testHarness.initializeState(state);
     }
     testHarness.open();
+    Assertions.assertEquals("test-consumer", sourceFunction.getConsumerName());
     final CountDownLatch elementsReceived = new CountDownLatch(expectedElements);
     final CheckedThread runThread =
         new CheckedThread("run") {

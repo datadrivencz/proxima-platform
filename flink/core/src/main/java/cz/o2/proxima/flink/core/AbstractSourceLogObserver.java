@@ -16,11 +16,13 @@
 package cz.o2.proxima.flink.core;
 
 import cz.o2.proxima.direct.LogObserver;
+import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.storage.Partition;
 import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.time.Watermarks;
 import java.io.Serializable;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -47,6 +49,8 @@ abstract class AbstractSourceLogObserver<
   @Getter private final SourceFunction.SourceContext<OutputT> sourceContext;
   private final ResultExtractor<OutputT> resultExtractor;
 
+  private final List<AttributeDescriptor<?>> attributesToEmit;
+
   /**
    * When restoring from checkpoint, we need to skip the first element in each partition, because it
    * has been already consumed.
@@ -60,9 +64,11 @@ abstract class AbstractSourceLogObserver<
   AbstractSourceLogObserver(
       SourceFunction.SourceContext<OutputT> sourceContext,
       ResultExtractor<OutputT> resultExtractor,
-      Set<Partition> skipFirstElementFromEachPartition) {
+      Set<Partition> skipFirstElementFromEachPartition,
+      List<AttributeDescriptor<?>> attributesToEmit) {
     this.sourceContext = sourceContext;
     this.resultExtractor = resultExtractor;
+    this.attributesToEmit = attributesToEmit;
     this.skipFirstElementFromEachPartition = skipFirstElementFromEachPartition;
   }
 
@@ -93,13 +99,15 @@ abstract class AbstractSourceLogObserver<
   }
 
   @Override
-  public boolean onNext(StreamElement ingest, ContextT context) {
+  public boolean onNext(StreamElement element, ContextT context) {
     final boolean skipElement =
         skipFirstElementFromEachPartition.contains(context.getPartition())
             && seenPartitions.add(context.getPartition());
     if (!skipElement) {
       synchronized (sourceContext.getCheckpointLock()) {
-        sourceContext.collectWithTimestamp(resultExtractor.toResult(ingest), ingest.getStamp());
+        if (attributesToEmit.contains(element.getAttributeDescriptor())) {
+          sourceContext.collectWithTimestamp(resultExtractor.toResult(element), element.getStamp());
+        }
         markOffsetAsConsumed(context);
       }
     }
