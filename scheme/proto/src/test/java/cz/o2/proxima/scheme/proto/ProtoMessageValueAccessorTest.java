@@ -18,9 +18,11 @@ package cz.o2.proxima.scheme.proto;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import com.google.protobuf.ByteString;
+import cz.o2.proxima.scheme.AttributeValueAccessors;
 import cz.o2.proxima.scheme.AttributeValueAccessors.StructureValue;
 import cz.o2.proxima.scheme.AttributeValueAccessors.StructureValueAccessor;
 import cz.o2.proxima.scheme.proto.test.Scheme.Event;
@@ -219,7 +221,7 @@ public class ProtoMessageValueAccessorTest {
 
   @Test
   public void testCreateProtoWhereRepeatedFieldChangedToOptional() {
-    // This situation can be simulate by creating object from list where last value should win.
+    // This situation can be simulated by creating object from list where last value should win.
 
     final StructureValueAccessor<RuleConfig> accessor =
         new ProtoMessageValueAccessor<>(RuleConfig::getDefaultInstance);
@@ -236,5 +238,45 @@ public class ProtoMessageValueAccessorTest {
     log.debug("Created proto object {}", created);
     assertArrayEquals(
         "second".getBytes(StandardCharsets.UTF_8), created.getPayload().toByteArray());
+  }
+
+  @Test
+  public void testFieldAccessors() {
+    final StructureValueAccessor<ValueSchemeMessage> accessor =
+        new ProtoMessageValueAccessor<>(ValueSchemeMessage::getDefaultInstance);
+    final InnerMessage innerMessage =
+        InnerMessage.newBuilder().setInnerEnum(Directions.LEFT).setInnerDoubleType(1.2).build();
+    final ValueSchemeMessage message =
+        ValueSchemeMessage.newBuilder()
+            .setStringType("test string")
+            .setInnerMessage(innerMessage)
+            .build();
+
+    // Test getting "raw field value". This means that inner message doesn't get converted into map.
+    assertEquals("test string", accessor.getRawFieldValue("string_type", message));
+    assertEquals(innerMessage, accessor.getRawFieldValue("inner_message", message));
+
+    // Test inner message accessor.
+    @SuppressWarnings("unchecked")
+    final StructureValueAccessor<InnerMessage> innerMessageAccessor =
+        (StructureValueAccessor<InnerMessage>) accessor.getFieldAccessor("inner_message");
+    assertEquals(
+        1.2d, innerMessageAccessor.getRawFieldValue("inner_double_type", innerMessage), 0.0);
+    assertEquals("LEFT", innerMessageAccessor.getRawFieldValue("inner_enum", innerMessage));
+
+    // Test string type accessor.
+    @SuppressWarnings("unchecked")
+    final AttributeValueAccessors.PrimitiveValueAccessor<String, String> stringTypeAccessor =
+        (AttributeValueAccessors.PrimitiveValueAccessor<String, String>)
+            accessor.getFieldAccessor("string_type");
+    assertEquals(
+        "test string",
+        stringTypeAccessor.valueOf(accessor.getRawFieldValue("string_type", message)));
+
+    // Test accessing unknown field.
+    assertThrows(IllegalStateException.class, () -> accessor.getRawFieldValue("unknown", message));
+
+    // Test defaults.
+    assertEquals(0L, (long) accessor.getRawFieldValue("long_type", message));
   }
 }
