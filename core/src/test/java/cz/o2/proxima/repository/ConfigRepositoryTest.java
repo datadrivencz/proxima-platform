@@ -246,6 +246,7 @@ public class ConfigRepositoryTest {
         repo.getTransformations().get("_dummyReplicationMasterSlave_slave");
     assertNotNull(desc);
     assertEquals(DummyFilter.class, desc.getFilter().getClass());
+    assertTrue(((DummyFilter) desc.getFilter()).isSetupCalled());
   }
 
   @Test

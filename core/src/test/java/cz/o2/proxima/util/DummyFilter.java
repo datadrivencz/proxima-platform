@@ -15,7 +15,23 @@
  */
 package cz.o2.proxima.util;
 
+import cz.o2.proxima.repository.AttributeFamilyDescriptor;
+import cz.o2.proxima.repository.TransformationDescriptor;
 import cz.o2.proxima.storage.PassthroughFilter;
+import lombok.Getter;
 
 /** A dummy filter just to be able to test difference from {@link PassthroughFilter}. */
-public class DummyFilter extends PassthroughFilter {}
+public class DummyFilter extends PassthroughFilter {
+
+  @Getter private boolean setupCalled = false;
+
+  @Override
+  public void setup(AttributeFamilyDescriptor af) {
+    setupCalled = true;
+  }
+
+  @Override
+  public void setup(TransformationDescriptor tf) {
+    setupCalled = true;
+  }
+}

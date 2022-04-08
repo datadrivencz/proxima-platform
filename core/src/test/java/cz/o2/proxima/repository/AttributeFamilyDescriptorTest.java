@@ -22,12 +22,14 @@ import cz.o2.proxima.repository.DefaultConsumerNameFactory.DefaultReplicationCon
 import cz.o2.proxima.scheme.AttributeValueType;
 import cz.o2.proxima.scheme.SchemaDescriptors.SchemaTypeDescriptor;
 import cz.o2.proxima.storage.AccessType;
+import cz.o2.proxima.storage.StorageFilter;
 import cz.o2.proxima.storage.StorageType;
 import cz.o2.proxima.util.TestUtils;
 import java.io.IOException;
 import java.net.URI;
 import java.util.Collections;
 import org.junit.Test;
+import org.mockito.Mockito;
 
 public class AttributeFamilyDescriptorTest {
 
@@ -154,5 +156,27 @@ public class AttributeFamilyDescriptorTest {
     SchemaTypeDescriptor<byte[]> descriptor = attribute.getSchemaTypeDescriptor();
     assertEquals(AttributeValueType.ARRAY, descriptor.getType());
     assertEquals(AttributeValueType.BYTE, descriptor.asArrayTypeDescriptor().getValueType());
+  }
+
+  @Test
+  public void testCreateDescriptorWithFilter() {
+    final StorageFilter filter = Mockito.mock(StorageFilter.class);
+    final Repository repository = Repository.ofTest(ConfigFactory.defaultApplication());
+    final AttributeFamilyDescriptor af =
+        AttributeFamilyDescriptor.newBuilder()
+            .setName("attribute-family")
+            .setType(StorageType.PRIMARY)
+            .setAccess(AccessType.from("commit-log"))
+            .setEntity(EntityDescriptor.newBuilder().setName("entity").build())
+            .addAttribute(
+                AttributeDescriptor.newBuilder(repository)
+                    .setEntity("entity")
+                    .setName("attribute")
+                    .setSchemeUri(URI.create("bytes:///"))
+                    .build())
+            .setStorageUri(URI.create("inmem://foo/bar"))
+            .setFilter(filter)
+            .build();
+    Mockito.verify(filter, Mockito.times(1)).setup(af);
   }
 }
