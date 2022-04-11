@@ -139,7 +139,6 @@ public class TransformationDescriptor implements Serializable {
         requireSingleTransactionMode(name, attributes) != TransactionMode.NONE
             ? InputTransactionMode.TRANSACTIONAL
             : InputTransactionMode.NON_TRANSACTIONAL;
-    this.filter.setup(this);
   }
 
   private TransactionMode requireSingleTransactionMode(
@@ -185,9 +184,11 @@ public class TransformationDescriptor implements Serializable {
   @Override
   public String toString() {
     return MoreObjects.toStringHelper(this)
+        .add("name", name)
         .add("attributes", attributes)
         .add("inputTransactionMode", inputTransactionMode)
         .add("outputTransactionMode", outputTransactionMode)
+        .add("filter", filter)
         .toString();
   }
 }

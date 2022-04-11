@@ -98,9 +98,6 @@ public class AttributeFamilyDescriptor implements Serializable {
     this.replicationConsumerNameFactory =
         constructConsumerNameFactory(
             CFG_REPLICATION_CONSUMER_NAME_GENERATOR, DefaultReplicationConsumerNameFactory.class);
-    if (this.filter != null) {
-      this.filter.setup(this);
-    }
   }
 
   private ConsumerNameFactory<AttributeFamilyDescriptor> constructConsumerNameFactory(

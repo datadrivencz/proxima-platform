@@ -17,10 +17,12 @@ package cz.o2.proxima.storage;
 
 import cz.o2.proxima.annotations.Stable;
 import cz.o2.proxima.repository.AttributeFamilyDescriptor;
+import cz.o2.proxima.repository.Repository;
 import cz.o2.proxima.repository.TransformationDescriptor;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * A filter that is applied to each input element.
@@ -77,20 +79,12 @@ public interface StorageFilter extends Serializable {
   boolean apply(StreamElement ingest);
 
   /**
-   * Setup {@link AttributeFamilyDescriptor} filter.
+   * Setup filter
    *
-   * @param af family descriptor
+   * @param repository repository
+   * @param cfg configuration map
    */
-  default void setup(AttributeFamilyDescriptor af) {
-    // default no-op
-  }
-
-  /**
-   * Setup {@link TransformationDescriptor} filter.
-   *
-   * @param tf descriptor
-   */
-  default void setup(TransformationDescriptor tf) {
+  default void setup(Repository repository, Map<String, Object> cfg) {
     // default no-op
   }
 }

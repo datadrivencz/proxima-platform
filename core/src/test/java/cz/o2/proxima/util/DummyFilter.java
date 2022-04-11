@@ -15,9 +15,11 @@
  */
 package cz.o2.proxima.util;
 
-import cz.o2.proxima.repository.AttributeFamilyDescriptor;
-import cz.o2.proxima.repository.TransformationDescriptor;
+import com.google.common.base.Preconditions;
+import cz.o2.proxima.repository.Repository;
 import cz.o2.proxima.storage.PassthroughFilter;
+import cz.o2.proxima.storage.StreamElement;
+import java.util.Map;
 import lombok.Getter;
 
 /** A dummy filter just to be able to test difference from {@link PassthroughFilter}. */
@@ -26,12 +28,14 @@ public class DummyFilter extends PassthroughFilter {
   @Getter private boolean setupCalled = false;
 
   @Override
-  public void setup(AttributeFamilyDescriptor af) {
+  public void setup(Repository repository, Map<String, Object> cfg) {
+    Preconditions.checkState(!setupCalled, "Filter setup should be called just once!");
     setupCalled = true;
   }
 
   @Override
-  public void setup(TransformationDescriptor tf) {
-    setupCalled = true;
+  public boolean apply(StreamElement ingest) {
+    Preconditions.checkState(!setupCalled, "Filter setup should be called before apply!");
+    return super.apply(ingest);
   }
 }
