@@ -15,27 +15,23 @@
  */
 package cz.o2.proxima.util;
 
-import com.google.common.base.Preconditions;
+import static org.junit.Assert.*;
+
 import cz.o2.proxima.repository.Repository;
-import cz.o2.proxima.storage.PassthroughFilter;
 import cz.o2.proxima.storage.StreamElement;
-import java.util.Map;
-import lombok.Getter;
+import java.util.Collections;
+import org.junit.Test;
+import org.mockito.Mockito;
 
-/** A dummy filter just to be able to test difference from {@link PassthroughFilter}. */
-public class DummyFilter extends PassthroughFilter {
+public class DummyFilterTest {
+  private final DummyFilter filter = new DummyFilter();
 
-  @Getter private boolean setupCalled = false;
-
-  @Override
-  public void setup(Repository repository, Map<String, Object> cfg) {
-    Preconditions.checkState(!setupCalled, "Filter setup should be called just once!");
-    setupCalled = true;
-  }
-
-  @Override
-  public boolean apply(StreamElement ingest) {
-    Preconditions.checkState(setupCalled, "Filter setup should be called before apply!");
-    return super.apply(ingest);
+  @Test
+  public void filterContractTest() {
+    final StreamElement el = Mockito.mock(StreamElement.class);
+    assertThrows(IllegalStateException.class, () -> filter.apply(el));
+    final Repository repository = Mockito.mock(Repository.class);
+    filter.setup(repository, Collections.emptyMap());
+    assertTrue(filter.apply(el));
   }
 }
