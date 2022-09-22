@@ -35,6 +35,7 @@ import org.apache.flink.shaded.guava18.com.google.common.annotations.VisibleForT
 @Slf4j
 public class BatchLogSourceFunction<OutputT>
     extends AbstractLogSourceFunction<
+        FlinkDataOperator.BatchLogOptions,
         BatchLogReader,
         BatchLogSourceFunction.LogObserver<OutputT>,
         Offset,
@@ -48,8 +49,9 @@ public class BatchLogSourceFunction<OutputT>
     LogObserver(
         SourceContext<OutputT> sourceContext,
         ResultExtractor<OutputT> resultExtractor,
-        Set<Partition> skipFirstElementFromEachPartition) {
-      super(sourceContext, resultExtractor, skipFirstElementFromEachPartition);
+        Set<Partition> skipFirstElementFromEachPartition,
+        List<AttributeDescriptor<?>> attributesToEmit) {
+      super(sourceContext, resultExtractor, skipFirstElementFromEachPartition, attributesToEmit);
     }
 
     @Override
@@ -63,8 +65,9 @@ public class BatchLogSourceFunction<OutputT>
   public BatchLogSourceFunction(
       RepositoryFactory repositoryFactory,
       List<AttributeDescriptor<?>> attributeDescriptors,
+      FlinkDataOperator.BatchLogOptions options,
       ResultExtractor<OutputT> resultExtractor) {
-    super(repositoryFactory, attributeDescriptors, resultExtractor);
+    super(repositoryFactory, attributeDescriptors, options, resultExtractor);
   }
 
   @Override
@@ -84,7 +87,7 @@ public class BatchLogSourceFunction<OutputT>
 
   @Override
   List<Partition> getPartitions(BatchLogReader reader) {
-    return reader.getPartitions();
+    return reader.getPartitions(getOptions().startTimestamp(), getOptions().endTimestamp());
   }
 
   @Override
@@ -106,8 +109,9 @@ public class BatchLogSourceFunction<OutputT>
   LogObserver<OutputT> createLogObserver(
       SourceContext<OutputT> sourceContext,
       ResultExtractor<OutputT> resultExtractor,
-      Set<Partition> skipFirstElement) {
-    return new LogObserver<>(sourceContext, resultExtractor, skipFirstElement);
+      Set<Partition> skipFirstElement,
+      List<AttributeDescriptor<?>> attributesToEmit) {
+    return new LogObserver<>(sourceContext, resultExtractor, skipFirstElement, attributesToEmit);
   }
 
   @Override
@@ -116,6 +120,7 @@ public class BatchLogSourceFunction<OutputT>
       List<Offset> offsets,
       List<AttributeDescriptor<?>> attributeDescriptors,
       LogObserver<OutputT> observer) {
+    @SuppressWarnings("resource")
     final OffsetTrackingBatchLogReader.OffsetTrackingObserveHandle delegate =
         (OffsetTrackingBatchLogReader.OffsetTrackingObserveHandle)
             reader.observeOffsets(offsets, attributeDescriptors, wrapSourceObserver(observer));
@@ -144,6 +149,7 @@ public class BatchLogSourceFunction<OutputT>
       List<Partition> partitions,
       List<AttributeDescriptor<?>> attributeDescriptors,
       LogObserver<OutputT> observer) {
+    @SuppressWarnings("resource")
     final ObserveHandle batchReaderHandle =
         reader.observe(partitions, attributeDescriptors, wrapSourceObserver(observer));
     // We've wrapped BatchLogReader with the OffsetTrackingBatchLogReader, so we can safely cast its
@@ -165,6 +171,7 @@ public class BatchLogSourceFunction<OutputT>
       @Override
       public void close() {
         offsetTrackingHandle.close();
+        batchReaderHandle.close();
       }
     };
   }

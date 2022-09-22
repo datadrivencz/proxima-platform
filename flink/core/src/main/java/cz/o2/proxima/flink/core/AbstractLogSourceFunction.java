@@ -59,6 +59,7 @@ import org.apache.flink.streaming.api.watermark.Watermark;
  *   <li>Unified metrics for monitoring and alerting.
  * </ul>
  *
+ * @param <OptionsT> Source options.
  * @param <ReaderT> Reader to use, for reading data.
  * @param <ObserverT> Observer implementation.
  * @param <OffsetT> Offset used by the current reader.
@@ -67,6 +68,7 @@ import org.apache.flink.streaming.api.watermark.Watermark;
  */
 @Slf4j
 abstract class AbstractLogSourceFunction<
+        OptionsT extends FlinkDataOperator.LogOptions,
         ReaderT,
         ObserverT extends AbstractSourceLogObserver<OffsetT, ContextT, OutputT>,
         OffsetT extends Serializable,
@@ -110,6 +112,7 @@ abstract class AbstractLogSourceFunction<
 
   @Getter private final RepositoryFactory repositoryFactory;
   private final List<AttributeDescriptor<?>> attributeDescriptors;
+  @Getter private final OptionsT options;
   private final ResultExtractor<OutputT> resultExtractor;
 
   @Nullable private transient List<OffsetT> restoredOffsets;
@@ -133,9 +136,11 @@ abstract class AbstractLogSourceFunction<
   AbstractLogSourceFunction(
       RepositoryFactory repositoryFactory,
       List<AttributeDescriptor<?>> attributeDescriptors,
+      OptionsT options,
       ResultExtractor<OutputT> resultExtractor) {
     this.repositoryFactory = repositoryFactory;
     this.attributeDescriptors = attributeDescriptors;
+    this.options = options;
     this.resultExtractor = resultExtractor;
   }
 
@@ -190,12 +195,14 @@ abstract class AbstractLogSourceFunction<
    *     cz.o2.proxima.storage.StreamElement}.
    * @param skipFirstElement List of partitions, we want to skip the first element from. See {@link
    *     #getSkipFirstElementFromPartitions(List)} for more details.
+   * @param attributesToEmit List of requested attributes
    * @return Log observer.
    */
   abstract ObserverT createLogObserver(
       SourceContext<OutputT> sourceContext,
       ResultExtractor<OutputT> resultExtractor,
-      Set<Partition> skipFirstElement);
+      Set<Partition> skipFirstElement,
+      List<AttributeDescriptor<?>> attributesToEmit);
 
   /**
    * Observer partitions using a given reader. This method is called when starting a source from the
@@ -254,11 +261,15 @@ abstract class AbstractLogSourceFunction<
                             == getRuntimeContext().getIndexOfThisSubtask())
                 .collect(Collectors.toList());
         final Set<Partition> skipFirstElement = getSkipFirstElementFromPartitions(filteredOffsets);
-        observer = createLogObserver(sourceContext, resultExtractor, skipFirstElement);
+        observer =
+            createLogObserver(
+                sourceContext, resultExtractor, skipFirstElement, attributeDescriptors);
         observeHandle =
             observeRestoredOffsets(reader, filteredOffsets, attributeDescriptors, observer);
       } else {
-        observer = createLogObserver(sourceContext, resultExtractor, Collections.emptySet());
+        observer =
+            createLogObserver(
+                sourceContext, resultExtractor, Collections.emptySet(), attributeDescriptors);
         observeHandle = observePartitions(reader, partitions, attributeDescriptors, observer);
       }
       log.info("Source [{}]: RUNNING", this);
@@ -290,14 +301,16 @@ abstract class AbstractLogSourceFunction<
     synchronized (sourceContext.getCheckpointLock()) {
       sourceContext.emitWatermark(new Watermark(Watermarks.MAX_WATERMARK));
     }
-    sourceContext.markAsTemporarilyIdle();
-    while (cancelled.getCount() > 0) {
-      try {
-        cancelled.await();
-      } catch (InterruptedException e) {
-        if (cancelled.getCount() == 0) {
-          // Re-interrupt if cancelled.
-          Thread.currentThread().interrupt();
+    if (!options.shutdownFinishedSources()) {
+      sourceContext.markAsTemporarilyIdle();
+      while (cancelled.getCount() > 0) {
+        try {
+          cancelled.await();
+        } catch (InterruptedException e) {
+          if (cancelled.getCount() == 0) {
+            // Re-interrupt if cancelled.
+            Thread.currentThread().interrupt();
+          }
         }
       }
     }
@@ -323,7 +336,7 @@ abstract class AbstractLogSourceFunction<
   public void snapshotState(FunctionSnapshotContext functionSnapshotContext) throws Exception {
     Objects.requireNonNull(persistedOffsets).clear();
     if (observeHandle != null) {
-      for (OffsetT offset : observeHandle.getConsumedOffsets()) {
+      for (OffsetT offset : Objects.requireNonNull(observeHandle).getConsumedOffsets()) {
         persistedOffsets.add(offset);
       }
     }
@@ -339,12 +352,12 @@ abstract class AbstractLogSourceFunction<
       restoredOffsets = new ArrayList<>();
       Objects.requireNonNull(persistedOffsets).get().forEach(restoredOffsets::add);
       log.info(
-          "BatchLog subtask {} restored state: {}.",
+          "LogSource subtask {} restored state: {}.",
           getRuntimeContext().getIndexOfThisSubtask(),
           restoredOffsets);
     } else {
       log.info(
-          "BatchLog subtask {} has no state to restore.",
+          "LogSource subtask {} has no state to restore.",
           getRuntimeContext().getIndexOfThisSubtask());
     }
   }

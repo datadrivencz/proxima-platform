@@ -15,6 +15,8 @@
  */
 package cz.o2.proxima.flink.core;
 
+import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.Iterables;
 import cz.o2.proxima.annotations.Experimental;
 import cz.o2.proxima.direct.commitlog.CommitLogObserver;
 import cz.o2.proxima.direct.commitlog.CommitLogReader;
@@ -24,21 +26,37 @@ import cz.o2.proxima.direct.core.DirectDataOperator;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.RepositoryFactory;
 import cz.o2.proxima.storage.Partition;
-import cz.o2.proxima.storage.commitlog.Position;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
+import javax.annotation.Nullable;
+import lombok.AccessLevel;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.flink.api.common.state.ListState;
+import org.apache.flink.api.common.state.ListStateDescriptor;
+import org.apache.flink.runtime.state.FunctionInitializationContext;
+import org.apache.flink.runtime.state.FunctionSnapshotContext;
 
 @Experimental(value = "API can be changed.")
 @Slf4j
 public class CommitLogSourceFunction<OutputT>
     extends AbstractLogSourceFunction<
+        FlinkDataOperator.CommitLogOptions,
         CommitLogReader,
         CommitLogSourceFunction.LogObserver<OutputT>,
         Offset,
         CommitLogObserver.OnNextContext,
         OutputT> {
+
+  private static final String CONSUMER_NAME_STATE_NAME = "consumer-name";
+
+  @Nullable private transient ListState<String> consumerNameState;
+
+  @VisibleForTesting
+  @Getter(AccessLevel.PACKAGE)
+  private String consumerName;
 
   static class LogObserver<OutputT>
       extends AbstractSourceLogObserver<Offset, CommitLogObserver.OnNextContext, OutputT>
@@ -47,8 +65,9 @@ public class CommitLogSourceFunction<OutputT>
     LogObserver(
         SourceContext<OutputT> sourceContext,
         ResultExtractor<OutputT> resultExtractor,
-        Set<Partition> skipFirstElementFromEachPartition) {
-      super(sourceContext, resultExtractor, skipFirstElementFromEachPartition);
+        Set<Partition> skipFirstElementFromEachPartition,
+        List<AttributeDescriptor<?>> attributesToEmit) {
+      super(sourceContext, resultExtractor, skipFirstElementFromEachPartition, attributesToEmit);
     }
 
     @Override
@@ -63,10 +82,13 @@ public class CommitLogSourceFunction<OutputT>
   }
 
   public CommitLogSourceFunction(
+      String consumerName,
       RepositoryFactory repositoryFactory,
       List<AttributeDescriptor<?>> attributeDescriptors,
+      FlinkDataOperator.CommitLogOptions options,
       ResultExtractor<OutputT> resultExtractor) {
-    super(repositoryFactory, attributeDescriptors, resultExtractor);
+    super(repositoryFactory, attributeDescriptors, options, resultExtractor);
+    this.consumerName = Objects.requireNonNull(consumerName);
   }
 
   @Override
@@ -101,8 +123,29 @@ public class CommitLogSourceFunction<OutputT>
   LogObserver<OutputT> createLogObserver(
       SourceContext<OutputT> sourceContext,
       ResultExtractor<OutputT> resultExtractor,
-      Set<Partition> skipFirstElement) {
-    return new LogObserver<>(sourceContext, resultExtractor, skipFirstElement);
+      Set<Partition> skipFirstElement,
+      List<AttributeDescriptor<?>> attributesToEmit) {
+    return new LogObserver<>(sourceContext, resultExtractor, skipFirstElement, attributesToEmit);
+  }
+
+  @Override
+  public void initializeState(FunctionInitializationContext context) throws Exception {
+    super.initializeState(context);
+    consumerNameState =
+        context
+            .getOperatorStateStore()
+            .getListState(new ListStateDescriptor<>(CONSUMER_NAME_STATE_NAME, String.class));
+    if (context.isRestored()) {
+      Objects.requireNonNull(consumerNameState);
+      consumerName = Iterables.getFirst(consumerNameState.get(), consumerName);
+    }
+  }
+
+  @Override
+  public void snapshotState(FunctionSnapshotContext functionSnapshotContext) throws Exception {
+    super.snapshotState(functionSnapshotContext);
+    Objects.requireNonNull(consumerNameState).clear();
+    consumerNameState.add(Objects.requireNonNull(consumerName));
   }
 
   @Override
@@ -111,8 +154,10 @@ public class CommitLogSourceFunction<OutputT>
       List<Partition> partitions,
       List<AttributeDescriptor<?>> attributeDescriptors,
       LogObserver<OutputT> observer) {
+    final FlinkDataOperator.CommitLogOptions options = getOptions();
     final ObserveHandle commitLogHandle =
-        reader.observeBulkPartitions(partitions, Position.OLDEST, false, observer);
+        reader.observeBulkPartitions(
+            consumerName, partitions, options.initialPosition(), options.stopAtCurrent(), observer);
     return new UnifiedObserveHandle<Offset>() {
 
       @Override
@@ -133,8 +178,9 @@ public class CommitLogSourceFunction<OutputT>
       List<Offset> offsets,
       List<AttributeDescriptor<?>> attributeDescriptors,
       LogObserver<OutputT> observer) {
-    final cz.o2.proxima.direct.commitlog.ObserveHandle delegate =
-        reader.observeBulkOffsets(offsets, false, observer);
+    @SuppressWarnings("resource")
+    final ObserveHandle delegate =
+        reader.observeBulkOffsets(offsets, getOptions().stopAtCurrent(), observer);
     return new UnifiedObserveHandle<Offset>() {
 
       @Override

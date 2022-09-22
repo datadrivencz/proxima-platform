@@ -20,6 +20,7 @@ import cz.o2.proxima.direct.batch.BatchLogObserver;
 import cz.o2.proxima.direct.batch.BatchLogReader;
 import cz.o2.proxima.direct.batch.BatchLogReaders;
 import cz.o2.proxima.direct.core.DirectDataOperator;
+import cz.o2.proxima.direct.core.OnlineAttributeWriter;
 import cz.o2.proxima.direct.storage.ListBatchReader;
 import cz.o2.proxima.flink.core.batch.OffsetTrackingBatchLogReader;
 import cz.o2.proxima.functional.Consumer;
@@ -30,18 +31,20 @@ import cz.o2.proxima.storage.StreamElement;
 import cz.o2.proxima.storage.commitlog.KeyAttributePartitioner;
 import cz.o2.proxima.storage.commitlog.Partitioner;
 import cz.o2.proxima.storage.commitlog.Partitioners;
+import cz.o2.proxima.util.Optionals;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
-import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.stream.Collectors;
 import javax.annotation.Nullable;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.flink.core.testutils.CheckedThread;
 import org.apache.flink.runtime.checkpoint.OperatorSubtaskState;
 import org.apache.flink.shaded.guava18.com.google.common.base.Preconditions;
@@ -51,24 +54,26 @@ import org.apache.flink.streaming.util.AbstractStreamOperatorTestHarness;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-class BatchLogSourceFunctionTest {
+@Slf4j
+class BatchLogSourceFunctionTest extends AbstractLogSourceFunctionTest {
 
   private static final String MODEL =
       "{\n"
           + "  entities: {\n"
           + "    test {\n"
           + "      attributes {\n"
-          + "        data: { scheme: \"string\" }\n"
+          + "        first: { scheme: \"string\" }\n"
+          + "        second: { scheme: \"string\" }\n"
           + "      }\n"
           + "    }\n"
           + "  }\n"
           + "  attributeFamilies: {\n"
-          + "    test_storage_stream {\n"
+          + "    test_storage_batch {\n"
           + "      entity: test\n"
-          + "      attributes: [ data ]\n"
-          + "      storage: \"inmem:///test_storage_stream\"\n"
+          + "      attributes: [ first, second ]\n"
+          + "      storage: \"inmem:///test_storage_batch\"\n"
           + "      type: primary\n"
-          + "      access: commit-log\n"
+          + "      access: batch-updates\n"
           + "      num-partitions: 3\n"
           + "    }\n"
           + "  }\n"
@@ -84,28 +89,15 @@ class BatchLogSourceFunctionTest {
         new StreamSource<>(source), maxParallelism, numSubtasks, subtaskIndex);
   }
 
-  private static StreamElement newData(
-      Repository repository, String key, Instant timestamp, String value) {
-    final EntityDescriptor entity = repository.getEntity("test");
-    final AttributeDescriptor<String> attribute = entity.getAttribute("data");
-    return StreamElement.upsert(
-        entity,
-        attribute,
-        UUID.randomUUID().toString(),
-        key,
-        attribute.getName(),
-        timestamp.toEpochMilli(),
-        attribute.getValueSerializer().serialize(value));
-  }
-
   @Test
   void testRunAndClose() throws Exception {
     final Repository repository = Repository.ofTest(ConfigFactory.parseString(MODEL));
-    final AttributeDescriptor<?> attribute = repository.getEntity("test").getAttribute("data");
+    final AttributeDescriptor<?> attribute = repository.getEntity("test").getAttribute("first");
     final BatchLogSourceFunction<StreamElement> sourceFunction =
         new BatchLogSourceFunction<StreamElement>(
             repository.asFactory(),
             Collections.singletonList(attribute),
+            FlinkDataOperator.newBatchLogOptions().build(),
             ResultExtractor.identity()) {
 
           @Override
@@ -161,10 +153,68 @@ class BatchLogSourceFunctionTest {
     testSnapshotAndRestore(1, 3);
   }
 
+  @Test
+  void testReadFilteredAttributesFromSource() throws Exception {
+    final Repository repository = Repository.ofTest(ConfigFactory.parseString(MODEL));
+    final DirectDataOperator direct = repository.getOrCreateOperator(DirectDataOperator.class);
+    final EntityDescriptor entity = repository.getEntity("test");
+    final AttributeDescriptor<String> first = entity.getAttribute("first");
+    final AttributeDescriptor<String> second = entity.getAttribute("second");
+    final OnlineAttributeWriter writerForFirst = Optionals.get(direct.getWriter(first));
+    final OnlineAttributeWriter writerForSecond = Optionals.get(direct.getWriter(second));
+    final Instant now = Instant.now();
+
+    final int numCommitLogPartitions = 30;
+    final Partitioner partitioner = new KeyAttributePartitioner();
+    final Map<Integer, List<StreamElement>> partitionElements = new HashMap<>();
+    final int numElements = 1000;
+    for (int i = 0; i < numElements; i++) {
+      final StreamElement firstElement =
+          createUpsertElement(entity, first, "key_" + i, now, "value_" + i);
+      final StreamElement secondElement =
+          createUpsertElement(entity, second, "key_" + i, now, "value_" + i);
+      int firstPartitionId =
+          Partitioners.getTruncatedPartitionId(partitioner, firstElement, numCommitLogPartitions);
+      partitionElements.computeIfAbsent(firstPartitionId, ArrayList::new).add(firstElement);
+      final int secondPartitionId =
+          Partitioners.getTruncatedPartitionId(partitioner, secondElement, numCommitLogPartitions);
+      partitionElements.computeIfAbsent(secondPartitionId, ArrayList::new).add(secondElement);
+    }
+    final List<StreamElement> result = Collections.synchronizedList(new ArrayList<>());
+
+    final RunReadTestSubtask runTest =
+        (List<AttributeDescriptor<?>> attributes, int expectedElements) -> {
+          result.clear();
+          runSubtask(
+              repository,
+              attributes,
+              null,
+              result::add,
+              1,
+              0,
+              expectedElements,
+              partitionElements
+                  .entrySet()
+                  .stream()
+                  .sorted(Comparator.comparingInt(Map.Entry::getKey))
+                  .map(Map.Entry::getValue)
+                  .collect(Collectors.toList()));
+          Assertions.assertEquals(expectedElements, result.size());
+          Assertions.assertFalse(
+              result.stream().anyMatch(e -> !attributes.contains(e.getAttributeDescriptor())));
+        };
+    // try read just first
+    runTest.run(Collections.singletonList(first), numElements);
+    // try read just second
+    runTest.run(Collections.singletonList(second), numElements);
+    // try read both attributes
+    runTest.run(Arrays.asList(first, second), 2 * numElements);
+  }
+
   private void testSnapshotAndRestore(int numSubtasks, int numRestoredSubtasks) throws Exception {
     final Repository repository = Repository.ofTest(ConfigFactory.parseString(MODEL));
-    final AttributeDescriptor<?> attributeDescriptor =
-        repository.getEntity("test").getAttribute("data");
+    final EntityDescriptor entity = repository.getEntity("test");
+    final AttributeDescriptor<String> attribute = entity.getAttribute("first");
     final Instant now = Instant.now();
 
     final int numCommitLogPartitions = 30;
@@ -174,7 +224,8 @@ class BatchLogSourceFunctionTest {
     final Map<Integer, List<StreamElement>> partitionElements = new HashMap<>();
     final List<StreamElement> emittedElements = new ArrayList<>();
     for (int i = 0; i < numElements; i++) {
-      final StreamElement element = newData(repository, "key_" + i, now, "value_" + i);
+      final StreamElement element =
+          createUpsertElement(entity, attribute, "key_" + i, now, "value_" + i);
       emittedElements.add(element);
       final int partitionId =
           Partitioners.getTruncatedPartitionId(partitioner, element, numCommitLogPartitions);
@@ -199,7 +250,7 @@ class BatchLogSourceFunctionTest {
       snapshots.add(
           runSubtask(
               repository,
-              attributeDescriptor,
+              Collections.singletonList(attribute),
               null,
               result::add,
               numSubtasks,
@@ -223,7 +274,7 @@ class BatchLogSourceFunctionTest {
     for (int subtaskIndex = 0; subtaskIndex < numRestoredSubtasks; subtaskIndex++) {
       runSubtask(
           repository,
-          attributeDescriptor,
+          Collections.singletonList(attribute),
           mergedState,
           result::add,
           numRestoredSubtasks,
@@ -247,7 +298,7 @@ class BatchLogSourceFunctionTest {
 
   private OperatorSubtaskState runSubtask(
       Repository repository,
-      AttributeDescriptor<?> attributeDescriptor,
+      List<AttributeDescriptor<?>> attributeDescriptors,
       @Nullable OperatorSubtaskState state,
       Consumer<StreamElement> outputConsumer,
       int numSubtasks,
@@ -262,7 +313,8 @@ class BatchLogSourceFunctionTest {
     final BatchLogSourceFunction<StreamElement> sourceFunction =
         new BatchLogSourceFunction<StreamElement>(
             repository.asFactory(),
-            Collections.singletonList(attributeDescriptor),
+            attributeDescriptors,
+            FlinkDataOperator.newBatchLogOptions().build(),
             ResultExtractor.identity()) {
 
           @Override
