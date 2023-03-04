@@ -199,6 +199,7 @@
     <module>core</module>
     <module>core-testing</module>
     <module>io-pubsub</module>
+    <module>runner</module>
     <module>tools</module>
   </modules>
 
