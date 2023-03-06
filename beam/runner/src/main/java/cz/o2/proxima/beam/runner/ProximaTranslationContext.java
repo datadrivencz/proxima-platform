@@ -18,6 +18,7 @@ package cz.o2.proxima.beam.runner;
 import com.google.common.base.Preconditions;
 import com.typesafe.config.ConfigFactory;
 import cz.o2.proxima.beam.runner.proto.Messages;
+import cz.o2.proxima.beam.runner.proto.Messages.Bundle;
 import cz.o2.proxima.direct.core.DirectDataOperator;
 import cz.o2.proxima.repository.AttributeDescriptor;
 import cz.o2.proxima.repository.AttributeFamilyDescriptor;
@@ -27,9 +28,14 @@ import cz.o2.proxima.repository.EntityDescriptor;
 import cz.o2.proxima.repository.Repository;
 import java.util.Collections;
 import java.util.concurrent.ExecutorService;
+import java.util.stream.Stream;
+
 import org.apache.beam.runners.fnexecution.provisioning.JobInfo;
 import org.apache.beam.sdk.PipelineResult.State;
+import org.apache.beam.sdk.metrics.DistributionResult;
+import org.apache.beam.sdk.metrics.GaugeResult;
 import org.apache.beam.sdk.metrics.MetricQueryResults;
+import org.apache.beam.sdk.metrics.MetricResult;
 import org.apache.beam.sdk.metrics.MetricResults;
 import org.apache.beam.sdk.metrics.MetricsFilter;
 import org.apache.beam.sdk.options.PipelineOptions;
@@ -112,8 +118,25 @@ public class ProximaTranslationContext {
     return new MetricResults() {
       @Override
       public @NonNull MetricQueryResults queryMetrics(@NonNull MetricsFilter filter) {
-        return null;
+        return new MetricQueryResults() {
+          @Override
+          public @NonNull Iterable<@NonNull MetricResult<@NonNull Long>> getCounters() {
+            return Collections.emptyList();
+          }
+
+          @Override
+          public @NonNull Iterable<@NonNull MetricResult<@NonNull DistributionResult>> getDistributions() {
+            return Collections.emptyList();
+          }
+
+          @Override
+          public @NonNull Iterable<@NonNull MetricResult<@NonNull GaugeResult>> getGauges() {
+            return Collections.emptyList();
+          }
+        };
       }
     };
   }
+
+  public Stream<Bundle>
 }
