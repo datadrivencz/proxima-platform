@@ -224,16 +224,19 @@ def renamingTransformer() {
 def configureRepositores(project) {
   project.with {
     repositories {
-      mavenLocal()
       mavenCentral()
       maven {
         url = uri('https://packages.confluent.io/maven/')
+      }
+      maven {
+        url = uri('https://repository.apache.org/content/repositories/orgapachebeam-1379/')
       }
       if (project.version.endsWith("-SNAPSHOT")) {
         maven {
           url = uri("https://oss.sonatype.org/content/repositories/snapshots")
         }
       }
+      mavenLocal()
     }
   }
 }
