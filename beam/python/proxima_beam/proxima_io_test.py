@@ -26,6 +26,6 @@ class Test(TestCase):
 
   def testRead(self):
     with beam.Pipeline() as p:
-      p | Read("batch-snapshot", JAR, "gateway", ["state"]) | beam.CountByKey()
+      p | Read("batch-snapshot", JAR, "gateway", ["status"], additional_args=["--proxima_config", "test-reference.conf"]) | beam.CountByKey()
       p.run().waitUntilFinish()
 

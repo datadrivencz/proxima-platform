@@ -33,7 +33,8 @@ class Read(ExternalTransform):
       entity,
       attributes,
       startStamp=None,
-      endStamp=None):
+      endStamp=None,
+      additional_args=None):
     """
     Initializes a read operation from Proxima.
 
@@ -42,6 +43,7 @@ class Read(ExternalTransform):
     :param entity: Name of entity
     :param startStamp: starting timestamp in millis
     :param endStamp: ending timestamp in millis
+    :param additional_args: additional arguments to the expansion service
     """
     if read_type not in Read.allowed_types:
       raise ValueError(f"read_type should be one of {Read.allowed_types}, got {read_type}")
@@ -55,5 +57,5 @@ class Read(ExternalTransform):
                 attributes=attributes,
                 startStamp=startStamp,
                 endStamp=endStamp)),
-        JavaJarExpansionService(proxima_jar))
+        JavaJarExpansionService(proxima_jar, append_args=additional_args))
 

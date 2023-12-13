@@ -23,7 +23,6 @@ import cz.o2.proxima.core.repository.EntityDescriptor;
 import cz.o2.proxima.core.repository.Repository;
 import cz.o2.proxima.core.storage.StreamElement;
 import cz.o2.proxima.core.time.Watermarks;
-import cz.o2.proxima.typesafe.config.ConfigFactory;
 import java.util.List;
 import java.util.Map;
 import lombok.AccessLevel;
@@ -50,7 +49,7 @@ public class BeamIOProvider implements ExternalTransformRegistrar {
   }
 
   @Getter(AccessLevel.PACKAGE)
-  private final Repository repo = Repository.of(ConfigFactory.load().resolve());
+  private final Repository repo = Repository.of(ConfigProvider.get());
 
   private final BeamDataOperator op = repo.getOrCreateOperator(BeamDataOperator.class);
 

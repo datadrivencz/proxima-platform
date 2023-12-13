@@ -37,19 +37,20 @@ enableShadowJar(project)
 
 shadowJar {
   manifest {
-    attributes("Main-Class": "org.apache.beam.sdk.expansion.service.ExpansionService")
+    attributes("Main-Class": "cz.o2.proxima.beam.expansion.service.ProximaExpansionService")
   }
 }
 
 task testJar(type: com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar) {
- archiveClassifier = 'tests'
- from sourceSets.test.output
- configurations = [project.configurations.testRuntimeClasspath]
- manifest {
-   attributes("Main-Class": "org.apache.beam.sdk.expansion.service.ExpansionService")
- }
- exclude "**/*.RSA"
- mergeServiceFiles()
+  archiveClassifier = 'tests'
+  from sourceSets.test.output
+  from sourceSets.main.output
+  configurations = [project.configurations.testRuntimeClasspath] + [project.configurations.runtimeClasspath]
+  manifest {
+    attributes("Main-Class": "cz.o2.proxima.beam.expansion.service.ProximaExpansionService")
+  }
+  exclude "**/*.RSA"
+  mergeServiceFiles()
 }
 
 tasks.named("build") {
