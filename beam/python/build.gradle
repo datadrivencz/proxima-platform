@@ -1,0 +1,7 @@
+dependencies {
+  project (path: ":proxima-beam-expansion-service", configuration: "shadowJar")
+}
+
+tasks.named("build") {
+  dependsOn spotlessApply
+}

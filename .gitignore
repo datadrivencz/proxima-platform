@@ -33,3 +33,4 @@ server/log
 **/*_pb2_grpc.py
 **/.DS_Store
 docs/src/resources/_gen/**
+**/__pycache__/**

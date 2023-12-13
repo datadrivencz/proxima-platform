@@ -19,6 +19,8 @@ rootProject.name = 'platform-parent'
 if (!startParameter.projectProperties.containsKey("vendor")) {
   include(':proxima-beam-core')
   include(':proxima-beam-core-testing')
+  include(':proxima-beam-python')
+  include(':proxima-beam-expansion-service')
   include(':proxima-beam-io-pubsub')
   include(':proxima-beam-tools')
   include(':proxima-compiler-java-cli')
@@ -70,6 +72,8 @@ if (!startParameter.projectProperties.containsKey("vendor")) {
 
   project(":proxima-beam-core").projectDir = file('beam/core')
   project(":proxima-beam-core-testing").projectDir = file('beam/core-testing')
+  project(":proxima-beam-expansion-service").projectDir = file("beam/expansion-service")
+  project(":proxima-beam-python").projectDir = file("beam/python")
   project(":proxima-beam-io-pubsub").projectDir = file('beam/io-pubsub')
   project(":proxima-beam-tools").projectDir = file('beam/tools')
   project(":proxima-compiler-java-cli").projectDir = file('compiler/cli')

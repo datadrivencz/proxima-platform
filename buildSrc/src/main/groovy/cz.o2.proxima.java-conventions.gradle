@@ -47,6 +47,7 @@ ext.libraries = [
   auto_service: "com.google.auto.service:auto-service:${auto_service_version}",
   auto_service_annotations: "com.google.auto.service:auto-service-annotations:${auto_service_version}",
   beam_core: "org.apache.beam:beam-sdks-java-core:${beam_version}",
+  beam_io_expansion_service: "org.apache.beam:beam-sdks-java-io-expansion-service:${beam_version}",
   beam_extensions_join_library: "org.apache.beam:beam-sdks-java-extensions-join-library:${beam_version}",
   beam_extensions_kryo: "org.apache.beam:beam-sdks-java-extensions-kryo:${beam_version}",
   beam_io_google_cloud: "org.apache.beam:beam-sdks-java-io-google-cloud-platform:${beam_version}",
@@ -201,6 +202,27 @@ spotless {
     endWithNewline()
     license(delegate)
     targetExclude('**/generated/**')
+  }
+
+  python {
+    target '**/*.py'
+    /*
+    licenseHeader '''# Copyright 2017-$YEAR O2 Czech Republic, a.s.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+''', ' '
+    */
   }
 }
 

@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+ 
 #
 # Copyright 2017-2023 O2 Czech Republic, a.s.
 #
@@ -21,7 +23,7 @@ import grpc_tools.protoc as protoc
 from setuptools import setup
 
 def get_version():
-  return "0.12.0"
+  return "0.13.0"
 
 def build_ingest_rpc(name):
   

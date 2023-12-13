@@ -313,7 +313,7 @@ def enableShadowJar(project) {
   enableShadowJar(project, { true })
 }
 
-def enableShadowJar(project, Closure<Boolean> allowedEntry) {
+def enableShadowJar(project, Closure<Boolean> allowedEntry, boolean includeModule=true) {
 
   project.with {
 
@@ -324,13 +324,17 @@ def enableShadowJar(project, Closure<Boolean> allowedEntry) {
       enabled = false
     }
 
-    tasks.register("configureShadow") {
-      doLast {
-        includeModuleName(project, shadowJar)
+    if (includeModule) {
+      tasks.register("configureShadow") {
+        doLast {
+          includeModuleName(project, shadowJar)
+        }
+      }
+      shadowJar {
+        dependsOn configureShadow
       }
     }
-    shadowJar {
-      dependsOn configureShadow
+    shadowJar {      
       archiveClassifier = null
       dependencies {
         exclude "META-INF/maven/**"
