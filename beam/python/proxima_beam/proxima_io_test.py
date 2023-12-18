@@ -13,19 +13,27 @@
 # limitations under the License.
 #
  
-from .proxima_io import Read
+from .proxima_io import *
 
 import os
 import apache_beam as beam
+from apache_beam.options.pipeline_options import PipelineOptions
+
 
 from unittest import TestCase
 
 JAR=os.getenv("EXPANSION_JAR")
+if not JAR:
+  raise Exception("Missing env variable JAR")
 
 class Test(TestCase):
 
   def testRead(self):
     with beam.Pipeline() as p:
-      p | Read("batch-snapshot", JAR, "gateway", ["status"], additional_args=["--proxima_config", "test-reference.conf"]) | beam.CountByKey()
-      p.run().waitUntilFinish()
+      (p | ReadBatchSnapshot(
+          JAR,
+          "gateway",
+          ["status"],
+          additional_args=["--proxima_config", "test-reference.conf"]) | beam.combiners.Count.Globally())
+      p.run().wait_until_finish()
 

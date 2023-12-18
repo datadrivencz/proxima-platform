@@ -19,27 +19,22 @@ plugins {
 }
 
 dependencies {
-  intoShadow project(':proxima-beam-core')
-  intoShadow libraries.beam_io_expansion_service
+  implementation project(':proxima-core')
+  implementation project(':proxima-direct-core')
+  implementation project(':proxima-beam-core')
+  implementation libraries.beam_io_expansion_service
   testImplementation libraries.beam_runners_direct
   testImplementation libraries.junit4
   testImplementation libraries.hamcrest
   testImplementation libraries.slf4j_log4j
   testImplementation project(path: ':proxima-core', configuration: 'testsJar')
+  testImplementation project(path: ':proxima-direct-core', configuration: 'testsJar')
   compileOnly libraries.auto_service_annotations
   compileAnnotationProcessor libraries.lombok
   annotationProcessor libraries.auto_service
 }
 
 description = 'cz.o2.proxima:proxima-beam-expansion-service'
-
-enableShadowJar(project)
-
-shadowJar {
-  manifest {
-    attributes("Main-Class": "cz.o2.proxima.beam.expansion.service.ProximaExpansionService")
-  }
-}
 
 task testJar(type: com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar) {
   archiveClassifier = 'tests'

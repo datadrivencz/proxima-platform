@@ -19,18 +19,24 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 
 import cz.o2.proxima.beam.expansion.service.BeamIOProvider.Configuration;
+import cz.o2.proxima.typesafe.config.ConfigFactory;
+import java.util.Collections;
 import java.util.List;
 import java.util.ServiceLoader;
 import java.util.ServiceLoader.Provider;
 import java.util.stream.Collectors;
+import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.expansion.ExternalTransformRegistrar;
 import org.apache.beam.sdk.transforms.ExternalTransformBuilder;
 import org.apache.beam.sdk.transforms.PTransform;
+import org.apache.beam.sdk.values.PBegin;
+import org.apache.beam.sdk.values.POutput;
 import org.junit.Test;
 
 public class BeamIOProviderTest {
   @Test
   public void testProvider() {
+    ConfigProvider.set(ConfigFactory.load("test-reference.conf").resolve());
     ServiceLoader<ExternalTransformRegistrar> loader =
         ServiceLoader.load(ExternalTransformRegistrar.class);
     List<ExternalTransformRegistrar> providers =
@@ -47,7 +53,14 @@ public class BeamIOProviderTest {
         (ExternalTransformBuilder<Configuration, ?, ?>)
             provider.knownBuilderInstances().get(BeamIOProvider.URM);
     assertNotNull(builder);
-    PTransform<?, ?> transform = builder.buildExternal(new Configuration());
+    Configuration conf = new Configuration();
+    conf.setType("batch-snapshot");
+    conf.setEntity("gateway");
+    conf.setAttributes(Collections.singletonList("status"));
+    @SuppressWarnings("unchecked")
+    PTransform<PBegin, ?> transform = (PTransform<PBegin, ?>) builder.buildExternal(conf);
     assertNotNull(transform);
+    POutput expanded = transform.expand(Pipeline.create().begin());
+    assertNotNull(expanded);
   }
 }

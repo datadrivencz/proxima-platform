@@ -22,17 +22,21 @@ import cz.o2.proxima.core.repository.AttributeDescriptor;
 import cz.o2.proxima.core.repository.EntityDescriptor;
 import cz.o2.proxima.core.repository.Repository;
 import cz.o2.proxima.core.storage.StreamElement;
+import cz.o2.proxima.core.storage.commitlog.Position;
 import cz.o2.proxima.core.time.Watermarks;
 import java.util.List;
 import java.util.Map;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.Setter;
+import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.expansion.ExternalTransformRegistrar;
 import org.apache.beam.sdk.transforms.ExternalTransformBuilder;
+import org.apache.beam.sdk.transforms.MapElements;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.values.PBegin;
 import org.apache.beam.sdk.values.PCollection;
+import org.apache.beam.sdk.values.TypeDescriptors;
 import org.checkerframework.checker.nullness.qual.NonNull;
 
 @AutoService(ExternalTransformRegistrar.class)
@@ -46,6 +50,7 @@ public class BeamIOProvider implements ExternalTransformRegistrar {
     @Setter @Getter List<String> attributes;
     @Setter @Getter Long startStamp = Watermarks.MIN_WATERMARK;
     @Setter @Getter Long endStamp = Watermarks.MAX_WATERMARK;
+    @Setter @Getter Boolean stopAtCurrent = true;
   }
 
   @Getter(AccessLevel.PACKAGE)
@@ -63,19 +68,38 @@ public class BeamIOProvider implements ExternalTransformRegistrar {
         .build();
   }
 
-  private ExternalTransformBuilder<Configuration, PBegin, PCollection<StreamElement>> builder() {
+  private ExternalTransformBuilder<Configuration, PBegin, PCollection<String>> builder() {
     return new ExternalTransformBuilder<>() {
       @Override
-      public @NonNull PTransform<PBegin, PCollection<StreamElement>> buildExternal(
+      public @NonNull PTransform<PBegin, PCollection<String>> buildExternal(
           Configuration configuration) {
         return new PTransform<>() {
           @Override
-          public @NonNull PCollection<StreamElement> expand(@NonNull PBegin input) {
-            return op.getBatchSnapshot(input.getPipeline(), attributes(configuration));
+          public @NonNull PCollection<String> expand(@NonNull PBegin input) {
+            PCollection<StreamElement> elements = createStreamElements(input, configuration);
+            return elements.apply(
+                MapElements.into(TypeDescriptors.strings()).via(Object::toString));
           }
         };
       }
     };
+  }
+
+  private PCollection<StreamElement> createStreamElements(
+      PBegin input, Configuration configuration) {
+    Pipeline p = input.getPipeline();
+    AttributeDescriptor<?>[] attrs = attributes(configuration);
+    switch (configuration.getType().toLowerCase()) {
+      case "batch-snapshot":
+        return op.getBatchSnapshot(p, attrs);
+      case "batch-updates":
+        return op.getBatchUpdates(p, attrs);
+      case "stream":
+        return op.getStream(p, Position.NEWEST, configuration.getStopAtCurrent(), true, attrs);
+      case "stream-from-oldest":
+        return op.getStream(p, Position.OLDEST, configuration.getStopAtCurrent(), true, attrs);
+    }
+    throw new IllegalArgumentException("Unknown type " + configuration.getType());
   }
 
   private AttributeDescriptor<?>[] attributes(Configuration configuration) {
