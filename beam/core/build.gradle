@@ -16,6 +16,7 @@
 
 plugins {
   id 'cz.o2.proxima.java-conventions'
+  alias libs.plugins.protobuf
 }
 
 dependencies {
@@ -30,6 +31,7 @@ dependencies {
   testImplementation project(path: ':proxima-direct-core')
   testImplementation project(path: ':proxima-direct-io-kafka')
   testImplementation project(path: ':proxima-direct-io-kafka', configuration: 'testsJar')
+  testImplementation project(path: ':proxima-scheme-proto-testing')
   testImplementation libraries.beam_runners_direct
   testImplementation libraries.beam_runners_flink
   testImplementation libraries.junit4
@@ -43,5 +45,9 @@ dependencies {
 }
 
 description = 'cz.o2.proxima:proxima-beam-core'
+
+protobuf {
+  protoc { artifact = libraries.protoc }
+}
 
 publishArtifacts(project, "default")

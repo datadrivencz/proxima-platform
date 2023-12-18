@@ -103,6 +103,7 @@ class BeamCommitLogReader {
 
     @Override
     public Instant getWatermark() {
+      System.err.println(" **** getwatemark on reader: " + finished + ", " + reader.getWatermark());
       if (finished) {
         return HIGHEST_INSTANT;
       }
@@ -157,7 +158,7 @@ class BeamCommitLogReader {
     BeamCommitLogReader r =
         new BeamCommitLogReader(name, reader, position, true, partition, null, limit, true);
 
-    return new BoundedReader<StreamElement>() {
+    return new BoundedReader<>() {
 
       @Override
       public BoundedSource<StreamElement> getCurrentSource() {
