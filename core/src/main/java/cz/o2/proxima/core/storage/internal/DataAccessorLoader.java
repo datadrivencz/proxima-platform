@@ -70,6 +70,7 @@ public class DataAccessorLoader<
       this.loaded =
           ServiceLoader.load(cls).stream().map(Provider::get).collect(Collectors.toList());
     }
+    System.err.println(" **** loaded: " + loaded);
     this.loaded.forEach(f -> f.setup(repo));
   }
 
