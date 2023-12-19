@@ -1234,11 +1234,6 @@ public class InMemStorage implements DataAccessorFactory {
     final Map<String, Object> cfg = familyDescriptor.getCfg();
 
     log.info("Creating accessor {} for URI {}", getClass(), uri);
-    /*
-    holder()
-        .observers
-        .computeIfAbsent(uri, k -> Collections.synchronizedNavigableMap(new TreeMap<>()));
-     */
 
     final int numPartitions =
         Optional.ofNullable(cfg.get(NUM_PARTITIONS))
