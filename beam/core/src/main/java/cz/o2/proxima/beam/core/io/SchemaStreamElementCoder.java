@@ -22,6 +22,7 @@ import cz.o2.proxima.core.repository.EntityAwareAttributeDescriptor.Wildcard;
 import cz.o2.proxima.core.repository.EntityDescriptor;
 import cz.o2.proxima.core.repository.Repository;
 import cz.o2.proxima.core.scheme.AttributeValueAccessor;
+import cz.o2.proxima.core.scheme.AttributeValueAccessors.StructureValue;
 import cz.o2.proxima.core.scheme.AttributeValueType;
 import cz.o2.proxima.core.scheme.SchemaDescriptors.ArrayTypeDescriptor;
 import cz.o2.proxima.core.scheme.SchemaDescriptors.SchemaTypeDescriptor;
@@ -34,10 +35,13 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.schemas.Schema;
 import org.apache.beam.sdk.schemas.Schema.Builder;
+import org.apache.beam.sdk.schemas.Schema.Field;
 import org.apache.beam.sdk.schemas.Schema.FieldType;
 import org.apache.beam.sdk.schemas.SchemaCoder;
+import org.apache.beam.sdk.util.Preconditions;
 import org.apache.beam.sdk.values.Row;
 import org.apache.beam.sdk.values.Row.FieldValueBuilder;
 import org.apache.beam.sdk.values.TypeDescriptor;
@@ -100,10 +104,10 @@ public class SchemaStreamElementCoder extends SchemaCoder<StreamElement> {
         Schema.builder()
             .addStringField("key")
             .addInt64Field("stamp")
-            .addStringField("attribute")
             // entity.attribute format
             .addStringField("attributeName")
             .addBooleanField("delete")
+            .addNullableStringField("attribute")
             .addNullableStringField("uuid")
             .addNullableInt64Field("seqId");
     repo.getAllEntities()
@@ -149,7 +153,7 @@ public class SchemaStreamElementCoder extends SchemaCoder<StreamElement> {
   private static StreamElement fromRow(Row row) {
     String key = row.getString("key");
     long stamp = Objects.requireNonNull(row.getInt64("stamp"));
-    String attribute = Objects.requireNonNull(row.getString("attribute"));
+    @Nullable String attribute = row.getString("attribute");
     String attributeName = row.getString("attributeName");
     boolean delete = Objects.requireNonNull(row.getBoolean("delete"));
     String uuid = row.getString("uuid");
@@ -159,6 +163,7 @@ public class SchemaStreamElementCoder extends SchemaCoder<StreamElement> {
             ATTR_NAME_CACHE.get(attributeName),
             () -> String.format("Missing attribute %s", attributeName));
     if (entityAware.isWildcard()) {
+      Preconditions.checkArgumentNotNull(attribute);
       Wildcard<Object> wildcard = (Wildcard<Object>) entityAware;
       if (delete) {
         if (attribute.endsWith(".*")) {
@@ -193,7 +198,10 @@ public class SchemaStreamElementCoder extends SchemaCoder<StreamElement> {
         entityAware
             .getValueSerializer()
             .getValueAccessor()
-            .createFrom(row.getBaseValue(attributeName));
+            .createFrom(
+                fromFieldType(
+                    row.getSchema().getField(attributeName).getType(),
+                    row.getValue(attributeName)));
     if (seqId == null) {
       return regular.upsert(uuid, key, stamp, value);
     }
@@ -209,33 +217,76 @@ public class SchemaStreamElementCoder extends SchemaCoder<StreamElement> {
         Row.withSchema(schema)
             .withFieldValue("key", element.getKey())
             .withFieldValue("stamp", element.getStamp())
-            .withFieldValue("attribute", element.getAttribute())
             .withFieldValue("attributeName", attributeName)
             .withFieldValue("delete", element.isDelete());
+    if (element.getAttributeDescriptor().isWildcard()) {
+      builder =
+          builder.withFieldValue(
+              "attribute",
+              element
+                  .getAttribute()
+                  .substring(element.getAttributeDescriptor().toAttributePrefix().length()));
+    }
     if (element.hasSequentialId()) {
       builder = builder.withFieldValue("seqId", element.getSequentialId());
     } else {
       builder = builder.withFieldValue("uuid", element.getUuid());
     }
     if (!element.isDelete()) {
-      @SuppressWarnings("unchecked")
-      AttributeValueAccessor<Object, Object> accessor =
-          (AttributeValueAccessor<Object, Object>)
-              element.getAttributeDescriptor().getValueSerializer().getValueAccessor();
-      Object v = accessor.valueOf(element.getParsed().get());
-      builder.withFieldValue(attributeName, v);
-    }
-
-    if (!element.isDelete()) {
       Object parsed = element.getParsed().get();
       @SuppressWarnings("unchecked")
       ValueSerializer<Object> valueSerializer =
           (ValueSerializer<Object>) element.getAttributeDescriptor().getValueSerializer();
-      Object mapped = valueSerializer.getValueAccessor().valueOf(parsed);
-      System.err.println(" *** accessor for " + parsed + " = " + mapped);
-      builder.withFieldValue(attributeName, mapped);
+      Object mapped =
+          intoFieldType(
+              valueSerializer.getValueAccessor().valueOf(parsed),
+              schema.getField(attributeName).getType());
+      builder = builder.withFieldValue(attributeName, mapped);
     }
     return builder.build();
+  }
+
+  /**
+   * Convert the given accessor to object that is compatible with Beam Schema.
+   *
+   * @param accessor the object returned by Proxima {@link AttributeValueAccessor}
+   * @param field the type to convert the object to
+   * @return object compatible with equal Beam {@link FieldType}
+   */
+  private static Object intoFieldType(Object accessor, FieldType field) {
+    if (field.getRowSchema() != null) {
+      @SuppressWarnings("unchecked")
+      Map<String, Object> map = (Map<String, Object>) accessor;
+      return asRow(map, field);
+    }
+    return accessor;
+  }
+
+  private static Object fromFieldType(FieldType type, Object value) {
+    if (type.getRowSchema() != null) {
+      return StructureValue.of(asStructureValue((Row) value));
+    }
+    return value;
+  }
+
+  private static Row asRow(Map<String, Object> map, FieldType field) {
+    Schema schema = Objects.requireNonNull(field.getRowSchema());
+    return Row.withSchema(schema).withFieldValues(map).build();
+  }
+
+  private static Map<String, Object> asStructureValue(Row value) {
+    Map<String, Object> res = new HashMap<>();
+    for (Field f : value.getSchema().getFields()) {
+      Object fieldValue = value.getValue(f.getName());
+      if (fieldValue != null) {
+        if (f.getType().getRowSchema() != null) {
+          res.put(f.getName(), asStructureValue((Row) fieldValue));
+        } else {
+          res.put(f.getName(), fieldValue);
+        }
+      }
+    }
+    return res;
   }
 
   private SchemaStreamElementCoder(Schema schema) {

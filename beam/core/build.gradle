@@ -34,6 +34,7 @@ dependencies {
   testImplementation project(path: ':proxima-scheme-proto-testing')
   testImplementation libraries.beam_runners_direct
   testImplementation libraries.beam_runners_flink
+  testImplementation libraries.beam_sql
   testImplementation libraries.junit4
   testImplementation libraries.hamcrest
   testImplementation libraries.mockito_core
