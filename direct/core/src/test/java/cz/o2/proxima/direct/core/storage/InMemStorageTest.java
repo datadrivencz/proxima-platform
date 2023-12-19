@@ -113,7 +113,6 @@ public class InMemStorageTest implements Serializable {
 
               @Override
               public boolean onNext(StreamElement element, OnNextContext context) {
-
                 assertEquals(0, context.getPartition().getId());
                 assertEquals("key", element.getKey());
                 context.confirm();

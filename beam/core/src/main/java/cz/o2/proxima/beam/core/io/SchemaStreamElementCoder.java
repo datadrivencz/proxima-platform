@@ -29,6 +29,7 @@ import cz.o2.proxima.core.scheme.SchemaDescriptors.SchemaTypeDescriptor;
 import cz.o2.proxima.core.scheme.SchemaDescriptors.StructureTypeDescriptor;
 import cz.o2.proxima.core.scheme.ValueSerializer;
 import cz.o2.proxima.core.storage.StreamElement;
+import cz.o2.proxima.core.util.Optionals;
 import cz.o2.proxima.core.util.Pair;
 import cz.o2.proxima.internal.com.google.common.collect.ImmutableMap;
 import java.util.HashMap;
@@ -233,7 +234,7 @@ public class SchemaStreamElementCoder extends SchemaCoder<StreamElement> {
       builder = builder.withFieldValue("uuid", element.getUuid());
     }
     if (!element.isDelete()) {
-      Object parsed = element.getParsed().get();
+      Object parsed = Optionals.get(element.getParsed());
       @SuppressWarnings("unchecked")
       ValueSerializer<Object> valueSerializer =
           (ValueSerializer<Object>) element.getAttributeDescriptor().getValueSerializer();
