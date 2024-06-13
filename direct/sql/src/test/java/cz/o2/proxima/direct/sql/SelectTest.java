@@ -25,6 +25,7 @@ import cz.o2.proxima.core.util.Optionals;
 import cz.o2.proxima.direct.core.DirectDataOperator;
 import cz.o2.proxima.direct.core.OnlineAttributeWriter;
 import cz.o2.proxima.direct.sql.proto.Gateway.GatewayDetails;
+import cz.o2.proxima.direct.sql.proto.User.UserDetails;
 import java.net.URL;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -38,6 +39,7 @@ import org.apache.calcite.jdbc.CalciteConnection;
 import org.apache.calcite.schema.SchemaPlus;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 
 public class SelectTest {
@@ -66,13 +68,13 @@ public class SelectTest {
     Repository repo = gateway.getRepo();
     DirectDataOperator direct = gateway.getDirect();
     EntityDescriptor gatewayDesc = repo.getEntity("gateway");
-    Regular<GatewayDetails> armed = Regular.of(gatewayDesc, gatewayDesc.getAttribute("details"));
-    OnlineAttributeWriter writer = Optionals.get(direct.getWriter(armed));
+    Regular<GatewayDetails> details = Regular.of(gatewayDesc, gatewayDesc.getAttribute("details"));
+    OnlineAttributeWriter writer = Optionals.get(direct.getWriter(details));
     writer.write(
-        armed.upsert("gw", Instant.now(), GatewayDetails.newBuilder().setName("gw").build()),
+        details.upsert("gw", Instant.now(), GatewayDetails.newBuilder().setName("gw").build()),
         (succ, exc) -> {});
     writer.write(
-        armed.upsert("gw2", Instant.now(), GatewayDetails.newBuilder().setName("gw2").build()),
+        details.upsert("gw2", Instant.now(), GatewayDetails.newBuilder().setName("gw2").build()),
         (succ, exc) -> {});
     try (Statement statement = calciteConnection.createStatement();
         ResultSet resultSet = statement.executeQuery("select count(*) c from proxima.gateway")) {
@@ -106,6 +108,73 @@ public class SelectTest {
 
       assertTrue(resultSet.next());
       assertEquals(1L, resultSet.getLong("c"));
+    }
+  }
+
+  @Test
+  public void testSelectMultiAttr() throws SQLException {
+    SchemaPlus proxima = calciteConnection.getRootSchema().getSubSchema("PROXIMA");
+    EntityTable gateway = (EntityTable) proxima.getTable("GATEWAY");
+    Repository repo = gateway.getRepo();
+    DirectDataOperator direct = gateway.getDirect();
+    EntityDescriptor gatewayDesc = repo.getEntity("gateway");
+    Regular<GatewayDetails> gatewayDetails =
+        Regular.of(gatewayDesc, gatewayDesc.getAttribute("details"));
+    Regular<String> owner = Regular.of(gatewayDesc, gatewayDesc.getAttribute("owner"));
+    OnlineAttributeWriter writer = Optionals.get(direct.getWriter(gatewayDetails));
+    writer.write(
+        gatewayDetails.upsert(
+            "gw", Instant.now(), GatewayDetails.newBuilder().setName("name").build()),
+        (succ, exc) -> {});
+    writer.write(owner.upsert("gw", Instant.now(), "user1"), (succ, exc) -> {});
+    try (Statement statement = calciteConnection.createStatement();
+        ResultSet resultSet =
+            statement.executeQuery(
+                "select key, g.details.name n, owner o from proxima.gateway as g")) {
+
+      assertTrue(resultSet.next());
+      assertEquals("gw", resultSet.getString("key"));
+      assertEquals("name", resultSet.getString("n"));
+      assertEquals("user1", resultSet.getString("o"));
+    }
+  }
+
+  // FIXME
+  @Ignore
+  @Test
+  public void testSelectJoin() throws SQLException {
+    SchemaPlus proxima = calciteConnection.getRootSchema().getSubSchema("PROXIMA");
+    EntityTable gateway = (EntityTable) proxima.getTable("GATEWAY");
+    Repository repo = gateway.getRepo();
+    DirectDataOperator direct = gateway.getDirect();
+    EntityDescriptor gatewayDesc = repo.getEntity("gateway");
+    EntityDescriptor userDesc = repo.getEntity("user");
+    Regular<GatewayDetails> gatewayDetails =
+        Regular.of(gatewayDesc, gatewayDesc.getAttribute("details"));
+    Regular<String> owner = Regular.of(gatewayDesc, gatewayDesc.getAttribute("owner"));
+    Regular<UserDetails> userDetails = Regular.of(userDesc, userDesc.getAttribute("details"));
+    OnlineAttributeWriter writer = Optionals.get(direct.getWriter(gatewayDetails));
+    writer.write(
+        gatewayDetails.upsert(
+            "gw", Instant.now(), GatewayDetails.newBuilder().setName("gw").build()),
+        (succ, exc) -> {});
+    writer.write(owner.upsert("gw", Instant.now(), "user1"), (succ, exc) -> {});
+    writer.write(
+        gatewayDetails.upsert(
+            "gw2", Instant.now(), GatewayDetails.newBuilder().setName("gw2").build()),
+        (succ, exc) -> {});
+    writer = Optionals.get(direct.getWriter(userDetails));
+    writer.write(
+        userDetails.upsert(
+            "user1", Instant.now(), UserDetails.newBuilder().setName("user").build()),
+        (succ, exc) -> {});
+    try (Statement statement = calciteConnection.createStatement();
+        ResultSet resultSet =
+            statement.executeQuery(
+                "select u.key, u.details.name from proxima.gateway as g join proxima.user as u on g.owner = u.key")) {
+
+      assertTrue(resultSet.next());
+      assertEquals("user", resultSet.getString(0));
     }
   }
 }
