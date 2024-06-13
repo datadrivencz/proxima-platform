@@ -39,7 +39,6 @@ import org.apache.calcite.jdbc.CalciteConnection;
 import org.apache.calcite.schema.SchemaPlus;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 
 public class SelectTest {
@@ -139,8 +138,6 @@ public class SelectTest {
     }
   }
 
-  // FIXME
-  @Ignore
   @Test
   public void testSelectJoin() throws SQLException {
     SchemaPlus proxima = calciteConnection.getRootSchema().getSubSchema("PROXIMA");
@@ -171,10 +168,11 @@ public class SelectTest {
     try (Statement statement = calciteConnection.createStatement();
         ResultSet resultSet =
             statement.executeQuery(
-                "select u.key, u.details.name from proxima.gateway as g join proxima.user as u on g.owner = u.key")) {
+                "select u.key, u.details.name from proxima.gateway as g join proxima.\"USER\" as u on g.owner = u.key")) {
 
       assertTrue(resultSet.next());
-      assertEquals("user", resultSet.getString(0));
+      assertEquals("user1", resultSet.getString(1));
+      assertEquals("user", resultSet.getString(2));
     }
   }
 }
