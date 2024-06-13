@@ -16,13 +16,15 @@
 package cz.o2.proxima.direct.sql;
 
 import cz.o2.proxima.core.repository.AttributeDescriptor;
-import cz.o2.proxima.core.repository.EntityDescriptor;
 import cz.o2.proxima.core.scheme.AttributeValueType;
 import cz.o2.proxima.core.scheme.SchemaDescriptors.ArrayTypeDescriptor;
 import cz.o2.proxima.core.scheme.SchemaDescriptors.SchemaTypeDescriptor;
 import cz.o2.proxima.core.scheme.SchemaDescriptors.StructureTypeDescriptor;
+import cz.o2.proxima.core.scheme.ValueSerializer;
+import cz.o2.proxima.direct.core.randomaccess.KeyValue;
 import java.util.AbstractMap.SimpleImmutableEntry;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
@@ -68,7 +70,7 @@ class TypeUtil {
                 .map(
                     e ->
                         new SimpleImmutableEntry<>(
-                            e.getKey(), getRelDataType(e.getValue(), typeFactory)))
+                            e.getKey().toUpperCase(), getRelDataType(e.getValue(), typeFactory)))
                 .collect(Collectors.toList());
         return typeFactory.createStructType(fields);
       default:
@@ -78,11 +80,32 @@ class TypeUtil {
 
   private TypeUtil() {}
 
-  public static RelDataType intoSqlType(EntityDescriptor entity, RelDataTypeFactory typeFactory) {
-    List<SimpleImmutableEntry<String, RelDataType>> fields =
-        entity.getAllAttributes().stream()
-            .map(a -> new SimpleImmutableEntry<>(a.getName(), intoSqlType(a, typeFactory)))
-            .collect(Collectors.toList());
-    return typeFactory.createStructType(fields);
+  public static Object convertKv(KeyValue<?> keyValue) {
+    @SuppressWarnings("unchecked")
+    ValueSerializer<Object> serializer =
+        (ValueSerializer<Object>) keyValue.getAttributeDescriptor().getValueSerializer();
+    SchemaTypeDescriptor<?> schema = serializer.getValueSchemaDescriptor();
+    Object value = serializer.getValueAccessor().valueOf(keyValue.getParsedRequired());
+    return convert(schema, value);
+  }
+
+  private static Object convert(SchemaTypeDescriptor<?> schema, Object value) {
+    if (schema.isPrimitiveType()) {
+      return value;
+    }
+    System.err.println(" *** " + schema);
+    if (schema.isStructureType()) {
+      @SuppressWarnings("unchecked")
+      Map<String, Object> struct = (Map<String, Object>) value;
+      StructureTypeDescriptor<?> structDesc = schema.asStructureTypeDescriptor();
+      Object[] res = new Object[struct.size()];
+      int pos = 0;
+      for (Map.Entry<String, SchemaTypeDescriptor<?>> e : structDesc.getFields().entrySet()) {
+        Object fieldValue = struct.get(e.getKey());
+        res[pos++] = convert(e.getValue(), fieldValue);
+      }
+      return res;
+    }
+    return value;
   }
 }

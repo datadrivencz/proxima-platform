@@ -22,14 +22,14 @@ import cz.o2.proxima.core.util.ExceptionUtils;
 import cz.o2.proxima.core.util.Optionals;
 import cz.o2.proxima.core.util.Pair;
 import cz.o2.proxima.direct.core.DirectDataOperator;
+import cz.o2.proxima.direct.core.randomaccess.KeyValue;
 import cz.o2.proxima.direct.core.randomaccess.MultiAccessBuilder;
 import cz.o2.proxima.direct.core.randomaccess.RandomAccessReader;
 import cz.o2.proxima.direct.core.randomaccess.RandomOffset;
 import java.util.Deque;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
+import java.util.Optional;
 import lombok.Getter;
 import org.apache.calcite.DataContext;
 import org.apache.calcite.linq4j.AbstractEnumerable;
@@ -71,10 +71,18 @@ public class EntityTable extends AbstractTable implements ScannableTable {
 
           @Override
           public Object[] current() {
-            return IntStream.range(0, attributes.size() + 1)
-                .mapToObj(a -> currentKey)
-                .collect(Collectors.toList())
-                .toArray(new Object[] {});
+            Object[] res = new Object[attributes.size() + 1];
+            // first is key
+            res[0] = currentKey;
+            int pos = 1;
+            for (AttributeDescriptor<?> a : attributes) {
+              Optional<? extends KeyValue<?>> kv = reader.get(currentKey, a);
+              if (kv.isPresent()) {
+                res[pos] = TypeUtil.convertKv(kv.get());
+              }
+              pos++;
+            }
+            return res;
           }
 
           @Override
@@ -101,10 +109,11 @@ public class EntityTable extends AbstractTable implements ScannableTable {
   @Override
   public RelDataType getRowType(RelDataTypeFactory typeFactory) {
     FieldInfoBuilder builder = typeFactory.builder();
+    builder.add("KEY", typeFactory.createSqlType(SqlTypeName.VARCHAR));
     entity
         .getAllAttributes()
         .forEach(a -> builder.add(a.getName().toUpperCase(), TypeUtil.intoSqlType(a, typeFactory)));
-    builder.add("KEY", typeFactory.createSqlType(SqlTypeName.VARCHAR));
+    System.err.println(" *** schema: " + builder.build());
     return builder.build();
   }
 }

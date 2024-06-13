@@ -16,6 +16,7 @@
 package cz.o2.proxima.direct.sql;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import cz.o2.proxima.core.repository.EntityAwareAttributeDescriptor.Regular;
 import cz.o2.proxima.core.repository.EntityDescriptor;
@@ -23,6 +24,7 @@ import cz.o2.proxima.core.repository.Repository;
 import cz.o2.proxima.core.util.Optionals;
 import cz.o2.proxima.direct.core.DirectDataOperator;
 import cz.o2.proxima.direct.core.OnlineAttributeWriter;
+import cz.o2.proxima.direct.sql.proto.Gateway.GatewayDetails;
 import java.net.URL;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -64,16 +66,19 @@ public class SelectTest {
     Repository repo = gateway.getRepo();
     DirectDataOperator direct = gateway.getDirect();
     EntityDescriptor gatewayDesc = repo.getEntity("gateway");
-    Regular<byte[]> armed = Regular.of(gatewayDesc, gatewayDesc.getAttribute("armed"));
+    Regular<GatewayDetails> armed = Regular.of(gatewayDesc, gatewayDesc.getAttribute("details"));
     OnlineAttributeWriter writer = Optionals.get(direct.getWriter(armed));
-    writer.write(armed.upsert("gw", Instant.now(), new byte[] {}), (succ, exc) -> {});
-    writer.write(armed.upsert("gw2", Instant.now(), new byte[] {}), (succ, exc) -> {});
+    writer.write(
+        armed.upsert("gw", Instant.now(), GatewayDetails.newBuilder().setName("gw").build()),
+        (succ, exc) -> {});
+    writer.write(
+        armed.upsert("gw2", Instant.now(), GatewayDetails.newBuilder().setName("gw2").build()),
+        (succ, exc) -> {});
     try (Statement statement = calciteConnection.createStatement();
         ResultSet resultSet = statement.executeQuery("select count(*) c from proxima.gateway")) {
 
-      while (resultSet.next()) {
-        assertEquals(2L, resultSet.getLong("c"));
-      }
+      assertTrue(resultSet.next());
+      assertEquals(2L, resultSet.getLong("c"));
     }
 
     try (Statement statement = calciteConnection.createStatement();
@@ -90,9 +95,17 @@ public class SelectTest {
         ResultSet resultSet =
             statement.executeQuery("select count(*) c from proxima.gateway where key = 'gw'")) {
 
-      while (resultSet.next()) {
-        assertEquals(1L, resultSet.getLong("c"));
-      }
+      assertTrue(resultSet.next());
+      assertEquals(1L, resultSet.getLong("c"));
+    }
+
+    try (Statement statement = calciteConnection.createStatement();
+        ResultSet resultSet =
+            statement.executeQuery(
+                "select count(*) c from proxima.gateway where gateway.details.name = 'gw'")) {
+
+      assertTrue(resultSet.next());
+      assertEquals(1L, resultSet.getLong("c"));
     }
   }
 }
