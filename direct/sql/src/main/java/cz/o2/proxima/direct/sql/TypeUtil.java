@@ -16,40 +16,73 @@
 package cz.o2.proxima.direct.sql;
 
 import cz.o2.proxima.core.repository.AttributeDescriptor;
+import cz.o2.proxima.core.repository.EntityDescriptor;
 import cz.o2.proxima.core.scheme.AttributeValueType;
-import org.apache.calcite.rel.type.RelDataTypeImpl;
-import org.apache.calcite.rel.type.RelProtoDataType;
+import cz.o2.proxima.core.scheme.SchemaDescriptors.ArrayTypeDescriptor;
+import cz.o2.proxima.core.scheme.SchemaDescriptors.SchemaTypeDescriptor;
+import cz.o2.proxima.core.scheme.SchemaDescriptors.StructureTypeDescriptor;
+import java.util.AbstractMap.SimpleImmutableEntry;
+import java.util.List;
+import java.util.stream.Collectors;
+import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.sql.type.SqlTypeName;
 
 class TypeUtil {
 
-  static RelProtoDataType intoSqlType(AttributeDescriptor<?> attribute) {
-    AttributeValueType type = attribute.getValueSerializer().getValueSchemaDescriptor().getType();
+  static RelDataType intoSqlType(AttributeDescriptor<?> attribute, RelDataTypeFactory typeFactory) {
+    SchemaTypeDescriptor<?> schemaDescriptor =
+        attribute.getValueSerializer().getValueSchemaDescriptor();
+    return getRelDataType(schemaDescriptor, typeFactory);
+  }
+
+  private static RelDataType getRelDataType(
+      SchemaTypeDescriptor<?> schemaDescriptor, RelDataTypeFactory typeFactory) {
+
+    AttributeValueType type = schemaDescriptor.getType();
     switch (type) {
       case ARRAY:
-        return RelDataTypeImpl.proto(SqlTypeName.ARRAY, true);
+        ArrayTypeDescriptor<?> arraySchema = schemaDescriptor.asArrayTypeDescriptor();
+        return typeFactory.createArrayType(
+            getRelDataType(arraySchema.getValueDescriptor(), typeFactory), -1);
       case BOOLEAN:
-        return RelDataTypeImpl.proto(SqlTypeName.BOOLEAN, true);
+        return typeFactory.createSqlType(SqlTypeName.BOOLEAN);
       case BYTE:
-        return RelDataTypeImpl.proto(SqlTypeName.SMALLINT, true);
+        return typeFactory.createSqlType(SqlTypeName.SMALLINT);
       case DOUBLE:
-        return RelDataTypeImpl.proto(SqlTypeName.DOUBLE, true);
+        return typeFactory.createSqlType(SqlTypeName.DOUBLE);
       case ENUM:
-        return RelDataTypeImpl.proto(SqlTypeName.VARCHAR, true);
+        return typeFactory.createSqlType(SqlTypeName.VARCHAR);
       case FLOAT:
-        return RelDataTypeImpl.proto(SqlTypeName.FLOAT, true);
+        return typeFactory.createSqlType(SqlTypeName.FLOAT);
       case INT:
-        return RelDataTypeImpl.proto(SqlTypeName.INTEGER, true);
+        return typeFactory.createSqlType(SqlTypeName.INTEGER);
       case LONG:
-        return RelDataTypeImpl.proto(SqlTypeName.BIGINT, true);
+        return typeFactory.createSqlType(SqlTypeName.BIGINT);
       case STRING:
-        return RelDataTypeImpl.proto(SqlTypeName.VARCHAR, true);
+        return typeFactory.createSqlType(SqlTypeName.VARCHAR);
       case STRUCTURE:
-        return RelDataTypeImpl.proto(SqlTypeName.STRUCTURED, true);
+        StructureTypeDescriptor<?> structureSchema = schemaDescriptor.asStructureTypeDescriptor();
+        List<SimpleImmutableEntry<String, RelDataType>> fields =
+            structureSchema.getFields().entrySet().stream()
+                .map(
+                    e ->
+                        new SimpleImmutableEntry<>(
+                            e.getKey(), getRelDataType(e.getValue(), typeFactory)))
+                .collect(Collectors.toList());
+        return typeFactory.createStructType(fields);
       default:
         throw new IllegalArgumentException("Unknown type " + type);
     }
   }
 
   private TypeUtil() {}
+
+  public static RelDataType intoSqlType(EntityDescriptor entity, RelDataTypeFactory typeFactory) {
+    List<SimpleImmutableEntry<String, RelDataType>> fields =
+        entity.getAllAttributes().stream()
+            .map(a -> new SimpleImmutableEntry<>(a.getName(), intoSqlType(a, typeFactory)))
+            .collect(Collectors.toList());
+    return typeFactory.createStructType(fields);
+  }
 }
