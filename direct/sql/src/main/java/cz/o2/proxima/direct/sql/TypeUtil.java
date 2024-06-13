@@ -93,7 +93,6 @@ class TypeUtil {
     if (schema.isPrimitiveType()) {
       return value;
     }
-    System.err.println(" *** " + schema);
     if (schema.isStructureType()) {
       @SuppressWarnings("unchecked")
       Map<String, Object> struct = (Map<String, Object>) value;

@@ -61,7 +61,7 @@ public class SelectTest {
   }
 
   @Test
-  public void testSelect() throws SQLException {
+  public void testSimpleSelect() throws SQLException {
     SchemaPlus proxima = calciteConnection.getRootSchema().getSubSchema("PROXIMA");
     EntityTable gateway = (EntityTable) proxima.getTable("GATEWAY");
     Repository repo = gateway.getRepo();

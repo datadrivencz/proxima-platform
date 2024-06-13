@@ -20,12 +20,11 @@ import cz.o2.proxima.core.repository.EntityDescriptor;
 import cz.o2.proxima.core.repository.Repository;
 import cz.o2.proxima.core.util.ExceptionUtils;
 import cz.o2.proxima.core.util.Optionals;
-import cz.o2.proxima.core.util.Pair;
 import cz.o2.proxima.direct.core.DirectDataOperator;
 import cz.o2.proxima.direct.core.randomaccess.KeyValue;
 import cz.o2.proxima.direct.core.randomaccess.MultiAccessBuilder;
 import cz.o2.proxima.direct.core.randomaccess.RandomAccessReader;
-import cz.o2.proxima.direct.core.randomaccess.RandomOffset;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.LinkedList;
 import java.util.List;
@@ -38,11 +37,18 @@ import org.apache.calcite.linq4j.Enumerator;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rel.type.RelDataTypeFactory.FieldInfoBuilder;
+import org.apache.calcite.rex.RexCall;
+import org.apache.calcite.rex.RexInputRef;
+import org.apache.calcite.rex.RexLiteral;
+import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.schema.FilterableTable;
 import org.apache.calcite.schema.ScannableTable;
 import org.apache.calcite.schema.impl.AbstractTable;
+import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.type.SqlTypeName;
+import org.checkerframework.checker.nullness.qual.Nullable;
 
-public class EntityTable extends AbstractTable implements ScannableTable {
+public class EntityTable extends AbstractTable implements ScannableTable, FilterableTable {
 
   @Getter private final Repository repo;
   @Getter private final DirectDataOperator direct;
@@ -56,13 +62,36 @@ public class EntityTable extends AbstractTable implements ScannableTable {
 
   @Override
   public Enumerable<Object[]> scan(DataContext root) {
-    // FIXME
+    return scanKeys(null);
+  }
+
+  @Override
+  public Enumerable<Object[]> scan(DataContext root, List<RexNode> filters) {
+    return scanKeys(extractKeysFromFilters(filters));
+  }
+
+  @Override
+  public RelDataType getRowType(RelDataTypeFactory typeFactory) {
+    FieldInfoBuilder builder = typeFactory.builder();
+    builder.add("KEY", typeFactory.createSqlType(SqlTypeName.VARCHAR));
+    entity
+        .getAllAttributes()
+        .forEach(a -> builder.add(a.getName().toUpperCase(), TypeUtil.intoSqlType(a, typeFactory)));
+    return builder.build();
+  }
+
+  private Enumerable<Object[]> scanKeys(@Nullable List<String> keys) {
+    // FIXME: closing?
     MultiAccessBuilder builder = RandomAccessReader.newBuilder(repo, direct.getContext());
     List<AttributeDescriptor<?>> attributes = entity.getAllAttributes();
     attributes.forEach(a -> builder.addAttributes(Optionals.get(direct.getRandomAccess(a)), a));
     RandomAccessReader reader = Optionals.get(direct.getRandomAccess(attributes.get(0)));
-    Deque<Pair<RandomOffset, String>> entities = new LinkedList<>();
-    reader.listEntities(entities::add);
+    Deque<String> entities = new LinkedList<>();
+    if (keys == null) {
+      reader.listEntities(p -> entities.add(p.getSecond()));
+    } else {
+      entities.addAll(keys);
+    }
     return new AbstractEnumerable<>() {
       @Override
       public Enumerator<Object[]> enumerator() {
@@ -89,7 +118,7 @@ public class EntityTable extends AbstractTable implements ScannableTable {
           public boolean moveNext() {
             currentKey = null;
             if (!entities.isEmpty()) {
-              currentKey = entities.pollFirst().getSecond();
+              currentKey = entities.pollFirst();
             }
             return currentKey != null;
           }
@@ -106,14 +135,21 @@ public class EntityTable extends AbstractTable implements ScannableTable {
     };
   }
 
-  @Override
-  public RelDataType getRowType(RelDataTypeFactory typeFactory) {
-    FieldInfoBuilder builder = typeFactory.builder();
-    builder.add("KEY", typeFactory.createSqlType(SqlTypeName.VARCHAR));
-    entity
-        .getAllAttributes()
-        .forEach(a -> builder.add(a.getName().toUpperCase(), TypeUtil.intoSqlType(a, typeFactory)));
-    System.err.println(" *** schema: " + builder.build());
-    return builder.build();
+  private List<String> extractKeysFromFilters(List<RexNode> filters) {
+    List<String> keys = new ArrayList<>();
+    for (RexNode filter : filters) {
+      if (filter.isA(SqlKind.EQUALS)) {
+        RexCall call = (RexCall) filter;
+        if (call.operands.get(0) instanceof RexInputRef
+            && call.operands.get(1) instanceof RexLiteral) {
+          RexInputRef inputRef = (RexInputRef) call.operands.get(0);
+          RexLiteral literal = (RexLiteral) call.operands.get(1);
+          if (inputRef.getIndex() == 0) {
+            keys.add(literal.getValueAs(String.class));
+          }
+        }
+      }
+    }
+    return keys.isEmpty() ? null : keys;
   }
 }
