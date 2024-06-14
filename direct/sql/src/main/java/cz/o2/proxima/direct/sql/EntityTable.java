@@ -18,8 +18,8 @@ package cz.o2.proxima.direct.sql;
 import cz.o2.proxima.core.repository.AttributeDescriptor;
 import cz.o2.proxima.core.repository.EntityDescriptor;
 import cz.o2.proxima.core.repository.Repository;
-import cz.o2.proxima.core.util.ExceptionUtils;
 import cz.o2.proxima.core.util.Optionals;
+import cz.o2.proxima.direct.core.DirectAttributeFamilyDescriptor;
 import cz.o2.proxima.direct.core.DirectDataOperator;
 import cz.o2.proxima.direct.core.randomaccess.KeyValue;
 import cz.o2.proxima.direct.core.randomaccess.MultiAccessBuilder;
@@ -29,6 +29,7 @@ import java.util.Deque;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import lombok.Getter;
 import org.apache.calcite.DataContext;
 import org.apache.calcite.linq4j.AbstractEnumerable;
@@ -53,11 +54,49 @@ public class EntityTable extends AbstractTable implements ScannableTable, Filter
   @Getter private final Repository repo;
   @Getter private final DirectDataOperator direct;
   private final EntityDescriptor entity;
+  private final RandomAccessReader reader;
+  private final RandomAccessReader listKeysReader;
+  private final List<AttributeDescriptor<?>> attributes;
 
   public EntityTable(Repository repo, EntityDescriptor entity) {
     this.repo = repo;
     this.direct = repo.getOrCreateOperator(DirectDataOperator.class);
     this.entity = entity;
+    this.attributes =
+        entity.getAllAttributes().stream()
+            .filter(a -> !a.isWildcard())
+            .collect(Collectors.toList());
+    this.reader = getRandomAccessReader(direct, attributes);
+    this.listKeysReader = getListKeysReader(direct, entity, attributes);
+  }
+
+  private static RandomAccessReader getListKeysReader(
+      DirectDataOperator direct, EntityDescriptor entity, List<AttributeDescriptor<?>> attributes) {
+
+    DirectAttributeFamilyDescriptor family =
+        attributes.stream()
+            .flatMap(a -> direct.getFamiliesForAttribute(a).stream())
+            .filter(af -> af.getDesc().getAccess().canRandomRead())
+            .filter(af -> af.getDesc().getAccess().isListPrimaryKey())
+            .findAny()
+            .orElseThrow(
+                () -> new IllegalStateException("Missing list-primary-key family of " + entity));
+    return Optionals.get(family.getRandomAccessReader());
+  }
+
+  private static RandomAccessReader getRandomAccessReader(
+      DirectDataOperator direct, List<AttributeDescriptor<?>> attributes) {
+
+    List<DirectAttributeFamilyDescriptor> families =
+        attributes.stream()
+            .flatMap(a -> direct.getFamiliesForAttribute(a).stream())
+            .filter(af -> af.getDesc().getAccess().canRandomRead())
+            .distinct()
+            .collect(Collectors.toList());
+    MultiAccessBuilder builder =
+        RandomAccessReader.newBuilder(direct.getRepository(), direct.getContext());
+    families.forEach(af -> builder.addFamily(af.getDesc()));
+    return builder.build();
   }
 
   @Override
@@ -74,21 +113,17 @@ public class EntityTable extends AbstractTable implements ScannableTable, Filter
   public RelDataType getRowType(RelDataTypeFactory typeFactory) {
     FieldInfoBuilder builder = typeFactory.builder();
     builder.add("KEY", typeFactory.createSqlType(SqlTypeName.VARCHAR));
-    entity
-        .getAllAttributes()
+    attributes.stream()
+        // wildcards need to form separate table
+        .filter(a -> !a.isWildcard())
         .forEach(a -> builder.add(a.getName().toUpperCase(), TypeUtil.intoSqlType(a, typeFactory)));
     return builder.build();
   }
 
   private Enumerable<Object[]> scanKeys(@Nullable List<String> keys) {
-    // FIXME: closing?
-    MultiAccessBuilder builder = RandomAccessReader.newBuilder(repo, direct.getContext());
-    List<AttributeDescriptor<?>> attributes = entity.getAllAttributes();
-    attributes.forEach(a -> builder.addAttributes(Optionals.get(direct.getRandomAccess(a)), a));
-    RandomAccessReader reader = Optionals.get(direct.getRandomAccess(attributes.get(0)));
     Deque<String> entities = new LinkedList<>();
     if (keys == null) {
-      reader.listEntities(p -> entities.add(p.getSecond()));
+      listKeysReader.listEntities(p -> entities.add(p.getSecond()));
     } else {
       entities.addAll(keys);
     }
@@ -127,9 +162,7 @@ public class EntityTable extends AbstractTable implements ScannableTable, Filter
           public void reset() {}
 
           @Override
-          public void close() {
-            ExceptionUtils.unchecked(reader::close);
-          }
+          public void close() {}
         };
       }
     };

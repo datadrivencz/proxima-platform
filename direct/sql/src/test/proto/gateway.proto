@@ -11,4 +11,5 @@ message UserToGateway {
     USER = 1;
     OWNER = 2;
   }
+  Role role = 1;
 }
