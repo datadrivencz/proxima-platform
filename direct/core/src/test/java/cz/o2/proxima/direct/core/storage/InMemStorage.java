@@ -1084,7 +1084,7 @@ public class InMemStorage implements DataAccessorFactory {
             if (limit-- != 0) {
               String substr = k.substring(k.lastIndexOf('/') + 1, k.indexOf('#'));
               consumer.accept(Pair.of(new RawOffset(substr), substr));
-              off = substr;
+              off = k;
             } else {
               break;
             }
