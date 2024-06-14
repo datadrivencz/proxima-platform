@@ -16,37 +16,33 @@
 package cz.o2.proxima.direct.sql;
 
 import cz.o2.proxima.core.repository.AttributeDescriptor;
+import cz.o2.proxima.core.repository.EntityDescriptor;
 import cz.o2.proxima.core.repository.Repository;
 import cz.o2.proxima.core.util.Pair;
 import java.util.Map;
 import java.util.stream.Collectors;
-import org.apache.calcite.schema.Schema;
 import org.apache.calcite.schema.Table;
 import org.apache.calcite.schema.impl.AbstractSchema;
 
-public class RepositorySchema extends AbstractSchema {
+public class WildcardAttributeSchema extends AbstractSchema {
 
   private final Repository repo;
+  private final EntityDescriptor entity;
+  private final AttributeDescriptor<?> attribute;
 
-  public RepositorySchema(Repository repo) {
+  public WildcardAttributeSchema(
+      Repository repo, EntityDescriptor entity, AttributeDescriptor<?> attribute) {
+
     this.repo = repo;
+    this.entity = entity;
+    this.attribute = attribute;
   }
 
   @Override
   protected Map<String, Table> getTableMap() {
-    return repo.getAllEntities()
-        .map(e -> Pair.of(e.getName().toUpperCase(), new EntityTable(repo, e)))
-        .collect(Collectors.toMap(Pair::getFirst, Pair::getSecond));
-  }
-
-  @Override
-  protected Map<String, Schema> getSubSchemaMap() {
-    return repo.getAllEntities()
-        .flatMap(
-            e ->
-                e.getAllAttributes().stream()
-                    .filter(AttributeDescriptor::isWildcard)
-                    .map(a -> Pair.of(e.getName(), new WildcardAttributeSchema(repo, e, a))))
+    return entity.getAllAttributes().stream()
+        .filter(AttributeDescriptor::isWildcard)
+        .map(a -> Pair.of(a.getName().toUpperCase(), new WildcardAttributeTable(repo, entity, a)))
         .collect(Collectors.toMap(Pair::getFirst, Pair::getSecond));
   }
 }

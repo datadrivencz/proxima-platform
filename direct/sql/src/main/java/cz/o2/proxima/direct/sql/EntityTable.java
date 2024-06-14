@@ -15,6 +15,7 @@
  */
 package cz.o2.proxima.direct.sql;
 
+import com.google.common.base.Preconditions;
 import cz.o2.proxima.core.repository.AttributeDescriptor;
 import cz.o2.proxima.core.repository.EntityDescriptor;
 import cz.o2.proxima.core.repository.Repository;
@@ -68,6 +69,11 @@ public class EntityTable extends AbstractTable implements ScannableTable, Filter
             .collect(Collectors.toList());
     this.reader = getRandomAccessReader(direct, attributes);
     this.listKeysReader = getListKeysReader(direct, entity, attributes);
+
+    Preconditions.checkArgument(
+        attributes.stream().noneMatch(a -> a.getName().toUpperCase().equals("KEY")),
+        "Attribute KEY is currently unsupported, found in entity %s",
+        entity.getName());
   }
 
   private static RandomAccessReader getListKeysReader(
