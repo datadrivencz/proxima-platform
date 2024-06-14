@@ -16,16 +16,21 @@
 package cz.o2.proxima.direct.sql;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import org.apache.calcite.rex.RexCall;
 import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.sql.SqlKind;
+import org.checkerframework.checker.nullness.qual.Nullable;
 
 class FilterUtil {
 
-  static List<String> extractKeysFromFilters(List<RexNode> filters) {
+  static List<String> extractKeysFromFilters(@Nullable List<RexNode> filters) {
+    if (filters == null) {
+      return Collections.emptyList();
+    }
     List<String> keys = new ArrayList<>();
     for (RexNode filter : filters) {
       if (filter.isA(SqlKind.EQUALS)) {

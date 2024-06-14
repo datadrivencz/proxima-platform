@@ -221,6 +221,8 @@ public class SelectTest {
       assertTrue(resultSet.next());
       assertEquals("user1", resultSet.getString(1));
       assertEquals("user", resultSet.getString(2));
+      assertEquals("user1", resultSet.getString(3));
+      assertEquals("OWNER", resultSet.getString(4));
     }
   }
 }
