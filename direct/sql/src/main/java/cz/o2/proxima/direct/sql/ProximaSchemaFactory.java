@@ -16,7 +16,8 @@
 package cz.o2.proxima.direct.sql;
 
 import cz.o2.proxima.core.repository.Repository;
-import cz.o2.proxima.typesafe.config.Config;
+import cz.o2.proxima.core.repository.RepositoryFactory;
+import cz.o2.proxima.core.util.Classpath;
 import cz.o2.proxima.typesafe.config.ConfigFactory;
 import java.util.Map;
 import java.util.Optional;
@@ -28,12 +29,21 @@ public class ProximaSchemaFactory implements SchemaFactory {
 
   @Override
   public Schema create(SchemaPlus parentSchema, String name, Map<String, Object> operand) {
-    Object uri = operand.get("modelUri");
-    Config config =
+    Repository repo =
         Optional.ofNullable(operand.get("config"))
             .map(Object::toString)
-            .map(n -> ConfigFactory.load(n).resolve())
-            .orElseGet(() -> ConfigFactory.load().resolve());
-    return new RepositorySchema(Repository.of(config));
+            .map(n -> Repository.of(ConfigFactory.load(n).resolve()))
+            .orElseGet(() -> fromFactory(operand));
+    return new RepositorySchema(repo);
+  }
+
+  @SuppressWarnings("unchecked")
+  private Repository fromFactory(Map<String, Object> operand) {
+    return Optional.ofNullable(operand.get("repo-factory"))
+        .map(Object::toString)
+        .map(c -> (Class<RepositoryFactory>) Classpath.findClass(c, RepositoryFactory.class))
+        .map(Classpath::newInstance)
+        .map(RepositoryFactory::apply)
+        .orElseGet(() -> Repository.of(ConfigFactory.load().resolve()));
   }
 }
