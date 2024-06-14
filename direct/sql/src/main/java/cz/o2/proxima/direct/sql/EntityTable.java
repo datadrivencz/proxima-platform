@@ -15,6 +15,8 @@
  */
 package cz.o2.proxima.direct.sql;
 
+import static cz.o2.proxima.direct.sql.FilterUtil.extractKeysFromFilters;
+
 import com.google.common.base.Preconditions;
 import cz.o2.proxima.core.repository.AttributeDescriptor;
 import cz.o2.proxima.core.repository.EntityDescriptor;
@@ -25,7 +27,6 @@ import cz.o2.proxima.direct.core.DirectDataOperator;
 import cz.o2.proxima.direct.core.randomaccess.KeyValue;
 import cz.o2.proxima.direct.core.randomaccess.MultiAccessBuilder;
 import cz.o2.proxima.direct.core.randomaccess.RandomAccessReader;
-import java.util.ArrayList;
 import java.util.Deque;
 import java.util.LinkedList;
 import java.util.List;
@@ -39,14 +40,10 @@ import org.apache.calcite.linq4j.Enumerator;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rel.type.RelDataTypeFactory.FieldInfoBuilder;
-import org.apache.calcite.rex.RexCall;
-import org.apache.calcite.rex.RexInputRef;
-import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.schema.FilterableTable;
 import org.apache.calcite.schema.ScannableTable;
 import org.apache.calcite.schema.impl.AbstractTable;
-import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
@@ -172,23 +169,5 @@ public class EntityTable extends AbstractTable implements ScannableTable, Filter
         };
       }
     };
-  }
-
-  private List<String> extractKeysFromFilters(List<RexNode> filters) {
-    List<String> keys = new ArrayList<>();
-    for (RexNode filter : filters) {
-      if (filter.isA(SqlKind.EQUALS)) {
-        RexCall call = (RexCall) filter;
-        if (call.operands.get(0) instanceof RexInputRef
-            && call.operands.get(1) instanceof RexLiteral) {
-          RexInputRef inputRef = (RexInputRef) call.operands.get(0);
-          RexLiteral literal = (RexLiteral) call.operands.get(1);
-          if (inputRef.getIndex() == 0) {
-            keys.add(literal.getValueAs(String.class));
-          }
-        }
-      }
-    }
-    return keys.isEmpty() ? null : keys;
   }
 }

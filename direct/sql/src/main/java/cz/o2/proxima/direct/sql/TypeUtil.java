@@ -38,7 +38,7 @@ class TypeUtil {
     return getRelDataType(schemaDescriptor, typeFactory);
   }
 
-  private static RelDataType getRelDataType(
+  static RelDataType getRelDataType(
       SchemaTypeDescriptor<?> schemaDescriptor, RelDataTypeFactory typeFactory) {
 
     AttributeValueType type = schemaDescriptor.getType();

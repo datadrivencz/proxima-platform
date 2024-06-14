@@ -19,12 +19,15 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import cz.o2.proxima.core.repository.EntityAwareAttributeDescriptor.Regular;
+import cz.o2.proxima.core.repository.EntityAwareAttributeDescriptor.Wildcard;
 import cz.o2.proxima.core.repository.EntityDescriptor;
 import cz.o2.proxima.core.repository.Repository;
 import cz.o2.proxima.core.util.Optionals;
 import cz.o2.proxima.direct.core.DirectDataOperator;
 import cz.o2.proxima.direct.core.OnlineAttributeWriter;
 import cz.o2.proxima.direct.sql.proto.Gateway.GatewayDetails;
+import cz.o2.proxima.direct.sql.proto.Gateway.UserToGateway;
+import cz.o2.proxima.direct.sql.proto.Gateway.UserToGateway.Role;
 import cz.o2.proxima.direct.sql.proto.User.UserDetails;
 import java.net.URL;
 import java.sql.Connection;
@@ -169,6 +172,51 @@ public class SelectTest {
         ResultSet resultSet =
             statement.executeQuery(
                 "select u.key, u.details.name from proxima.gateway as g join proxima.\"USER\" as u on g.owner = u.key")) {
+
+      assertTrue(resultSet.next());
+      assertEquals("user1", resultSet.getString(1));
+      assertEquals("user", resultSet.getString(2));
+    }
+  }
+
+  @Test
+  public void testJoinWithWildcard() throws SQLException {
+    SchemaPlus proxima = calciteConnection.getRootSchema().getSubSchema("PROXIMA");
+    EntityTable gateway = (EntityTable) proxima.getTable("GATEWAY");
+    Repository repo = gateway.getRepo();
+    DirectDataOperator direct = gateway.getDirect();
+    EntityDescriptor gatewayDesc = repo.getEntity("gateway");
+    EntityDescriptor userDesc = repo.getEntity("user");
+    Regular<GatewayDetails> gatewayDetails =
+        Regular.of(gatewayDesc, gatewayDesc.getAttribute("details"));
+    Regular<String> owner = Regular.of(gatewayDesc, gatewayDesc.getAttribute("owner"));
+    Regular<UserDetails> userDetails = Regular.of(userDesc, userDesc.getAttribute("details"));
+    Wildcard<UserToGateway> userToGateway =
+        Wildcard.of(userDesc, userDesc.getAttribute("gateway.*"));
+    OnlineAttributeWriter writer = Optionals.get(direct.getWriter(gatewayDetails));
+    writer.write(
+        gatewayDetails.upsert(
+            "gw", Instant.now(), GatewayDetails.newBuilder().setName("gw").build()),
+        (succ, exc) -> {});
+    writer.write(owner.upsert("gw", Instant.now(), "user1"), (succ, exc) -> {});
+
+    writer = Optionals.get(direct.getWriter(userToGateway));
+    writer.write(
+        userToGateway.upsert(
+            "user1", "gw", Instant.now(), UserToGateway.newBuilder().setRole(Role.OWNER).build()),
+        (succ, exc) -> {});
+
+    writer = Optionals.get(direct.getWriter(userDetails));
+    writer.write(
+        userDetails.upsert(
+            "user1", Instant.now(), UserDetails.newBuilder().setName("user").build()),
+        (succ, exc) -> {});
+
+    try (Statement statement = calciteConnection.createStatement();
+        ResultSet resultSet =
+            statement.executeQuery(
+                "select u.key, u.details.name, ug.key, ug.role from proxima.\"USER\" as u "
+                    + "join proxima.\"USER.GATEWAY\" as ug on u.key = ug.key where ug.key = 'user1'")) {
 
       assertTrue(resultSet.next());
       assertEquals("user1", resultSet.getString(1));

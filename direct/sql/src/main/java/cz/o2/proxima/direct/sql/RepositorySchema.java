@@ -20,7 +20,6 @@ import cz.o2.proxima.core.repository.Repository;
 import cz.o2.proxima.core.util.Pair;
 import java.util.Map;
 import java.util.stream.Collectors;
-import org.apache.calcite.schema.Schema;
 import org.apache.calcite.schema.Table;
 import org.apache.calcite.schema.impl.AbstractSchema;
 
@@ -34,11 +33,32 @@ public class RepositorySchema extends AbstractSchema {
 
   @Override
   protected Map<String, Table> getTableMap() {
-    return repo.getAllEntities()
-        .map(e -> Pair.of(e.getName().toUpperCase(), new EntityTable(repo, e)))
-        .collect(Collectors.toMap(Pair::getFirst, Pair::getSecond));
+    // table with regular attributes
+    Map<String, Table> regularMap =
+        repo.getAllEntities()
+            .filter(e -> e.getAllAttributes().stream().anyMatch(a -> !a.isWildcard()))
+            .map(e -> Pair.of(e.getName().toUpperCase(), new EntityTable(repo, e)))
+            .collect(Collectors.toMap(Pair::getFirst, Pair::getSecond));
+    Map<String, Table> wildcardMap =
+        repo.getAllEntities()
+            .flatMap(
+                e ->
+                    e.getAllAttributes().stream()
+                        .filter(AttributeDescriptor::isWildcard)
+                        .map(a -> Pair.of(e, a)))
+            .map(
+                p ->
+                    Pair.of(
+                        p.getFirst().getName().toUpperCase()
+                            + "."
+                            + p.getSecond().toAttributePrefix(false).toUpperCase(),
+                        new WildcardAttributeTable(repo, p.getFirst(), p.getSecond())))
+            .collect(Collectors.toMap(Pair::getFirst, Pair::getSecond));
+    regularMap.putAll(wildcardMap);
+    return regularMap;
   }
 
+  /*
   @Override
   protected Map<String, Schema> getSubSchemaMap() {
     return repo.getAllEntities()
@@ -46,7 +66,12 @@ public class RepositorySchema extends AbstractSchema {
             e ->
                 e.getAllAttributes().stream()
                     .filter(AttributeDescriptor::isWildcard)
-                    .map(a -> Pair.of(e.getName(), new WildcardAttributeSchema(repo, e, a))))
+                    .map(
+                        a ->
+                            Pair.of(
+                                "e.getName().toUpperCase(),
+                                new WildcardAttributeSchema(repo, e, a))))
         .collect(Collectors.toMap(Pair::getFirst, Pair::getSecond));
   }
+   */
 }
