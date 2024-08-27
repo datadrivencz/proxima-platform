@@ -22,6 +22,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.Pipeline.PipelineVisitor;
 import org.apache.beam.sdk.runners.AppliedPTransform;
@@ -44,6 +45,7 @@ import org.apache.beam.sdk.values.PInput;
 import org.apache.beam.sdk.values.POutput;
 import org.apache.beam.sdk.values.PValue;
 import org.apache.beam.sdk.values.TupleTag;
+import org.apache.beam.sdk.values.TupleTagList;
 
 public class ExternalStateExpander {
 
@@ -136,17 +138,29 @@ public class ExternalStateExpander {
     String transformName = transform.getFullName();
     PCollection<KV<String, StateValue>> transformInputs =
         inputs.apply(Filter.by(kv -> kv.getKey().equals(transformName)));
+    TupleTag<POutput> mainOutputTag = rawTransform.getMainOutputTag();
     return PTransformReplacement.of(
-        pMainInput, transformedParDo((PCollection) pMainInput, transformInputs, doFn));
+        pMainInput,
+        transformedParDo(
+            (PCollection) pMainInput,
+            transformInputs,
+            doFn,
+            mainOutputTag,
+            TupleTagList.of(
+                transform.getOutputs().keySet().stream()
+                    .filter(t -> !t.equals(mainOutputTag))
+                    .collect(Collectors.toList()))));
   }
 
   private static <InputT, OutputT>
-      PTransform<PCollection<? extends InputT>, PCollection<OutputT>> transformedParDo(
+      PTransform<PCollection<? extends InputT>, PCollectionTuple> transformedParDo(
           PCollection<InputT> mainInput,
           PCollection<KV<String, StateValue>> transformInputs,
-          DoFn<InputT, OutputT> doFn) {
+          DoFn<InputT, OutputT> doFn,
+          TupleTag<OutputT> mainOutputTag,
+          TupleTagList otherOutputs) {
 
-    return ParDo.of(doFn);
+    return ParDo.of(doFn).withOutputTags(mainOutputTag, otherOutputs);
   }
 
   private static PInput getMainInput(AppliedPTransform<PInput, POutput, ?> transform) {
