@@ -51,6 +51,28 @@ public class ExternalStateExpanderTest {
     pipeline.run();
   }
 
+  @Test
+  public void testCompositeExpand() {
+    PTransform<PCollection<String>, PCollection<Long>> transform =
+        new PTransform<>() {
+          @Override
+          public PCollection<Long> expand(PCollection<String> input) {
+            PCollection<KV<Integer, String>> withKeys =
+                input.apply(
+                    WithKeys.<Integer, String>of(e -> Integer.parseInt(e) % 2)
+                        .withKeyType(TypeDescriptors.integers()));
+            return withKeys.apply(ParDo.of(getCountFn()));
+          }
+        };
+    Pipeline pipeline = Pipeline.create();
+    PCollection<String> inputs = pipeline.apply(Create.of("1", "2", "3"));
+    PCollection<Long> count = inputs.apply(transform);
+    PAssert.that(count).containsInAnyOrder(1L, 2L);
+    ExternalStateExpander.expand(
+        pipeline, Create.empty(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())), dummy());
+    pipeline.run();
+  }
+
   private static DoFn<KV<Integer, String>, Long> getCountFn() {
     return new DoFn<KV<Integer, String>, Long>() {
       @StateId("count")

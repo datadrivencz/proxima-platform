@@ -193,6 +193,19 @@ public class ExternalStateExpander {
         (Class<? extends DoFn<InputT, OutputT>>) doFn.getClass();
 
     ClassLoadingStrategy<ClassLoader> strategy = ByteBuddyUtils.getClassLoadingStrategy(doFnClass);
+    final String className = doFnClass.getName() + "$Expanded";
+    final ClassLoader classLoader = ExternalStateExpander.class.getClassLoader();
+    try {
+      @SuppressWarnings("unchecked")
+      Class<? extends DoFn<InputT, OutputT>> aClass =
+          (Class<? extends DoFn<InputT, OutputT>>) classLoader.loadClass(className);
+      // class found, return instance
+      return ExceptionUtils.uncheckedFactory(
+          () -> aClass.getConstructor(doFnClass).newInstance(doFn));
+    } catch (ClassNotFoundException e) {
+      // class not found, create it
+    }
+
     ByteBuddy buddy = new ByteBuddy();
     @SuppressWarnings("unchecked")
     ParameterizedType parameterizedSuperClass =
@@ -207,7 +220,7 @@ public class ExternalStateExpander {
         (Builder<DoFn<InputT, OutputT>>)
             buddy
                 .subclass(doFnGeneric)
-                .name(doFnClass.getName() + "$Expanded")
+                .name(className)
                 .defineField("delegate", doFnClass, Visibility.PRIVATE);
     builder = addStateAndTimers(doFnClass, builder);
     builder =
