@@ -23,6 +23,7 @@ import java.io.File;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.Arrays;
@@ -33,8 +34,6 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import net.bytebuddy.ByteBuddy;
 import net.bytebuddy.description.annotation.AnnotationDescription;
-import net.bytebuddy.description.annotation.AnnotationValue;
-import net.bytebuddy.description.annotation.AnnotationValue.ForConstant;
 import net.bytebuddy.description.modifier.Visibility;
 import net.bytebuddy.description.type.TypeDescription.Generic;
 import net.bytebuddy.dynamic.DynamicType.Builder;
@@ -42,6 +41,8 @@ import net.bytebuddy.dynamic.DynamicType.Builder.MethodDefinition;
 import net.bytebuddy.dynamic.DynamicType.Unloaded;
 import net.bytebuddy.dynamic.loading.ClassLoadingStrategy;
 import net.bytebuddy.implementation.FieldAccessor;
+import net.bytebuddy.implementation.Implementation;
+import net.bytebuddy.implementation.Implementation.Composable;
 import net.bytebuddy.implementation.MethodCall;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.Pipeline.PipelineVisitor;
@@ -207,14 +208,19 @@ public class ExternalStateExpander {
             buddy
                 .subclass(doFnGeneric)
                 .name(doFnClass.getName() + "$Expanded")
-                .defineField("delegate", doFnClass, Visibility.PRIVATE)
-                .defineConstructor(Visibility.PUBLIC)
-                .withParameters(doFnClass)
-                .intercept(
+                .defineField("delegate", doFnClass, Visibility.PRIVATE);
+    builder = addStateAndTimers(doFnClass, builder);
+    builder =
+        builder
+            .defineConstructor(Visibility.PUBLIC)
+            .withParameters(doFnClass)
+            .intercept(
+                addStateAndTimerValues(
+                    doFn,
                     MethodCall.invoke(
                             ExceptionUtils.uncheckedFactory(() -> DoFn.class.getConstructor()))
-                        .andThen(FieldAccessor.ofField("delegate").setsArgumentAt(0)));
-    builder = addStateAndTimers(doFn, builder);
+                        .andThen(FieldAccessor.ofField("delegate").setsArgumentAt(0))));
+
     builder = addProcessingMethods(doFn, builder);
     Unloaded<DoFn<InputT, OutputT>> dynamicClass = builder.make();
     // FIXME
@@ -226,6 +232,24 @@ public class ExternalStateExpander {
                 .getLoaded()
                 .getDeclaredConstructor(doFnClass)
                 .newInstance(doFn));
+  }
+
+  private static <InputT, OutputT> Implementation addStateAndTimerValues(
+      DoFn<InputT, OutputT> doFn, Composable delegate) {
+
+    List<Class<? extends Annotation>> acceptable = Arrays.asList(StateId.class, TimerId.class);
+    @SuppressWarnings("unchecked")
+    Class<? extends DoFn<InputT, OutputT>> doFnClass =
+        (Class<? extends DoFn<InputT, OutputT>>) doFn.getClass();
+    for (Field f : doFnClass.getDeclaredFields()) {
+      if (!Modifier.isStatic(f.getModifiers())
+          && acceptable.stream().anyMatch(a -> f.getAnnotation(a) != null)) {
+        f.setAccessible(true);
+        Object value = ExceptionUtils.uncheckedFactory(() -> f.get(doFn));
+        delegate = delegate.andThen(FieldAccessor.ofField(f.getName()).setsValue(value));
+      }
+    }
+    return delegate;
   }
 
   @SuppressWarnings({"unchecked", "rawtypes"})
@@ -245,7 +269,22 @@ public class ExternalStateExpander {
   private static <OutputT, InputT> Builder<DoFn<InputT, OutputT>> addProcessingMethods(
       DoFn<InputT, OutputT> doFn, Builder<DoFn<InputT, OutputT>> builder) {
 
-    return addProcessingMethod(doFn, DoFn.ProcessElement.class, builder);
+    builder = addProcessingMethod(doFn, DoFn.Setup.class, builder);
+    builder = addProcessingMethod(doFn, DoFn.StartBundle.class, builder);
+    builder = addProcessingMethod(doFn, DoFn.ProcessElement.class, builder);
+    builder = addProcessingMethod(doFn, DoFn.FinishBundle.class, builder);
+    builder = addProcessingMethod(doFn, DoFn.Teardown.class, builder);
+    builder = addProcessingMethod(doFn, DoFn.OnWindowExpiration.class, builder);
+    builder = addProcessingMethod(doFn, DoFn.GetInitialRestriction.class, builder);
+    builder = addProcessingMethod(doFn, DoFn.SplitRestriction.class, builder);
+    builder = addProcessingMethod(doFn, DoFn.GetRestrictionCoder.class, builder);
+    builder = addProcessingMethod(doFn, DoFn.GetWatermarkEstimatorStateCoder.class, builder);
+    builder = addProcessingMethod(doFn, DoFn.GetInitialWatermarkEstimatorState.class, builder);
+    builder = addProcessingMethod(doFn, DoFn.NewWatermarkEstimator.class, builder);
+    builder = addProcessingMethod(doFn, DoFn.NewTracker.class, builder);
+
+    // FIXME: timer callbacks
+    return builder;
   }
 
   private static <InputT, OutputT, T extends Annotation>
@@ -256,55 +295,45 @@ public class ExternalStateExpander {
         Iterables.getOnlyElement(
             Arrays.stream(doFn.getClass().getMethods())
                 .filter(m -> m.getAnnotation(annotation) != null)
-                .collect(Collectors.toList()));
-    MethodDefinition<DoFn<InputT, OutputT>> methodDefinition =
-        builder
-            .defineMethod(method.getName(), method.getReturnType(), Visibility.PUBLIC)
-            .withParameters(method.getGenericParameterTypes())
-            .intercept(MethodCall.invoke(method).onField("delegate").withAllArguments());
+                .collect(Collectors.toList()),
+            null);
+    if (method != null) {
+      MethodDefinition<DoFn<InputT, OutputT>> methodDefinition =
+          builder
+              .defineMethod(method.getName(), method.getReturnType(), Visibility.PUBLIC)
+              .withParameters(method.getGenericParameterTypes())
+              .intercept(MethodCall.invoke(method).onField("delegate").withAllArguments());
 
-    // Retrieve parameter annotations and apply them
-    Annotation[][] parameterAnnotations = method.getParameterAnnotations();
-    for (int i = 0; i < parameterAnnotations.length; i++) {
-      for (Annotation paramAnnotation : parameterAnnotations[i]) {
-        Class<? extends Annotation> annotationType = paramAnnotation.annotationType();
-        AnnotationDescription.Builder annotationBuilder =
-            AnnotationDescription.Builder.ofType(annotationType);
-        // Copy each element of the annotation
-        for (Method annotationMethod : annotationType.getDeclaredMethods()) {
-          try {
-            Object value = annotationMethod.invoke(paramAnnotation);
-            AnnotationValue<?, ?> annotationValue = ForConstant.of(value);
-            annotationBuilder =
-                annotationBuilder.define(annotationMethod.getName(), annotationValue);
-          } catch (Exception e) {
-            throw new RuntimeException("Failed to copy annotation value", e);
-          }
+      // retrieve parameter annotations and apply them
+      Annotation[][] parameterAnnotations = method.getParameterAnnotations();
+      for (int i = 0; i < parameterAnnotations.length; i++) {
+        for (Annotation paramAnnotation : parameterAnnotations[i]) {
+          methodDefinition = methodDefinition.annotateParameter(i, paramAnnotation);
         }
-        methodDefinition = methodDefinition.annotateParameter(i, annotationBuilder.build());
       }
+      return methodDefinition.annotateMethod(
+          AnnotationDescription.Builder.ofType(annotation).build());
     }
-    return methodDefinition.annotateMethod(
-        AnnotationDescription.Builder.ofType(annotation).build());
+    return builder;
   }
 
   private static <OutputT, InputT> Builder<DoFn<InputT, OutputT>> addStateAndTimers(
-      DoFn<InputT, OutputT> doFn, Builder<DoFn<InputT, OutputT>> builder) {
+      Class<? extends DoFn<InputT, OutputT>> doFnClass, Builder<DoFn<InputT, OutputT>> builder) {
 
-    builder = cloneFields(doFn, StateId.class, builder);
-    return cloneFields(doFn, TimerId.class, builder);
+    builder = cloneFields(doFnClass, StateId.class, builder);
+    return cloneFields(doFnClass, TimerId.class, builder);
   }
 
   private static <InputT, OutputT, T extends Annotation> Builder<DoFn<InputT, OutputT>> cloneFields(
-      DoFn<InputT, OutputT> doFn,
+      Class<? extends DoFn<InputT, OutputT>> doFnClass,
       Class<T> annotationClass,
       Builder<DoFn<InputT, OutputT>> builder) {
 
-    for (Field f : doFn.getClass().getFields()) {
-      if (f.getAnnotation(annotationClass) != null) {
+    for (Field f : doFnClass.getDeclaredFields()) {
+      if (!Modifier.isStatic(f.getModifiers()) && f.getAnnotation(annotationClass) != null) {
         builder =
             builder
-                .defineField(f.getName(), f.getType(), f.getModifiers())
+                .defineField(f.getName(), f.getGenericType(), f.getModifiers())
                 .annotateField(f.getDeclaredAnnotations());
       }
     }
