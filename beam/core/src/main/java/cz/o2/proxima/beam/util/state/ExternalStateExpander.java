@@ -46,6 +46,8 @@ import net.bytebuddy.implementation.Implementation.Composable;
 import net.bytebuddy.implementation.MethodCall;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.Pipeline.PipelineVisitor;
+import org.apache.beam.sdk.coders.Coder;
+import org.apache.beam.sdk.coders.KvCoder;
 import org.apache.beam.sdk.runners.AppliedPTransform;
 import org.apache.beam.sdk.runners.PTransformOverride;
 import org.apache.beam.sdk.runners.PTransformOverrideFactory;
@@ -55,14 +57,18 @@ import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.DoFn.StateId;
 import org.apache.beam.sdk.transforms.DoFn.TimerId;
 import org.apache.beam.sdk.transforms.Filter;
+import org.apache.beam.sdk.transforms.Flatten;
+import org.apache.beam.sdk.transforms.MapElements;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.reflect.DoFnSignatures;
 import org.apache.beam.sdk.util.ByteBuddyUtils;
+import org.apache.beam.sdk.util.CoderUtils;
 import org.apache.beam.sdk.util.construction.ReplacementOutputs;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PBegin;
 import org.apache.beam.sdk.values.PCollection;
+import org.apache.beam.sdk.values.PCollectionList;
 import org.apache.beam.sdk.values.PCollectionTuple;
 import org.apache.beam.sdk.values.PDone;
 import org.apache.beam.sdk.values.PInput;
@@ -70,6 +76,9 @@ import org.apache.beam.sdk.values.POutput;
 import org.apache.beam.sdk.values.PValue;
 import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.sdk.values.TupleTagList;
+import org.apache.beam.sdk.values.TypeDescriptor;
+import org.apache.beam.sdk.values.TypeDescriptors;
+import org.apache.beam.vendor.guava.v32_1_2_jre.com.google.common.reflect.TypeToken;
 
 public class ExternalStateExpander {
 
@@ -152,21 +161,22 @@ public class ExternalStateExpander {
 
     ParDo.MultiOutput<PInput, POutput> rawTransform =
         (ParDo.MultiOutput<PInput, POutput>) (PTransform) transform.getTransform();
-    DoFn<PInput, POutput> doFn = rawTransform.getFn();
+    DoFn<KV<?, ?>, ?> doFn = (DoFn) rawTransform.getFn();
     PInput pMainInput = getMainInput(transform);
     if (!DoFnSignatures.isStateful(doFn)) {
       return PTransformReplacement.of(pMainInput, (PTransform) transform.getTransform());
     }
     String transformName = transform.getFullName();
-    PCollection<KV<String, StateValue>> transformInputs =
-        inputs.apply(Filter.by(kv -> kv.getKey().equals(transformName)));
+    PCollection<StateValue> transformInputs =
+        inputs
+            .apply(Filter.by(kv -> kv.getKey().equals(transformName)))
+            .apply(MapElements.into(TypeDescriptor.of(StateValue.class)).via(KV::getValue));
     TupleTag<POutput> mainOutputTag = rawTransform.getMainOutputTag();
     return PTransformReplacement.of(
         pMainInput,
         transformedParDo(
-            (PCollection) pMainInput,
             transformInputs,
-            doFn,
+            (DoFn) doFn,
             mainOutputTag,
             TupleTagList.of(
                 transform.getOutputs().keySet().stream()
@@ -174,23 +184,60 @@ public class ExternalStateExpander {
                     .collect(Collectors.toList()))));
   }
 
-  private static <InputT, OutputT>
-      PTransform<PCollection<? extends InputT>, PCollectionTuple> transformedParDo(
-          PCollection<InputT> mainInput,
-          PCollection<KV<String, StateValue>> transformInputs,
-          DoFn<InputT, OutputT> doFn,
+  @SuppressWarnings({"unchecked", "rawtypes"})
+  private static <K, V, InputT extends KV<K, V>, OutputT>
+      PTransform<PCollection<InputT>, PCollectionTuple> transformedParDo(
+          PCollection<StateValue> transformInputs,
+          DoFn<KV<K, V>, OutputT> doFn,
           TupleTag<OutputT> mainOutputTag,
           TupleTagList otherOutputs) {
 
-    return ParDo.of(transformedDoFn(doFn)).withOutputTags(mainOutputTag, otherOutputs);
+    return new PTransform<>() {
+      @Override
+      public PCollectionTuple expand(PCollection<InputT> input) {
+        @SuppressWarnings("unchecked")
+        KvCoder<K, V> coder = (KvCoder<K, V>) input.getCoder();
+        Coder<K> keyCoder = coder.getKeyCoder();
+        Coder<V> valueCoder = coder.getValueCoder();
+        TypeDescriptor<StateOrInput<V>> valueDescriptor =
+            new TypeDescriptor<>(new TypeToken<StateOrInput<V>>() {}) {};
+        PCollection<KV<K, StateOrInput<V>>> state =
+            transformInputs
+                .apply(
+                    MapElements.into(
+                            TypeDescriptors.kvs(
+                                keyCoder.getEncodedTypeDescriptor(), valueDescriptor))
+                        .via(
+                            e ->
+                                ExceptionUtils.uncheckedFactory(
+                                    () ->
+                                        KV.of(
+                                            CoderUtils.decodeFromByteArray(keyCoder, e.getKey()),
+                                            StateOrInput.<V>state(e)))))
+                .setCoder(KvCoder.of(keyCoder, StateOrInput.coder(valueCoder)));
+        PCollection<KV<K, StateOrInput<V>>> inputs =
+            input
+                .apply(
+                    MapElements.into(
+                            TypeDescriptors.kvs(
+                                keyCoder.getEncodedTypeDescriptor(), valueDescriptor))
+                        .via(e -> KV.of(e.getKey(), StateOrInput.input(e.getValue()))))
+                .setCoder(KvCoder.of(keyCoder, StateOrInput.coder(valueCoder)));
+        PCollection<KV<K, StateOrInput<V>>> flattened =
+            PCollectionList.of(state).and(inputs).apply(Flatten.pCollections());
+        return flattened.apply(
+            ParDo.of(transformedDoFn(doFn)).withOutputTags(mainOutputTag, otherOutputs));
+      }
+    };
   }
 
   @VisibleForTesting
-  static <OutputT, InputT> DoFn<InputT, OutputT> transformedDoFn(DoFn<InputT, OutputT> doFn) {
+  static <K, V, InputT extends KV<K, StateOrInput<V>>, OutputT>
+      DoFn<InputT, OutputT> transformedDoFn(DoFn<KV<K, V>, OutputT> doFn) {
 
     @SuppressWarnings("unchecked")
-    Class<? extends DoFn<InputT, OutputT>> doFnClass =
-        (Class<? extends DoFn<InputT, OutputT>>) doFn.getClass();
+    Class<? extends DoFn<KV<K, V>, OutputT>> doFnClass =
+        (Class<? extends DoFn<KV<K, V>, OutputT>>) doFn.getClass();
 
     ClassLoadingStrategy<ClassLoader> strategy = ByteBuddyUtils.getClassLoadingStrategy(doFnClass);
     final String className = doFnClass.getName() + "$Expanded";
@@ -279,8 +326,9 @@ public class ExternalStateExpander {
     throw new IllegalStateException("Cannot get parameterized type of " + doFnClass);
   }
 
-  private static <OutputT, InputT> Builder<DoFn<InputT, OutputT>> addProcessingMethods(
-      DoFn<InputT, OutputT> doFn, Builder<DoFn<InputT, OutputT>> builder) {
+  private static <K, V, InputT extends KV<K, StateOrInput<V>>, OutputT>
+      Builder<DoFn<InputT, OutputT>> addProcessingMethods(
+          DoFn<KV<K, V>, OutputT> doFn, Builder<DoFn<InputT, OutputT>> builder) {
 
     builder = addProcessingMethod(doFn, DoFn.Setup.class, builder);
     builder = addProcessingMethod(doFn, DoFn.StartBundle.class, builder);
@@ -300,9 +348,11 @@ public class ExternalStateExpander {
     return builder;
   }
 
-  private static <InputT, OutputT, T extends Annotation>
+  private static <K, V, InputT extends KV<K, StateOrInput<V>>, OutputT, T extends Annotation>
       Builder<DoFn<InputT, OutputT>> addProcessingMethod(
-          DoFn<InputT, OutputT> doFn, Class<T> annotation, Builder<DoFn<InputT, OutputT>> builder) {
+          DoFn<KV<K, V>, OutputT> doFn,
+          Class<T> annotation,
+          Builder<DoFn<InputT, OutputT>> builder) {
 
     Method method =
         Iterables.getOnlyElement(
@@ -330,17 +380,20 @@ public class ExternalStateExpander {
     return builder;
   }
 
-  private static <OutputT, InputT> Builder<DoFn<InputT, OutputT>> addStateAndTimers(
-      Class<? extends DoFn<InputT, OutputT>> doFnClass, Builder<DoFn<InputT, OutputT>> builder) {
+  private static <K, V, InputT extends KV<K, StateOrInput<V>>, OutputT>
+      Builder<DoFn<InputT, OutputT>> addStateAndTimers(
+          Class<? extends DoFn<KV<K, V>, OutputT>> doFnClass,
+          Builder<DoFn<InputT, OutputT>> builder) {
 
     builder = cloneFields(doFnClass, StateId.class, builder);
     return cloneFields(doFnClass, TimerId.class, builder);
   }
 
-  private static <InputT, OutputT, T extends Annotation> Builder<DoFn<InputT, OutputT>> cloneFields(
-      Class<? extends DoFn<InputT, OutputT>> doFnClass,
-      Class<T> annotationClass,
-      Builder<DoFn<InputT, OutputT>> builder) {
+  private static <K, V, InputT extends KV<K, StateOrInput<V>>, OutputT, T extends Annotation>
+      Builder<DoFn<InputT, OutputT>> cloneFields(
+          Class<? extends DoFn<KV<K, V>, OutputT>> doFnClass,
+          Class<T> annotationClass,
+          Builder<DoFn<InputT, OutputT>> builder) {
 
     for (Field f : doFnClass.getDeclaredFields()) {
       if (!Modifier.isStatic(f.getModifiers()) && f.getAnnotation(annotationClass) != null) {
