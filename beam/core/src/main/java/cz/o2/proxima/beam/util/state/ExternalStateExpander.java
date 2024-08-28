@@ -15,14 +15,34 @@
  */
 package cz.o2.proxima.beam.util.state;
 
+import cz.o2.proxima.core.util.ExceptionUtils;
+import cz.o2.proxima.internal.com.google.common.annotations.VisibleForTesting;
 import cz.o2.proxima.internal.com.google.common.base.Preconditions;
 import cz.o2.proxima.internal.com.google.common.collect.Iterables;
+import java.io.File;
+import java.lang.annotation.Annotation;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import net.bytebuddy.ByteBuddy;
+import net.bytebuddy.description.annotation.AnnotationDescription;
+import net.bytebuddy.description.annotation.AnnotationValue;
+import net.bytebuddy.description.annotation.AnnotationValue.ForConstant;
+import net.bytebuddy.description.modifier.Visibility;
+import net.bytebuddy.description.type.TypeDescription.Generic;
+import net.bytebuddy.dynamic.DynamicType.Builder;
+import net.bytebuddy.dynamic.DynamicType.Builder.MethodDefinition;
+import net.bytebuddy.dynamic.DynamicType.Unloaded;
+import net.bytebuddy.dynamic.loading.ClassLoadingStrategy;
+import net.bytebuddy.implementation.FieldAccessor;
+import net.bytebuddy.implementation.MethodCall;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.Pipeline.PipelineVisitor;
 import org.apache.beam.sdk.runners.AppliedPTransform;
@@ -31,10 +51,13 @@ import org.apache.beam.sdk.runners.PTransformOverrideFactory;
 import org.apache.beam.sdk.runners.PTransformOverrideFactory.PTransformReplacement;
 import org.apache.beam.sdk.runners.TransformHierarchy;
 import org.apache.beam.sdk.transforms.DoFn;
+import org.apache.beam.sdk.transforms.DoFn.StateId;
+import org.apache.beam.sdk.transforms.DoFn.TimerId;
 import org.apache.beam.sdk.transforms.Filter;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.reflect.DoFnSignatures;
+import org.apache.beam.sdk.util.ByteBuddyUtils;
 import org.apache.beam.sdk.util.construction.ReplacementOutputs;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PBegin;
@@ -62,9 +85,7 @@ public class ExternalStateExpander {
       PTransform<PCollection<KV<String, StateValue>>, PDone> sink) {
 
     validatePipeline(pipeline);
-    pipeline
-        .getCoderRegistry()
-        .registerCoderForClass(StateValue.class, new StateValue.StateValueCoder());
+    pipeline.getCoderRegistry().registerCoderForClass(StateValue.class, StateValue.coder());
     PCollection<KV<String, StateValue>> inputsMaterialized = pipeline.apply(inputs);
     pipeline.replaceAll(getOverrides(inputsMaterialized, sink));
   }
@@ -160,7 +181,134 @@ public class ExternalStateExpander {
           TupleTag<OutputT> mainOutputTag,
           TupleTagList otherOutputs) {
 
-    return ParDo.of(doFn).withOutputTags(mainOutputTag, otherOutputs);
+    return ParDo.of(transformedDoFn(doFn)).withOutputTags(mainOutputTag, otherOutputs);
+  }
+
+  @VisibleForTesting
+  static <OutputT, InputT> DoFn<InputT, OutputT> transformedDoFn(DoFn<InputT, OutputT> doFn) {
+
+    @SuppressWarnings("unchecked")
+    Class<? extends DoFn<InputT, OutputT>> doFnClass =
+        (Class<? extends DoFn<InputT, OutputT>>) doFn.getClass();
+
+    ClassLoadingStrategy<ClassLoader> strategy = ByteBuddyUtils.getClassLoadingStrategy(doFnClass);
+    ByteBuddy buddy = new ByteBuddy();
+    @SuppressWarnings("unchecked")
+    ParameterizedType parameterizedSuperClass =
+        getParameterizedDoFn((Class<DoFn<InputT, OutputT>>) doFn.getClass());
+    Type inputType = parameterizedSuperClass.getActualTypeArguments()[0];
+    Type outputType = parameterizedSuperClass.getActualTypeArguments()[1];
+
+    Generic doFnGeneric =
+        Generic.Builder.parameterizedType(DoFn.class, inputType, outputType).build();
+    @SuppressWarnings("unchecked")
+    Builder<DoFn<InputT, OutputT>> builder =
+        (Builder<DoFn<InputT, OutputT>>)
+            buddy
+                .subclass(doFnGeneric)
+                .name(doFnClass.getName() + "$Expanded")
+                .defineField("delegate", doFnClass, Visibility.PRIVATE)
+                .defineConstructor(Visibility.PUBLIC)
+                .withParameters(doFnClass)
+                .intercept(
+                    MethodCall.invoke(
+                            ExceptionUtils.uncheckedFactory(() -> DoFn.class.getConstructor()))
+                        .andThen(FieldAccessor.ofField("delegate").setsArgumentAt(0)));
+    builder = addStateAndTimers(doFn, builder);
+    builder = addProcessingMethods(doFn, builder);
+    Unloaded<DoFn<InputT, OutputT>> dynamicClass = builder.make();
+    // FIXME
+    ExceptionUtils.unchecked(() -> dynamicClass.saveIn(new File("/tmp/dynamic-debug")));
+    return ExceptionUtils.uncheckedFactory(
+        () ->
+            dynamicClass
+                .load(null, strategy)
+                .getLoaded()
+                .getDeclaredConstructor(doFnClass)
+                .newInstance(doFn));
+  }
+
+  @SuppressWarnings({"unchecked", "rawtypes"})
+  private static <OutputT, InputT> ParameterizedType getParameterizedDoFn(
+      Class<? extends DoFn<InputT, OutputT>> doFnClass) {
+
+    Type type = doFnClass.getGenericSuperclass();
+    if (type instanceof ParameterizedType) {
+      return (ParameterizedType) type;
+    }
+    if (doFnClass.getSuperclass().isAssignableFrom(DoFn.class)) {
+      return getParameterizedDoFn((Class) doFnClass.getGenericSuperclass());
+    }
+    throw new IllegalStateException("Cannot get parameterized type of " + doFnClass);
+  }
+
+  private static <OutputT, InputT> Builder<DoFn<InputT, OutputT>> addProcessingMethods(
+      DoFn<InputT, OutputT> doFn, Builder<DoFn<InputT, OutputT>> builder) {
+
+    return addProcessingMethod(doFn, DoFn.ProcessElement.class, builder);
+  }
+
+  private static <InputT, OutputT, T extends Annotation>
+      Builder<DoFn<InputT, OutputT>> addProcessingMethod(
+          DoFn<InputT, OutputT> doFn, Class<T> annotation, Builder<DoFn<InputT, OutputT>> builder) {
+
+    Method method =
+        Iterables.getOnlyElement(
+            Arrays.stream(doFn.getClass().getMethods())
+                .filter(m -> m.getAnnotation(annotation) != null)
+                .collect(Collectors.toList()));
+    MethodDefinition<DoFn<InputT, OutputT>> methodDefinition =
+        builder
+            .defineMethod(method.getName(), method.getReturnType(), Visibility.PUBLIC)
+            .withParameters(method.getGenericParameterTypes())
+            .intercept(MethodCall.invoke(method).onField("delegate").withAllArguments());
+
+    // Retrieve parameter annotations and apply them
+    Annotation[][] parameterAnnotations = method.getParameterAnnotations();
+    for (int i = 0; i < parameterAnnotations.length; i++) {
+      for (Annotation paramAnnotation : parameterAnnotations[i]) {
+        Class<? extends Annotation> annotationType = paramAnnotation.annotationType();
+        AnnotationDescription.Builder annotationBuilder =
+            AnnotationDescription.Builder.ofType(annotationType);
+        // Copy each element of the annotation
+        for (Method annotationMethod : annotationType.getDeclaredMethods()) {
+          try {
+            Object value = annotationMethod.invoke(paramAnnotation);
+            AnnotationValue<?, ?> annotationValue = ForConstant.of(value);
+            annotationBuilder =
+                annotationBuilder.define(annotationMethod.getName(), annotationValue);
+          } catch (Exception e) {
+            throw new RuntimeException("Failed to copy annotation value", e);
+          }
+        }
+        methodDefinition = methodDefinition.annotateParameter(i, annotationBuilder.build());
+      }
+    }
+    return methodDefinition.annotateMethod(
+        AnnotationDescription.Builder.ofType(annotation).build());
+  }
+
+  private static <OutputT, InputT> Builder<DoFn<InputT, OutputT>> addStateAndTimers(
+      DoFn<InputT, OutputT> doFn, Builder<DoFn<InputT, OutputT>> builder) {
+
+    builder = cloneFields(doFn, StateId.class, builder);
+    return cloneFields(doFn, TimerId.class, builder);
+  }
+
+  private static <InputT, OutputT, T extends Annotation> Builder<DoFn<InputT, OutputT>> cloneFields(
+      DoFn<InputT, OutputT> doFn,
+      Class<T> annotationClass,
+      Builder<DoFn<InputT, OutputT>> builder) {
+
+    for (Field f : doFn.getClass().getFields()) {
+      if (f.getAnnotation(annotationClass) != null) {
+        builder =
+            builder
+                .defineField(f.getName(), f.getType(), f.getModifiers())
+                .annotateField(f.getDeclaredAnnotations());
+      }
+    }
+    return builder;
   }
 
   private static PInput getMainInput(AppliedPTransform<PInput, POutput, ?> transform) {

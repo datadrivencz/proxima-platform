@@ -29,6 +29,8 @@ public class StateValue {
     private static final ByteArrayCoder BAC = ByteArrayCoder.of();
     private static final StringUtf8Coder SUC = StringUtf8Coder.of();
 
+    private StateValueCoder() {}
+
     @Override
     public void encode(StateValue value, OutputStream outStream) throws IOException {
       BAC.encode(value.getKey(), outStream);
@@ -40,6 +42,10 @@ public class StateValue {
     public StateValue decode(InputStream inStream) throws IOException {
       return new StateValue(BAC.decode(inStream), SUC.decode(inStream), BAC.decode(inStream));
     }
+  }
+
+  public static StateValueCoder coder() {
+    return new StateValueCoder();
   }
 
   byte[] key;

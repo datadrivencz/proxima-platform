@@ -47,9 +47,7 @@ public class ExternalStateExpanderTest {
     PCollection<Long> count = withKeys.apply(ParDo.of(getCountFn()));
     PAssert.that(count).containsInAnyOrder(1L, 2L);
     ExternalStateExpander.expand(
-        pipeline,
-        Create.empty(KvCoder.of(StringUtf8Coder.of(), new StateValue.StateValueCoder())),
-        dummy());
+        pipeline, Create.empty(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())), dummy());
     pipeline.run();
   }
 
