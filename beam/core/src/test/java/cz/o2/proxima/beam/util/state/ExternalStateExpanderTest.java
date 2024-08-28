@@ -44,8 +44,8 @@ public class ExternalStateExpanderTest {
         inputs.apply(
             WithKeys.<Integer, String>of(e -> Integer.parseInt(e) % 2)
                 .withKeyType(TypeDescriptors.integers()));
-    PCollection<Long> count = withKeys.apply(ParDo.of(getCountFn()));
-    PAssert.that(count).containsInAnyOrder(1L, 2L);
+    PCollection<Long> count = withKeys.apply(ParDo.of(getSumFn()));
+    PAssert.that(count).containsInAnyOrder(2L, 4L);
     ExternalStateExpander.expand(
         pipeline, Create.empty(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())), dummy());
     pipeline.run();
@@ -61,19 +61,19 @@ public class ExternalStateExpanderTest {
                 input.apply(
                     WithKeys.<Integer, String>of(e -> Integer.parseInt(e) % 2)
                         .withKeyType(TypeDescriptors.integers()));
-            return withKeys.apply(ParDo.of(getCountFn()));
+            return withKeys.apply(ParDo.of(getSumFn()));
           }
         };
     Pipeline pipeline = Pipeline.create();
     PCollection<String> inputs = pipeline.apply(Create.of("1", "2", "3"));
     PCollection<Long> count = inputs.apply(transform);
-    PAssert.that(count).containsInAnyOrder(1L, 2L);
+    PAssert.that(count).containsInAnyOrder(2L, 4L);
     ExternalStateExpander.expand(
         pipeline, Create.empty(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())), dummy());
     pipeline.run();
   }
 
-  private static DoFn<KV<Integer, String>, Long> getCountFn() {
+  private static DoFn<KV<Integer, String>, Long> getSumFn() {
     return new DoFn<KV<Integer, String>, Long>() {
       @StateId("count")
       private final StateSpec<ValueState<Long>> spec = StateSpecs.value();
@@ -83,7 +83,7 @@ public class ExternalStateExpanderTest {
           @Element KV<Integer, String> element, @StateId("count") ValueState<Long> count) {
 
         long current = MoreObjects.firstNonNull(count.read(), 0L);
-        count.write(current + 1);
+        count.write(current + Integer.parseInt(element.getValue()));
       }
 
       @OnWindowExpiration

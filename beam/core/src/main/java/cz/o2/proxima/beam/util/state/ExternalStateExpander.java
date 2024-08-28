@@ -44,6 +44,10 @@ import net.bytebuddy.implementation.FieldAccessor;
 import net.bytebuddy.implementation.Implementation;
 import net.bytebuddy.implementation.Implementation.Composable;
 import net.bytebuddy.implementation.MethodCall;
+import net.bytebuddy.implementation.MethodDelegation;
+import net.bytebuddy.implementation.bind.annotation.AllArguments;
+import net.bytebuddy.implementation.bind.annotation.RuntimeType;
+import net.bytebuddy.implementation.bind.annotation.This;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.Pipeline.PipelineVisitor;
 import org.apache.beam.sdk.coders.Coder;
@@ -54,6 +58,7 @@ import org.apache.beam.sdk.runners.PTransformOverrideFactory;
 import org.apache.beam.sdk.runners.PTransformOverrideFactory.PTransformReplacement;
 import org.apache.beam.sdk.runners.TransformHierarchy;
 import org.apache.beam.sdk.transforms.DoFn;
+import org.apache.beam.sdk.transforms.DoFn.ProcessElement;
 import org.apache.beam.sdk.transforms.DoFn.StateId;
 import org.apache.beam.sdk.transforms.DoFn.TimerId;
 import org.apache.beam.sdk.transforms.Filter;
@@ -313,7 +318,7 @@ public class ExternalStateExpander {
   }
 
   @SuppressWarnings({"unchecked", "rawtypes"})
-  private static <OutputT, InputT> ParameterizedType getParameterizedDoFn(
+  private static <InputT, OutputT> ParameterizedType getParameterizedDoFn(
       Class<? extends DoFn<InputT, OutputT>> doFnClass) {
 
     Type type = doFnClass.getGenericSuperclass();
@@ -332,7 +337,7 @@ public class ExternalStateExpander {
 
     builder = addProcessingMethod(doFn, DoFn.Setup.class, builder);
     builder = addProcessingMethod(doFn, DoFn.StartBundle.class, builder);
-    builder = addProcessingMethod(doFn, DoFn.ProcessElement.class, builder);
+    builder = addProcessElementMethod(doFn, builder);
     builder = addProcessingMethod(doFn, DoFn.FinishBundle.class, builder);
     builder = addProcessingMethod(doFn, DoFn.Teardown.class, builder);
     builder = addProcessingMethod(doFn, DoFn.OnWindowExpiration.class, builder);
@@ -345,6 +350,66 @@ public class ExternalStateExpander {
     builder = addProcessingMethod(doFn, DoFn.NewTracker.class, builder);
 
     // FIXME: timer callbacks
+    return builder;
+  }
+
+  private static class ProcessElementInterceptor<K, V> {
+
+    private final DoFn<KV<K, V>, ?> doFn;
+    private final Method process;
+
+    ProcessElementInterceptor(DoFn<KV<K, V>, ?> doFn, Method process) {
+      this.doFn = doFn;
+      this.process = process;
+    }
+
+    @RuntimeType
+    public void intercept(
+        @This DoFn<KV<V, StateOrInput<V>>, ?> proxy, @AllArguments Object[] allArgs) {
+
+      Object[] mapped = new Object[allArgs.length];
+      for (int i = 0; i < allArgs.length; i++) {
+        Object arg = allArgs[i];
+        if (arg instanceof KV) {
+          KV<K, StateOrInput<V>> kv = (KV<K, StateOrInput<V>>) arg;
+          mapped[i] = KV.of(kv.getKey(), kv.getValue().getInput());
+        } else {
+          mapped[i] = arg;
+        }
+      }
+      ExceptionUtils.unchecked(() -> process.invoke(doFn, mapped));
+    }
+  }
+
+  private static <K, V, InputT extends KV<K, StateOrInput<V>>, OutputT>
+      Builder<DoFn<InputT, OutputT>> addProcessElementMethod(
+          DoFn<KV<K, V>, OutputT> doFn, Builder<DoFn<InputT, OutputT>> builder) {
+
+    Class<ProcessElement> annotation = ProcessElement.class;
+
+    Method method =
+        Iterables.getOnlyElement(
+            Arrays.stream(doFn.getClass().getMethods())
+                .filter(m -> m.getAnnotation(annotation) != null)
+                .collect(Collectors.toList()),
+            null);
+    if (method != null) {
+      MethodDefinition<DoFn<InputT, OutputT>> methodDefinition =
+          builder
+              .defineMethod(method.getName(), method.getReturnType(), Visibility.PUBLIC)
+              .withParameters(method.getGenericParameterTypes())
+              .intercept(MethodDelegation.to(new ProcessElementInterceptor<>(doFn, method)));
+
+      // retrieve parameter annotations and apply them
+      Annotation[][] parameterAnnotations = method.getParameterAnnotations();
+      for (int i = 0; i < parameterAnnotations.length; i++) {
+        for (Annotation paramAnnotation : parameterAnnotations[i]) {
+          methodDefinition = methodDefinition.annotateParameter(i, paramAnnotation);
+        }
+      }
+      return methodDefinition.annotateMethod(
+          AnnotationDescription.Builder.ofType(annotation).build());
+    }
     return builder;
   }
 
