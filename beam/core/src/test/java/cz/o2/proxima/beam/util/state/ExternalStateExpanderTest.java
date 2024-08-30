@@ -35,6 +35,8 @@ import org.apache.beam.sdk.util.CoderUtils;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PDone;
+import org.apache.beam.sdk.values.TupleTag;
+import org.apache.beam.sdk.values.TupleTagList;
 import org.apache.beam.sdk.values.TypeDescriptors;
 import org.junit.Test;
 
@@ -49,6 +51,25 @@ public class ExternalStateExpanderTest {
             WithKeys.<Integer, String>of(e -> Integer.parseInt(e) % 2)
                 .withKeyType(TypeDescriptors.integers()));
     PCollection<Long> count = withKeys.apply(ParDo.of(getSumFn()));
+    PAssert.that(count).containsInAnyOrder(2L, 4L);
+    ExternalStateExpander.expand(
+        pipeline, Create.empty(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())), dummy());
+    pipeline.run();
+  }
+
+  @Test
+  public void testSimpleExpandMultiOutput() {
+    Pipeline pipeline = Pipeline.create();
+    PCollection<String> inputs = pipeline.apply(Create.of("1", "2", "3"));
+    PCollection<KV<Integer, String>> withKeys =
+        inputs.apply(
+            WithKeys.<Integer, String>of(e -> Integer.parseInt(e) % 2)
+                .withKeyType(TypeDescriptors.integers()));
+    TupleTag<Long> mainTag = new TupleTag<>();
+    PCollection<Long> count =
+        withKeys
+            .apply(ParDo.of(getSumFn()).withOutputTags(mainTag, TupleTagList.empty()))
+            .get(mainTag);
     PAssert.that(count).containsInAnyOrder(2L, 4L);
     ExternalStateExpander.expand(
         pipeline, Create.empty(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())), dummy());

@@ -17,6 +17,7 @@ package cz.o2.proxima.beam.util.state;
 
 import cz.o2.proxima.core.functional.Consumer;
 import cz.o2.proxima.core.util.ExceptionUtils;
+import cz.o2.proxima.core.util.Pair;
 import cz.o2.proxima.internal.com.google.common.annotations.VisibleForTesting;
 import cz.o2.proxima.internal.com.google.common.base.Function;
 import cz.o2.proxima.internal.com.google.common.base.Preconditions;
@@ -34,6 +35,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import net.bytebuddy.ByteBuddy;
 import net.bytebuddy.description.annotation.AnnotationDescription;
@@ -54,12 +57,25 @@ import net.bytebuddy.implementation.bind.annotation.This;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.Pipeline.PipelineVisitor;
 import org.apache.beam.sdk.coders.Coder;
+import org.apache.beam.sdk.coders.InstantCoder;
 import org.apache.beam.sdk.coders.KvCoder;
 import org.apache.beam.sdk.runners.AppliedPTransform;
 import org.apache.beam.sdk.runners.PTransformOverride;
 import org.apache.beam.sdk.runners.PTransformOverrideFactory;
 import org.apache.beam.sdk.runners.PTransformOverrideFactory.PTransformReplacement;
 import org.apache.beam.sdk.runners.TransformHierarchy;
+import org.apache.beam.sdk.state.BagState;
+import org.apache.beam.sdk.state.CombiningState;
+import org.apache.beam.sdk.state.MapState;
+import org.apache.beam.sdk.state.MultimapState;
+import org.apache.beam.sdk.state.OrderedListState;
+import org.apache.beam.sdk.state.SetState;
+import org.apache.beam.sdk.state.StateBinder;
+import org.apache.beam.sdk.state.StateSpec;
+import org.apache.beam.sdk.state.ValueState;
+import org.apache.beam.sdk.state.WatermarkHoldState;
+import org.apache.beam.sdk.transforms.Combine.CombineFn;
+import org.apache.beam.sdk.transforms.CombineWithContext.CombineFnWithContext;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.DoFn.ProcessElement;
 import org.apache.beam.sdk.transforms.DoFn.StateId;
@@ -70,6 +86,7 @@ import org.apache.beam.sdk.transforms.MapElements;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.reflect.DoFnSignatures;
+import org.apache.beam.sdk.transforms.windowing.TimestampCombiner;
 import org.apache.beam.sdk.util.ByteBuddyUtils;
 import org.apache.beam.sdk.util.CoderUtils;
 import org.apache.beam.sdk.util.construction.ReplacementOutputs;
@@ -453,7 +470,7 @@ public class ExternalStateExpander {
                 .collect(Collectors.toList()),
             null);
     if (method != null) {
-      Function<Object[], Boolean> processFn = createProcessFn(method);
+      Function<Object[], Boolean> processFn = createProcessFn(doFn, method);
       Consumer<Object[]> paramMapper = createParamMapper(method);
       MethodDefinition<DoFn<InputT, OutputT>> methodDefinition =
           builder
@@ -488,22 +505,155 @@ public class ExternalStateExpander {
     };
   }
 
-  private static Function<Object[], Boolean> createProcessFn(Method method) {
+  private static Function<Object[], Boolean> createProcessFn(DoFn<?, ?> doFn, Method method) {
+    int elementPos = findAnnotation(method, a -> a instanceof DoFn.Element);
+    Preconditions.checkState(
+        elementPos < method.getParameterCount(),
+        "Missing @Element annotation on method %s",
+        method);
+    Map<String, Coder<?>> stateCoderMap = getStateCoderMap(doFn);
+    return args -> {
+      @SuppressWarnings("unchecked")
+      KV<?, StateOrInput<?>> elem = (KV<?, StateOrInput<?>>) args[elementPos];
+      boolean isState = Objects.requireNonNull(elem.getValue(), "elem").isState();
+      if (isState) {
+        StateValue state = elem.getValue().getState();
+        String stateName = state.getName();
+        // find state accessor
+        int statePos =
+            findAnnotation(
+                method,
+                a -> a instanceof DoFn.StateId && ((DoFn.StateId) a).value().equals(stateName));
+        Preconditions.checkArgument(
+            statePos < method.getParameterCount(), "Missing state accessor for %s", stateName);
+        @SuppressWarnings("unchecked")
+        ValueState<Object> stateAccessor = (ValueState<Object>) args[statePos];
+        // find declaration of state to find coder
+        Coder<?> coder = stateCoderMap.get(stateName);
+        Preconditions.checkArgument(
+            coder != null, "Missing coder for state %s in %s", stateName, stateCoderMap);
+        stateAccessor.write(
+            ExceptionUtils.uncheckedFactory(
+                () -> CoderUtils.decodeFromByteArray(coder, state.getValue())));
+        return false;
+      }
+      return true;
+    };
+  }
+
+  private static Map<String, Coder<?>> getStateCoderMap(DoFn<?, ?> doFn) {
+    Field[] fields = doFn.getClass().getDeclaredFields();
+    return Arrays.stream(fields)
+        .map(f -> Pair.of(f, f.getAnnotation(DoFn.StateId.class)))
+        .filter(p -> p.getSecond() != null)
+        .map(
+            p -> {
+              p.getFirst().setAccessible(true);
+              return p;
+            })
+        .map(
+            p ->
+                Pair.of(
+                    p.getSecond().value(),
+                    findCoder(
+                        ((StateSpec<?>)
+                            ExceptionUtils.uncheckedFactory(() -> p.getFirst().get(doFn))))))
+        .collect(Collectors.toMap(Pair::getFirst, Pair::getSecond));
+  }
+
+  private static Coder<?> findCoder(StateSpec<?> stateSpec) {
+    AtomicReference<Coder<?>> ref = new AtomicReference<>();
+    stateSpec.bind(
+        "dummy",
+        new StateBinder() {
+          @Override
+          public <T> ValueState<T> bindValue(
+              String id, StateSpec<ValueState<T>> spec, Coder<T> coder) {
+            ref.set(coder);
+            return null;
+          }
+
+          @Override
+          public <T> BagState<T> bindBag(
+              String id, StateSpec<BagState<T>> spec, Coder<T> elemCoder) {
+            ref.set(elemCoder);
+            return null;
+          }
+
+          @Override
+          public <T> SetState<T> bindSet(
+              String id, StateSpec<SetState<T>> spec, Coder<T> elemCoder) {
+            ref.set(elemCoder);
+            return null;
+          }
+
+          @Override
+          public <KeyT, ValueT> MapState<KeyT, ValueT> bindMap(
+              String id,
+              StateSpec<MapState<KeyT, ValueT>> spec,
+              Coder<KeyT> mapKeyCoder,
+              Coder<ValueT> mapValueCoder) {
+            ref.set(KvCoder.of(mapKeyCoder, mapValueCoder));
+            return null;
+          }
+
+          @Override
+          public <T> OrderedListState<T> bindOrderedList(
+              String id, StateSpec<OrderedListState<T>> spec, Coder<T> elemCoder) {
+            ref.set(elemCoder);
+            return null;
+          }
+
+          @Override
+          public <KeyT, ValueT> MultimapState<KeyT, ValueT> bindMultimap(
+              String id,
+              StateSpec<MultimapState<KeyT, ValueT>> spec,
+              Coder<KeyT> keyCoder,
+              Coder<ValueT> valueCoder) {
+            ref.set(KvCoder.of(keyCoder, valueCoder));
+            return null;
+          }
+
+          @Override
+          public <InputT, AccumT, OutputT> CombiningState<InputT, AccumT, OutputT> bindCombining(
+              String id,
+              StateSpec<CombiningState<InputT, AccumT, OutputT>> spec,
+              Coder<AccumT> accumCoder,
+              CombineFn<InputT, AccumT, OutputT> combineFn) {
+            ref.set(accumCoder);
+            return null;
+          }
+
+          @Override
+          public <InputT, AccumT, OutputT>
+              CombiningState<InputT, AccumT, OutputT> bindCombiningWithContext(
+                  String id,
+                  StateSpec<CombiningState<InputT, AccumT, OutputT>> spec,
+                  Coder<AccumT> accumCoder,
+                  CombineFnWithContext<InputT, AccumT, OutputT> combineFn) {
+            ref.set(accumCoder);
+            return null;
+          }
+
+          @Override
+          public WatermarkHoldState bindWatermark(
+              String id, StateSpec<WatermarkHoldState> spec, TimestampCombiner timestampCombiner) {
+            ref.set(InstantCoder.of());
+            return null;
+          }
+        });
+    return ref.get();
+  }
+
+  private static int findAnnotation(Method method, Predicate<Annotation> predicate) {
     int i = 0;
     for (Annotation[] annotations : method.getParameterAnnotations()) {
-      if (Arrays.stream(annotations).anyMatch(a -> a instanceof DoFn.Element)) {
+      if (Arrays.stream(annotations).anyMatch(predicate)) {
         break;
       }
       i++;
     }
-    int elementPos = i;
-    Preconditions.checkState(
-        i < method.getParameterCount(), "Missing @Element annotation on method %s", method);
-    return args -> {
-      @SuppressWarnings("unchecked")
-      KV<?, StateOrInput<?>> elem = (KV<?, StateOrInput<?>>) args[elementPos];
-      return !Objects.requireNonNull(elem.getValue(), "elem").isState();
-    };
+    return i;
   }
 
   private static <K, V, InputT extends KV<K, StateOrInput<V>>, OutputT, T extends Annotation>
