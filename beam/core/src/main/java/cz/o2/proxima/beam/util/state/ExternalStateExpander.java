@@ -15,6 +15,7 @@
  */
 package cz.o2.proxima.beam.util.state;
 
+import cz.o2.proxima.core.functional.BiConsumer;
 import cz.o2.proxima.core.functional.Consumer;
 import cz.o2.proxima.core.util.ExceptionUtils;
 import cz.o2.proxima.core.util.Pair;
@@ -99,6 +100,7 @@ import org.apache.beam.sdk.values.PDone;
 import org.apache.beam.sdk.values.PInput;
 import org.apache.beam.sdk.values.POutput;
 import org.apache.beam.sdk.values.PValue;
+import org.apache.beam.sdk.values.TimestampedValue;
 import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.sdk.values.TupleTagList;
 import org.apache.beam.sdk.values.TypeDescriptor;
@@ -106,6 +108,7 @@ import org.apache.beam.sdk.values.TypeDescriptors;
 import org.apache.beam.vendor.guava.v32_1_2_jre.com.google.common.reflect.TypeToken;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
+import org.joda.time.Instant;
 
 public class ExternalStateExpander {
 
@@ -511,7 +514,7 @@ public class ExternalStateExpander {
         elementPos < method.getParameterCount(),
         "Missing @Element annotation on method %s",
         method);
-    Map<String, Coder<?>> stateCoderMap = getStateCoderMap(doFn);
+    Map<String, BiConsumer<Object, StateValue>> stateUpdaterMap = getStateUpdaters(doFn);
     return args -> {
       @SuppressWarnings("unchecked")
       KV<?, StateOrInput<?>> elem = (KV<?, StateOrInput<?>>) args[elementPos];
@@ -526,22 +529,19 @@ public class ExternalStateExpander {
                 a -> a instanceof DoFn.StateId && ((DoFn.StateId) a).value().equals(stateName));
         Preconditions.checkArgument(
             statePos < method.getParameterCount(), "Missing state accessor for %s", stateName);
-        @SuppressWarnings("unchecked")
-        ValueState<Object> stateAccessor = (ValueState<Object>) args[statePos];
+        Object stateAccessor = args[statePos];
         // find declaration of state to find coder
-        Coder<?> coder = stateCoderMap.get(stateName);
+        BiConsumer<Object, StateValue> updater = stateUpdaterMap.get(stateName);
         Preconditions.checkArgument(
-            coder != null, "Missing coder for state %s in %s", stateName, stateCoderMap);
-        stateAccessor.write(
-            ExceptionUtils.uncheckedFactory(
-                () -> CoderUtils.decodeFromByteArray(coder, state.getValue())));
+            updater != null, "Missing updater for state %s in %s", stateName, stateUpdaterMap);
+        updater.accept(stateAccessor, state);
         return false;
       }
       return true;
     };
   }
 
-  private static Map<String, Coder<?>> getStateCoderMap(DoFn<?, ?> doFn) {
+  private static Map<String, BiConsumer<Object, StateValue>> getStateUpdaters(DoFn<?, ?> doFn) {
     Field[] fields = doFn.getClass().getDeclaredFields();
     return Arrays.stream(fields)
         .map(f -> Pair.of(f, f.getAnnotation(DoFn.StateId.class)))
@@ -555,35 +555,55 @@ public class ExternalStateExpander {
             p ->
                 Pair.of(
                     p.getSecond().value(),
-                    findCoder(
+                    createUpdater(
                         ((StateSpec<?>)
                             ExceptionUtils.uncheckedFactory(() -> p.getFirst().get(doFn))))))
+        .filter(p -> p.getSecond() != null)
         .collect(Collectors.toMap(Pair::getFirst, Pair::getSecond));
   }
 
-  private static Coder<?> findCoder(StateSpec<?> stateSpec) {
-    AtomicReference<Coder<?>> ref = new AtomicReference<>();
+  @SuppressWarnings("unchecked")
+  private static @Nullable BiConsumer<Object, StateValue> createUpdater(StateSpec<?> stateSpec) {
+    AtomicReference<BiConsumer<Object, StateValue>> consumer = new AtomicReference<>();
     stateSpec.bind(
         "dummy",
         new StateBinder() {
           @Override
           public <T> ValueState<T> bindValue(
               String id, StateSpec<ValueState<T>> spec, Coder<T> coder) {
-            ref.set(coder);
+            consumer.set(
+                (accessor, value) -> {
+                  ((ValueState<T>) accessor)
+                      .write(
+                          ExceptionUtils.uncheckedFactory(
+                              () -> CoderUtils.decodeFromByteArray(coder, value.getValue())));
+                });
             return null;
           }
 
           @Override
           public <T> BagState<T> bindBag(
               String id, StateSpec<BagState<T>> spec, Coder<T> elemCoder) {
-            ref.set(elemCoder);
+            consumer.set(
+                (accessor, value) -> {
+                  ((BagState<T>) accessor)
+                      .add(
+                          ExceptionUtils.uncheckedFactory(
+                              () -> CoderUtils.decodeFromByteArray(elemCoder, value.getValue())));
+                });
             return null;
           }
 
           @Override
           public <T> SetState<T> bindSet(
               String id, StateSpec<SetState<T>> spec, Coder<T> elemCoder) {
-            ref.set(elemCoder);
+            consumer.set(
+                (accessor, value) -> {
+                  ((SetState<T>) accessor)
+                      .add(
+                          ExceptionUtils.uncheckedFactory(
+                              () -> CoderUtils.decodeFromByteArray(elemCoder, value.getValue())));
+                });
             return null;
           }
 
@@ -593,14 +613,29 @@ public class ExternalStateExpander {
               StateSpec<MapState<KeyT, ValueT>> spec,
               Coder<KeyT> mapKeyCoder,
               Coder<ValueT> mapValueCoder) {
-            ref.set(KvCoder.of(mapKeyCoder, mapValueCoder));
+            KvCoder<KeyT, ValueT> coder = KvCoder.of(mapKeyCoder, mapValueCoder);
+            consumer.set(
+                (accessor, value) -> {
+                  KV<KeyT, ValueT> decoded =
+                      ExceptionUtils.uncheckedFactory(
+                          () -> CoderUtils.decodeFromByteArray(coder, value.getValue()));
+                  ((MapState<KeyT, ValueT>) accessor).put(decoded.getKey(), decoded.getValue());
+                });
             return null;
           }
 
           @Override
           public <T> OrderedListState<T> bindOrderedList(
               String id, StateSpec<OrderedListState<T>> spec, Coder<T> elemCoder) {
-            ref.set(elemCoder);
+            KvCoder<T, Instant> coder = KvCoder.of(elemCoder, InstantCoder.of());
+            consumer.set(
+                (accessor, value) -> {
+                  KV<T, Instant> decoded =
+                      ExceptionUtils.uncheckedFactory(
+                          () -> CoderUtils.decodeFromByteArray(coder, value.getValue()));
+                  ((OrderedListState<T>) accessor)
+                      .add(TimestampedValue.of(decoded.getKey(), decoded.getValue()));
+                });
             return null;
           }
 
@@ -610,7 +645,14 @@ public class ExternalStateExpander {
               StateSpec<MultimapState<KeyT, ValueT>> spec,
               Coder<KeyT> keyCoder,
               Coder<ValueT> valueCoder) {
-            ref.set(KvCoder.of(keyCoder, valueCoder));
+            KvCoder<KeyT, ValueT> coder = KvCoder.of(keyCoder, valueCoder);
+            consumer.set(
+                (accessor, value) -> {
+                  KV<KeyT, ValueT> decoded =
+                      ExceptionUtils.uncheckedFactory(
+                          () -> CoderUtils.decodeFromByteArray(coder, value.getValue()));
+                  ((MapState<KeyT, ValueT>) accessor).put(decoded.getKey(), decoded.getValue());
+                });
             return null;
           }
 
@@ -620,7 +662,13 @@ public class ExternalStateExpander {
               StateSpec<CombiningState<InputT, AccumT, OutputT>> spec,
               Coder<AccumT> accumCoder,
               CombineFn<InputT, AccumT, OutputT> combineFn) {
-            ref.set(accumCoder);
+            consumer.set(
+                (accessor, value) -> {
+                  ((CombiningState<InputT, AccumT, OutputT>) accessor)
+                      .addAccum(
+                          ExceptionUtils.uncheckedFactory(
+                              () -> CoderUtils.decodeFromByteArray(accumCoder, value.getValue())));
+                });
             return null;
           }
 
@@ -631,18 +679,23 @@ public class ExternalStateExpander {
                   StateSpec<CombiningState<InputT, AccumT, OutputT>> spec,
                   Coder<AccumT> accumCoder,
                   CombineFnWithContext<InputT, AccumT, OutputT> combineFn) {
-            ref.set(accumCoder);
+            consumer.set(
+                (accessor, value) -> {
+                  ((CombiningState<InputT, AccumT, OutputT>) accessor)
+                      .addAccum(
+                          ExceptionUtils.uncheckedFactory(
+                              () -> CoderUtils.decodeFromByteArray(accumCoder, value.getValue())));
+                });
             return null;
           }
 
           @Override
           public WatermarkHoldState bindWatermark(
               String id, StateSpec<WatermarkHoldState> spec, TimestampCombiner timestampCombiner) {
-            ref.set(InstantCoder.of());
             return null;
           }
         });
-    return ref.get();
+    return consumer.get();
   }
 
   private static int findAnnotation(Method method, Predicate<Annotation> predicate) {
