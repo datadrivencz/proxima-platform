@@ -16,12 +16,19 @@
 package cz.o2.proxima.beam.util.state;
 
 import com.google.common.base.MoreObjects;
+import java.util.Arrays;
+import java.util.List;
+import org.apache.beam.runners.direct.DirectRunner;
+import org.apache.beam.runners.flink.FlinkRunner;
 import org.apache.beam.sdk.Pipeline;
+import org.apache.beam.sdk.PipelineRunner;
 import org.apache.beam.sdk.coders.CoderException;
 import org.apache.beam.sdk.coders.KvCoder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.coders.VarIntCoder;
 import org.apache.beam.sdk.coders.VarLongCoder;
+import org.apache.beam.sdk.options.PipelineOptions;
+import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.state.StateSpec;
 import org.apache.beam.sdk.state.StateSpecs;
 import org.apache.beam.sdk.state.ValueState;
@@ -38,13 +45,26 @@ import org.apache.beam.sdk.values.PDone;
 import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.sdk.values.TupleTagList;
 import org.apache.beam.sdk.values.TypeDescriptors;
+import org.jetbrains.annotations.NotNull;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
+import org.junit.runners.Parameterized.Parameter;
+import org.junit.runners.Parameterized.Parameters;
 
+@RunWith(Parameterized.class)
 public class ExternalStateExpanderTest {
+
+  @Parameters
+  public static List<Class<? extends PipelineRunner<?>>> params() {
+    return Arrays.asList(DirectRunner.class, FlinkRunner.class);
+  }
+
+  @Parameter public Class<? extends PipelineRunner<?>> runner;
 
   @Test
   public void testSimpleExpand() {
-    Pipeline pipeline = Pipeline.create();
+    Pipeline pipeline = createPipeline();
     PCollection<String> inputs = pipeline.apply(Create.of("1", "2", "3"));
     PCollection<KV<Integer, String>> withKeys =
         inputs.apply(
@@ -59,7 +79,7 @@ public class ExternalStateExpanderTest {
 
   @Test
   public void testSimpleExpandMultiOutput() {
-    Pipeline pipeline = Pipeline.create();
+    Pipeline pipeline = createPipeline();
     PCollection<String> inputs = pipeline.apply(Create.of("1", "2", "3"));
     PCollection<KV<Integer, String>> withKeys =
         inputs.apply(
@@ -89,7 +109,7 @@ public class ExternalStateExpanderTest {
             return withKeys.apply(ParDo.of(getSumFn()));
           }
         };
-    Pipeline pipeline = Pipeline.create();
+    Pipeline pipeline = createPipeline();
     PCollection<String> inputs = pipeline.apply(Create.of("1", "2", "3"));
     PCollection<Long> count = inputs.apply(transform);
     PAssert.that(count).containsInAnyOrder(2L, 4L);
@@ -100,7 +120,7 @@ public class ExternalStateExpanderTest {
 
   @Test
   public void testSimpleExpandWithInitialState() throws CoderException {
-    Pipeline pipeline = Pipeline.create();
+    Pipeline pipeline = createPipeline();
     PCollection<String> inputs = pipeline.apply(Create.of("3", "4"));
     PCollection<KV<Integer, String>> withKeys =
         inputs.apply(
@@ -128,6 +148,12 @@ public class ExternalStateExpanderTest {
             .withCoder(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())),
         dummy());
     pipeline.run();
+  }
+
+  private @NotNull Pipeline createPipeline() {
+    PipelineOptions opts = PipelineOptionsFactory.create();
+    opts.setRunner(runner);
+    return Pipeline.create(opts);
   }
 
   private static DoFn<KV<Integer, String>, Long> getSumFn() {

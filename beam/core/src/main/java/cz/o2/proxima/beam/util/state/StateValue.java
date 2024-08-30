@@ -26,6 +26,7 @@ import org.apache.beam.sdk.coders.StringUtf8Coder;
 @Value
 public class StateValue {
   public static class StateValueCoder extends CustomCoder<StateValue> {
+    private static final StateValueCoder INSTANCE = new StateValueCoder();
     private static final ByteArrayCoder BAC = ByteArrayCoder.of();
     private static final StringUtf8Coder SUC = StringUtf8Coder.of();
 
@@ -45,7 +46,7 @@ public class StateValue {
   }
 
   public static StateValueCoder coder() {
-    return new StateValueCoder();
+    return StateValueCoder.INSTANCE;
   }
 
   byte[] key;

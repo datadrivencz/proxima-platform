@@ -19,6 +19,7 @@ import cz.o2.proxima.beam.util.state.StateValue.StateValueCoder;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.Objects;
 import lombok.Value;
 import org.apache.beam.sdk.coders.ByteCoder;
 import org.apache.beam.sdk.coders.Coder;
@@ -55,6 +56,23 @@ public class StateOrInput<T> {
         return new StateOrInput<>(tag, stateCoder.decode(inStream), null);
       }
       return new StateOrInput<>(tag, null, inputCoder.decode(inStream));
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(byteCoder, stateCoder, inputCoder);
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+      if (obj == this) {
+        return true;
+      }
+      if (!(obj instanceof StateOrInputCoder)) {
+        return false;
+      }
+      StateOrInputCoder<?> other = (StateOrInputCoder<?>) obj;
+      return other.inputCoder.equals(this.inputCoder);
     }
   }
 
