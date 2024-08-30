@@ -17,8 +17,11 @@ package cz.o2.proxima.beam.util.state;
 
 import com.google.common.base.MoreObjects;
 import org.apache.beam.sdk.Pipeline;
+import org.apache.beam.sdk.coders.CoderException;
 import org.apache.beam.sdk.coders.KvCoder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
+import org.apache.beam.sdk.coders.VarIntCoder;
+import org.apache.beam.sdk.coders.VarLongCoder;
 import org.apache.beam.sdk.state.StateSpec;
 import org.apache.beam.sdk.state.StateSpecs;
 import org.apache.beam.sdk.state.ValueState;
@@ -28,6 +31,7 @@ import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.WithKeys;
+import org.apache.beam.sdk.util.CoderUtils;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PDone;
@@ -73,23 +77,54 @@ public class ExternalStateExpanderTest {
     pipeline.run();
   }
 
+  @Test
+  public void testSimpleExpandWithInitialState() throws CoderException {
+    Pipeline pipeline = Pipeline.create();
+    PCollection<String> inputs = pipeline.apply(Create.of("3", "4"));
+    PCollection<KV<Integer, String>> withKeys =
+        inputs.apply(
+            WithKeys.<Integer, String>of(e -> Integer.parseInt(e) % 2)
+                .withKeyType(TypeDescriptors.integers()));
+    PCollection<Long> count = withKeys.apply("sum", ParDo.of(getSumFn()));
+    PAssert.that(count).containsInAnyOrder(6L, 4L);
+    VarIntCoder intCoder = VarIntCoder.of();
+    VarLongCoder longCoder = VarLongCoder.of();
+    ExternalStateExpander.expand(
+        pipeline,
+        Create.of(
+                KV.of(
+                    "sum",
+                    new StateValue(
+                        CoderUtils.encodeToByteArray(intCoder, 0),
+                        "sum",
+                        CoderUtils.encodeToByteArray(longCoder, 2L))),
+                KV.of(
+                    "sum",
+                    new StateValue(
+                        CoderUtils.encodeToByteArray(intCoder, 1),
+                        "sum",
+                        CoderUtils.encodeToByteArray(longCoder, 1L))))
+            .withCoder(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())),
+        dummy());
+    pipeline.run();
+  }
+
   private static DoFn<KV<Integer, String>, Long> getSumFn() {
     return new DoFn<KV<Integer, String>, Long>() {
-      @StateId("count")
+      @StateId("sum")
       private final StateSpec<ValueState<Long>> spec = StateSpecs.value();
 
       @ProcessElement
       public void process(
-          @Element KV<Integer, String> element, @StateId("count") ValueState<Long> count) {
+          @Element KV<Integer, String> element, @StateId("sum") ValueState<Long> sum) {
 
-        long current = MoreObjects.firstNonNull(count.read(), 0L);
-        count.write(current + Integer.parseInt(element.getValue()));
+        long current = MoreObjects.firstNonNull(sum.read(), 0L);
+        sum.write(current + Integer.parseInt(element.getValue()));
       }
 
       @OnWindowExpiration
-      public void onExpiration(
-          @StateId("count") ValueState<Long> count, OutputReceiver<Long> output) {
-        output.output(count.read());
+      public void onExpiration(@StateId("sum") ValueState<Long> sum, OutputReceiver<Long> output) {
+        output.output(sum.read());
       }
     };
   }

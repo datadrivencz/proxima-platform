@@ -32,6 +32,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import net.bytebuddy.ByteBuddy;
@@ -87,6 +88,7 @@ import org.apache.beam.sdk.values.TypeDescriptor;
 import org.apache.beam.sdk.values.TypeDescriptors;
 import org.apache.beam.vendor.guava.v32_1_2_jre.com.google.common.reflect.TypeToken;
 import org.checkerframework.checker.nullness.qual.NonNull;
+import org.checkerframework.checker.nullness.qual.Nullable;
 
 public class ExternalStateExpander {
 
@@ -142,29 +144,57 @@ public class ExternalStateExpander {
       PCollection<KV<String, StateValue>> inputsMaterialized,
       PTransform<PCollection<KV<String, StateValue>>, PDone> sink) {
 
-    return Arrays.asList(statefulParDoOverride(inputsMaterialized));
+    return Arrays.asList(
+        statefulParDoOverride(inputsMaterialized), statefulParMultiDoOverride(inputsMaterialized));
   }
 
-  @SuppressWarnings({"rawtypes"})
   private static PTransformOverride statefulParDoOverride(
       PCollection<KV<String, StateValue>> inputs) {
     return PTransformOverride.of(
-        application -> application.getTransform() instanceof ParDo.MultiOutput,
-        new PTransformOverrideFactory() {
-          @Override
-          public PTransformReplacement getReplacementTransform(AppliedPTransform transform) {
-            return replaceParDo(transform, inputs);
-          }
+        application -> application.getTransform() instanceof ParDo.SingleOutput,
+        parDoReplacementFactory(inputs));
+  }
 
-          @Override
-          public Map<PCollection<?>, ReplacementOutput> mapOutputs(Map outputs, POutput newOutput) {
-            return ReplacementOutputs.tagged(outputs, newOutput);
-          }
-        });
+  private static PTransformOverride statefulParMultiDoOverride(
+      PCollection<KV<String, StateValue>> inputs) {
+
+    return PTransformOverride.of(
+        application -> application.getTransform() instanceof ParDo.MultiOutput,
+        parMultiDoReplacementFactory(inputs));
+  }
+
+  private static PTransformOverrideFactory parMultiDoReplacementFactory(
+      PCollection<KV<String, StateValue>> inputs) {
+    return new PTransformOverrideFactory() {
+      @Override
+      public PTransformReplacement getReplacementTransform(AppliedPTransform transform) {
+        return replaceParMultiDo(transform, inputs);
+      }
+
+      @Override
+      public Map<PCollection<?>, ReplacementOutput> mapOutputs(Map outputs, POutput newOutput) {
+        return ReplacementOutputs.tagged(outputs, newOutput);
+      }
+    };
+  }
+
+  private static PTransformOverrideFactory<?, ?, ?> parDoReplacementFactory(
+      PCollection<KV<String, StateValue>> inputs) {
+    return new PTransformOverrideFactory() {
+      @Override
+      public PTransformReplacement getReplacementTransform(AppliedPTransform transform) {
+        return replaceParDo(transform, inputs);
+      }
+
+      @Override
+      public Map<PCollection<?>, ReplacementOutput> mapOutputs(Map outputs, POutput newOutput) {
+        return ReplacementOutputs.singleton(outputs, newOutput);
+      }
+    };
   }
 
   @SuppressWarnings({"unchecked", "rawtypes"})
-  private static PTransformReplacement<PInput, POutput> replaceParDo(
+  private static PTransformReplacement<PInput, POutput> replaceParMultiDo(
       AppliedPTransform<PInput, POutput, ?> transform, PCollection<KV<String, StateValue>> inputs) {
 
     ParDo.MultiOutput<PInput, POutput> rawTransform =
@@ -193,16 +223,36 @@ public class ExternalStateExpander {
   }
 
   @SuppressWarnings({"unchecked", "rawtypes"})
-  private static <K, V, InputT extends KV<K, V>, OutputT>
-      PTransform<PCollection<InputT>, PCollectionTuple> transformedParDo(
+  private static PTransformReplacement<PInput, POutput> replaceParDo(
+      AppliedPTransform<PInput, POutput, ?> transform, PCollection<KV<String, StateValue>> inputs) {
+
+    ParDo.SingleOutput<PInput, POutput> rawTransform =
+        (ParDo.SingleOutput<PInput, POutput>) (PTransform) transform.getTransform();
+    DoFn<KV<?, ?>, ?> doFn = (DoFn) rawTransform.getFn();
+    PInput pMainInput = getMainInput(transform);
+    if (!DoFnSignatures.isStateful(doFn)) {
+      return PTransformReplacement.of(pMainInput, (PTransform) transform.getTransform());
+    }
+    String transformName = transform.getFullName();
+    PCollection<StateValue> transformInputs =
+        inputs
+            .apply(Filter.by(kv -> kv.getKey().equals(transformName)))
+            .apply(MapElements.into(TypeDescriptor.of(StateValue.class)).via(KV::getValue));
+    return PTransformReplacement.of(
+        pMainInput, transformedParDo(transformInputs, (DoFn) doFn, null, null));
+  }
+
+  @SuppressWarnings("unchecked")
+  private static <K, V, InputT extends KV<K, V>, OutputT extends POutput>
+      PTransform<PCollection<InputT>, OutputT> transformedParDo(
           PCollection<StateValue> transformInputs,
           DoFn<KV<K, V>, OutputT> doFn,
-          TupleTag<OutputT> mainOutputTag,
-          TupleTagList otherOutputs) {
+          @Nullable TupleTag<OutputT> mainOutputTag,
+          @Nullable TupleTagList otherOutputs) {
 
     return new PTransform<>() {
       @Override
-      public PCollectionTuple expand(PCollection<InputT> input) {
+      public OutputT expand(PCollection<InputT> input) {
         @SuppressWarnings("unchecked")
         KvCoder<K, V> coder = (KvCoder<K, V>) input.getCoder();
         Coder<K> keyCoder = coder.getKeyCoder();
@@ -233,8 +283,12 @@ public class ExternalStateExpander {
                 .setCoder(KvCoder.of(keyCoder, StateOrInput.coder(valueCoder)));
         PCollection<KV<K, StateOrInput<V>>> flattened =
             PCollectionList.of(state).and(inputs).apply(Flatten.pCollections());
-        return flattened.apply(
-            ParDo.of(transformedDoFn(doFn)).withOutputTags(mainOutputTag, otherOutputs));
+        if (mainOutputTag == null) {
+          return (OutputT) flattened.apply(ParDo.of(transformedDoFn(doFn)));
+        }
+        return (OutputT)
+            flattened.apply(
+                ParDo.of(transformedDoFn(doFn)).withOutputTags(mainOutputTag, otherOutputs));
       }
     };
   }
@@ -435,8 +489,20 @@ public class ExternalStateExpander {
   }
 
   private static Function<Object[], Boolean> createProcessFn(Method method) {
+    int i = 0;
+    for (Annotation[] annotations : method.getParameterAnnotations()) {
+      if (Arrays.stream(annotations).anyMatch(a -> a instanceof DoFn.Element)) {
+        break;
+      }
+      i++;
+    }
+    int elementPos = i;
+    Preconditions.checkState(
+        i < method.getParameterCount(), "Missing @Element annotation on method %s", method);
     return args -> {
-      return true;
+      @SuppressWarnings("unchecked")
+      KV<?, StateOrInput<?>> elem = (KV<?, StateOrInput<?>>) args[elementPos];
+      return !Objects.requireNonNull(elem.getValue(), "elem").isState();
     };
   }
 
