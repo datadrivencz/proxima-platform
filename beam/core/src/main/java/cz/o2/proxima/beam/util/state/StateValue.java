@@ -21,23 +21,26 @@ import java.io.OutputStream;
 import lombok.Value;
 import org.apache.beam.sdk.coders.ByteArrayCoder;
 import org.apache.beam.sdk.coders.CustomCoder;
+import org.apache.beam.sdk.coders.StringUtf8Coder;
 
 @Value
 public class StateValue {
   public static class StateValueCoder extends CustomCoder<StateValue> {
     private static final ByteArrayCoder BAC = ByteArrayCoder.of();
+    private static final StringUtf8Coder SUC = StringUtf8Coder.of();
 
     private StateValueCoder() {}
 
     @Override
     public void encode(StateValue value, OutputStream outStream) throws IOException {
       BAC.encode(value.getKey(), outStream);
+      SUC.encode(value.getName(), outStream);
       BAC.encode(value.getValue(), outStream);
     }
 
     @Override
     public StateValue decode(InputStream inStream) throws IOException {
-      return new StateValue(BAC.decode(inStream), BAC.decode(inStream));
+      return new StateValue(BAC.decode(inStream), SUC.decode(inStream), BAC.decode(inStream));
     }
   }
 
@@ -46,5 +49,6 @@ public class StateValue {
   }
 
   byte[] key;
+  String name;
   byte[] value;
 }

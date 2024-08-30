@@ -15,8 +15,10 @@
  */
 package cz.o2.proxima.beam.util.state;
 
+import cz.o2.proxima.core.functional.Consumer;
 import cz.o2.proxima.core.util.ExceptionUtils;
 import cz.o2.proxima.internal.com.google.common.annotations.VisibleForTesting;
+import cz.o2.proxima.internal.com.google.common.base.Function;
 import cz.o2.proxima.internal.com.google.common.base.Preconditions;
 import cz.o2.proxima.internal.com.google.common.collect.Iterables;
 import java.io.File;
@@ -84,6 +86,7 @@ import org.apache.beam.sdk.values.TupleTagList;
 import org.apache.beam.sdk.values.TypeDescriptor;
 import org.apache.beam.sdk.values.TypeDescriptors;
 import org.apache.beam.vendor.guava.v32_1_2_jre.com.google.common.reflect.TypeToken;
+import org.checkerframework.checker.nullness.qual.NonNull;
 
 public class ExternalStateExpander {
 
@@ -356,10 +359,19 @@ public class ExternalStateExpander {
   private static class ProcessElementInterceptor<K, V> {
 
     private final DoFn<KV<K, V>, ?> doFn;
+    private final Function<Object[], Boolean> processFn;
+    private final Consumer<Object[]> paramMapper;
     private final Method process;
 
-    ProcessElementInterceptor(DoFn<KV<K, V>, ?> doFn, Method process) {
+    ProcessElementInterceptor(
+        DoFn<KV<K, V>, ?> doFn,
+        Function<Object[], Boolean> processFn,
+        Consumer<Object[]> paramMapper,
+        Method process) {
+
       this.doFn = doFn;
+      this.processFn = processFn;
+      this.paramMapper = paramMapper;
       this.process = process;
     }
 
@@ -367,17 +379,10 @@ public class ExternalStateExpander {
     public void intercept(
         @This DoFn<KV<V, StateOrInput<V>>, ?> proxy, @AllArguments Object[] allArgs) {
 
-      Object[] mapped = new Object[allArgs.length];
-      for (int i = 0; i < allArgs.length; i++) {
-        Object arg = allArgs[i];
-        if (arg instanceof KV) {
-          KV<K, StateOrInput<V>> kv = (KV<K, StateOrInput<V>>) arg;
-          mapped[i] = KV.of(kv.getKey(), kv.getValue().getInput());
-        } else {
-          mapped[i] = arg;
-        }
+      if (processFn.apply(allArgs)) {
+        paramMapper.accept(allArgs);
+        ExceptionUtils.unchecked(() -> process.invoke(doFn, allArgs));
       }
-      ExceptionUtils.unchecked(() -> process.invoke(doFn, mapped));
     }
   }
 
@@ -394,11 +399,15 @@ public class ExternalStateExpander {
                 .collect(Collectors.toList()),
             null);
     if (method != null) {
+      Function<Object[], Boolean> processFn = createProcessFn(method);
+      Consumer<Object[]> paramMapper = createParamMapper(method);
       MethodDefinition<DoFn<InputT, OutputT>> methodDefinition =
           builder
               .defineMethod(method.getName(), method.getReturnType(), Visibility.PUBLIC)
               .withParameters(method.getGenericParameterTypes())
-              .intercept(MethodDelegation.to(new ProcessElementInterceptor<>(doFn, method)));
+              .intercept(
+                  MethodDelegation.to(
+                      new ProcessElementInterceptor<>(doFn, processFn, paramMapper, method)));
 
       // retrieve parameter annotations and apply them
       Annotation[][] parameterAnnotations = method.getParameterAnnotations();
@@ -411,6 +420,24 @@ public class ExternalStateExpander {
           AnnotationDescription.Builder.ofType(annotation).build());
     }
     return builder;
+  }
+
+  private static Consumer<Object[]> createParamMapper(Method method) {
+    return args -> {
+      for (int i = 0; i < args.length; i++) {
+        Object arg = args[i];
+        if (arg instanceof KV) {
+          KV<?, ?> kv = ((KV<?, ?>) arg);
+          args[i] = KV.of(kv.getKey(), ((StateOrInput<?>) kv.getValue()).getInput());
+        }
+      }
+    };
+  }
+
+  private static Function<Object[], Boolean> createProcessFn(Method method) {
+    return args -> {
+      return true;
+    };
   }
 
   private static <K, V, InputT extends KV<K, StateOrInput<V>>, OutputT, T extends Annotation>
@@ -480,7 +507,8 @@ public class ExternalStateExpander {
   }
 
   @SuppressWarnings({"unchecked", "rawtypes"})
-  private static PInput asTuple(Map<TupleTag<?>, PCollection<?>> mainInputs) {
+  private static @NonNull PInput asTuple(Map<TupleTag<?>, PCollection<?>> mainInputs) {
+    Preconditions.checkArgument(!mainInputs.isEmpty());
     PCollectionTuple res = null;
     for (Map.Entry<TupleTag<?>, PCollection<?>> e : mainInputs.entrySet()) {
       if (res == null) {
