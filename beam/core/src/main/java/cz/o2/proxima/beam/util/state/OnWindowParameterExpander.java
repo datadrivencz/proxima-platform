@@ -89,9 +89,24 @@ interface OnWindowParameterExpander {
   }
 
   static List<BiFunction<Object[], KV<?, ?>, Object>> projectArgs(
-      List<Pair<Annotation, Type>> wrapperArgList, Map<Type, Pair<Annotation, Type>> argsMap) {
+      List<Pair<Annotation, Type>> wrapperArgList,
+      LinkedHashMap<Type, Pair<Annotation, Type>> argsMap) {
 
-    List<BiFunction<Object[], KV<?, ?>, Object>> res = new ArrayList<>();
+    List<BiFunction<Object[], KV<?, ?>, Object>> res = new ArrayList<>(argsMap.size());
+    List<Type> paramIds =
+        wrapperArgList.stream()
+            .map(p -> p.getFirst() != null ? p.getFirst().annotationType() : p.getSecond())
+            .collect(Collectors.toList());
+    for (Map.Entry<Type, Pair<Annotation, Type>> e : argsMap.entrySet()) {
+      int wrapperArg = paramIds.indexOf(e.getKey());
+      if (wrapperArg < 0) {
+        Preconditions.checkArgument(
+            e.getValue().getFirst().annotationType().equals(DoFn.Element.class));
+        res.add((args, elem) -> elem);
+      } else {
+        res.add((args, elem) -> args[wrapperArg]);
+      }
+    }
     return res;
   }
 
