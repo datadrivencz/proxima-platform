@@ -171,7 +171,10 @@ public class ExternalStateExpanderTest {
 
       @OnWindowExpiration
       public void onExpiration(@StateId("sum") ValueState<Long> sum, OutputReceiver<Long> output) {
-        output.output(sum.read());
+        Long value = sum.read();
+        if (value != null) {
+          output.output(value);
+        }
       }
     };
   }
