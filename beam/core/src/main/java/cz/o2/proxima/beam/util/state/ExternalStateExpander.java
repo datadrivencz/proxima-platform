@@ -21,10 +21,8 @@ import cz.o2.proxima.core.util.ExceptionUtils;
 import cz.o2.proxima.core.util.Pair;
 import cz.o2.proxima.internal.com.google.common.annotations.VisibleForTesting;
 import cz.o2.proxima.internal.com.google.common.base.Function;
-import cz.o2.proxima.internal.com.google.common.base.MoreObjects;
 import cz.o2.proxima.internal.com.google.common.base.Preconditions;
 import cz.o2.proxima.internal.com.google.common.collect.Iterables;
-import cz.o2.proxima.internal.com.google.common.collect.Sets;
 import java.io.File;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
@@ -32,18 +30,14 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.BiFunction;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import net.bytebuddy.ByteBuddy;
@@ -123,8 +117,8 @@ import org.joda.time.Instant;
 
 public class ExternalStateExpander {
 
-  private static final String EXPANDER_STATE_SPEC = "expanderStateSpec";
-  private static final String EXPANDER_STATE_NAME = "_expanderBuf";
+  static final String EXPANDER_STATE_SPEC = "expanderStateSpec";
+  static final String EXPANDER_STATE_NAME = "_expanderBuf";
 
   /**
    * Expand the given @{link Pipeline} to support external state store and restore
@@ -877,7 +871,7 @@ public class ExternalStateExpander {
     return res;
   }
 
-  private static Generic getInputKvType(ParameterizedType inputType) {
+  static Generic getInputKvType(ParameterizedType inputType) {
     Type keyType = inputType.getActualTypeArguments()[0];
     Type valueType = inputType.getActualTypeArguments()[1];
 
@@ -915,153 +909,6 @@ public class ExternalStateExpander {
             () -> process.invoke(doFn, Arrays.copyOf(allArgs, allArgs.length - 1)));
       }
     }
-  }
-
-  private interface OnWindowParameterExpander {
-
-    static OnWindowParameterExpander of(
-        ParameterizedType inputType, Method processElement, @Nullable Method onWindowExpiration) {
-
-      final LinkedHashMap<Type, Pair<Annotation, Type>> processArgs = extractArgs(processElement);
-      final LinkedHashMap<Type, Pair<Annotation, Type>> onWindowArgs =
-          extractArgs(onWindowExpiration);
-      final List<Pair<Annotation, Type>> wrapperArgList =
-          createWrapperArgList(processArgs, onWindowArgs);
-      final List<Pair<AnnotationDescription, TypeDefinition>> wrapperArgs =
-          createWrapperArgs(inputType, wrapperArgList);
-      final List<BiFunction<Object[], KV<?, ?>, Object>> processArgsGenerators =
-          projectArgs(wrapperArgList, processArgs);
-      final List<BiFunction<Object[], KV<?, ?>, Object>> windowArgsGenerators =
-          projectArgs(wrapperArgList, onWindowArgs);
-
-      return new OnWindowParameterExpander() {
-        @Override
-        public List<Pair<AnnotationDescription, TypeDefinition>> getWrapperArgs() {
-          return wrapperArgs;
-        }
-
-        @Override
-        public Object[] getProcessElementArgs(KV<?, ?> input, Object[] wrapperArgs) {
-          return fromGenerators(input, processArgsGenerators, wrapperArgs);
-        }
-
-        @Override
-        public Object[] getOnWindowExpirationArgs(Object[] wrapperArgs) {
-          return fromGenerators(null, windowArgsGenerators, wrapperArgs);
-        }
-
-        private Object[] fromGenerators(
-            @Nullable KV<?, ?> elem,
-            List<BiFunction<Object[], KV<?, ?>, Object>> generators,
-            Object[] wrapperArgs) {
-
-          Object[] res = new Object[generators.size()];
-          for (int i = 0; i < generators.size(); i++) {
-            res[i] = generators.get(i).apply(wrapperArgs, elem);
-          }
-          return res;
-        }
-      };
-    }
-
-    static List<BiFunction<Object[], KV<?, ?>, Object>> projectArgs(
-        List<Pair<Annotation, Type>> wrapperArgList, Map<Type, Pair<Annotation, Type>> argsMap) {
-
-      List<BiFunction<Object[], KV<?, ?>, Object>> res = new ArrayList<>();
-      return res;
-    }
-
-    static List<Pair<Annotation, Type>> createWrapperArgList(
-        LinkedHashMap<Type, Pair<Annotation, Type>> processArgs,
-        LinkedHashMap<Type, Pair<Annotation, Type>> onWindowArgs) {
-
-      Set<Type> union = new HashSet<>(Sets.union(processArgs.keySet(), onWindowArgs.keySet()));
-      // @Element is not supported by @OnWindowExpiration
-      union.remove(DoFn.Element.class);
-      return union.stream()
-          .map(
-              t -> {
-                Pair<Annotation, Type> processPair = processArgs.get(t);
-                Pair<Annotation, Type> windowPair = onWindowArgs.get(t);
-                Type argType = MoreObjects.firstNonNull(processPair, windowPair).getSecond();
-                Annotation processAnnotation =
-                    Optional.ofNullable(processPair).map(Pair::getFirst).orElse(null);
-                Annotation windowAnnotation =
-                    Optional.ofNullable(windowPair).map(Pair::getFirst).orElse(null);
-                Preconditions.checkState(
-                    processPair == null
-                        || windowPair == null
-                        || processAnnotation == windowAnnotation
-                        || processAnnotation.equals(windowAnnotation));
-                return Pair.of(processAnnotation, argType);
-              })
-          .collect(Collectors.toList());
-    }
-
-    static List<Pair<AnnotationDescription, TypeDefinition>> createWrapperArgs(
-        ParameterizedType inputType, List<Pair<Annotation, Type>> wrapperArgList) {
-
-      List<Pair<? extends AnnotationDescription, ? extends TypeDefinition>> res =
-          wrapperArgList.stream()
-              .map(
-                  p ->
-                      Pair.of(
-                          p.getFirst() != null
-                              ? AnnotationDescription.ForLoadedAnnotation.of(p.getFirst())
-                              : null,
-                          TypeDescription.Generic.Builder.of(p.getSecond()).build()))
-              .collect(Collectors.toList());
-
-      // add @StateId for buffer
-      res.add(
-          Pair.of(
-              AnnotationDescription.Builder.ofType(DoFn.StateId.class)
-                  .define("value", EXPANDER_STATE_NAME)
-                  .build(),
-              TypeDescription.Generic.Builder.parameterizedType(
-                      TypeDescription.ForLoadedType.of(BagState.class), getInputKvType(inputType))
-                  .build()));
-      return (List) res;
-    }
-
-    private static LinkedHashMap<Type, Pair<Annotation, Type>> extractArgs(Method method) {
-      LinkedHashMap<Type, Pair<Annotation, Type>> res = new LinkedHashMap<>();
-      if (method != null) {
-        for (int i = 0; i < method.getParameterCount(); i++) {
-          Annotation[] annotations = method.getParameterAnnotations()[i];
-          Type paramId =
-              annotations.length > 0
-                  ? getSingleAnnotation(annotations)
-                  : method.getGenericParameterTypes()[i];
-          res.put(
-              paramId,
-              Pair.of(
-                  annotations.length == 0 ? null : annotations[0],
-                  method.getGenericParameterTypes()[i]));
-        }
-      }
-      return res;
-    }
-
-    static Class<?> getSingleAnnotation(Annotation[] annotations) {
-      Preconditions.checkArgument(annotations.length == 1, Arrays.toString(annotations));
-      return annotations[0].annotationType();
-    }
-
-    /**
-     * Get arguments that must be declared by wrapper's call for both {@code @}ProcessElement and
-     * {@code @}OnWindowExpiration be callable.
-     */
-    List<Pair<AnnotationDescription, TypeDefinition>> getWrapperArgs();
-
-    /**
-     * Get parameters that should be passed to {@code @}ProcessElement from wrapper's
-     * {@code @}OnWindowExpiration
-     */
-    Object[] getProcessElementArgs(KV<?, ?> input, Object[] wrapperArgs);
-
-    /** Get parameters that should be passed to {@code @}OnWindowExpiration from wrapper's call. */
-    Object[] getOnWindowExpirationArgs(Object[] wrapperArgs);
   }
 
   private static class OnWindowExpirationInterceptor<K, V> {
