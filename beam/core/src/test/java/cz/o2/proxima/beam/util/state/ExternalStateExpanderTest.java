@@ -134,13 +134,13 @@ public class ExternalStateExpanderTest {
         pipeline,
         Create.of(
                 KV.of(
-                    "sum",
+                    "sum/ParMultiDo(Anonymous)",
                     new StateValue(
                         CoderUtils.encodeToByteArray(intCoder, 0),
                         "sum",
                         CoderUtils.encodeToByteArray(longCoder, 2L))),
                 KV.of(
-                    "sum",
+                    "sum/ParMultiDo(Anonymous)",
                     new StateValue(
                         CoderUtils.encodeToByteArray(intCoder, 1),
                         "sum",
