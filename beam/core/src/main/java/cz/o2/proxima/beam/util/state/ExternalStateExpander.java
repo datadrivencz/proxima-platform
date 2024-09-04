@@ -35,8 +35,8 @@ import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -922,13 +922,17 @@ public class ExternalStateExpander {
     static OnWindowParameterExpander of(
         ParameterizedType inputType, Method processElement, @Nullable Method onWindowExpiration) {
 
-      final Map<Type, Pair<Annotation, Integer>> processArgs = extractArgs(processElement);
-      final Map<Type, Pair<Annotation, Integer>> onWindowArgs = extractArgs(onWindowExpiration);
+      final LinkedHashMap<Type, Pair<Annotation, Type>> processArgs = extractArgs(processElement);
+      final LinkedHashMap<Type, Pair<Annotation, Type>> onWindowArgs =
+          extractArgs(onWindowExpiration);
+      final List<Pair<Annotation, Type>> wrapperArgList =
+          createWrapperArgList(processArgs, onWindowArgs);
       final List<Pair<AnnotationDescription, TypeDefinition>> wrapperArgs =
-          createWrapperArgs(
-              inputType, processArgs, onWindowArgs, processElement, onWindowExpiration);
-      final List<BiFunction<Object[], KV<?, ?>, Object>> processArgsGenerators = projectArgs(wrapperArgs, processElement, processArgs);
-      final List<BiFunction<Object[], KV<?, ?>, Object>> windowArgsGenerators = projectArgs(wrapperArgs, onWindowExpiration, onWindowArgs);
+          createWrapperArgs(inputType, wrapperArgList);
+      final List<BiFunction<Object[], KV<?, ?>, Object>> processArgsGenerators =
+          projectArgs(wrapperArgList, processArgs);
+      final List<BiFunction<Object[], KV<?, ?>, Object>> windowArgsGenerators =
+          projectArgs(wrapperArgList, onWindowArgs);
 
       return new OnWindowParameterExpander() {
         @Override
@@ -960,56 +964,52 @@ public class ExternalStateExpander {
       };
     }
 
-    static List<BiFunction<Object[], KV<?,?>, Object>> projectArgs(
-        List<Pair<AnnotationDescription, TypeDefinition>> wrapperArgs,
-        Method method,
-        Map<Type, Pair<Annotation, Integer>> argsMap) {
+    static List<BiFunction<Object[], KV<?, ?>, Object>> projectArgs(
+        List<Pair<Annotation, Type>> wrapperArgList, Map<Type, Pair<Annotation, Type>> argsMap) {
 
-      List<BiFunction<Object[], KV<?,?>, Object>> res = new ArrayList<>();
-      wrapperArgs
-          .stream()
-          .filter(p -> p.getSecond().represents())
-      Preconditions.checkState(res.size() == processArgs.size());
+      List<BiFunction<Object[], KV<?, ?>, Object>> res = new ArrayList<>();
       return res;
     }
 
-    static List<Pair<AnnotationDescription, TypeDefinition>> createWrapperArgs(
-        ParameterizedType inputType,
-        Map<Type, Pair<Annotation, Integer>> processArgs,
-        Map<Type, Pair<Annotation, Integer>> onWindowArgs,
-        Method processMehod,
-        Method onWindowMethod) {
+    static List<Pair<Annotation, Type>> createWrapperArgList(
+        LinkedHashMap<Type, Pair<Annotation, Type>> processArgs,
+        LinkedHashMap<Type, Pair<Annotation, Type>> onWindowArgs) {
 
       Set<Type> union = new HashSet<>(Sets.union(processArgs.keySet(), onWindowArgs.keySet()));
       // @Element is not supported by @OnWindowExpiration
       union.remove(DoFn.Element.class);
-      System.err.println(" Union args: " + union);
-      List<Pair<AnnotationDescription, ? extends TypeDefinition>> res =
-          union.stream()
+      return union.stream()
+          .map(
+              t -> {
+                Pair<Annotation, Type> processPair = processArgs.get(t);
+                Pair<Annotation, Type> windowPair = onWindowArgs.get(t);
+                Type argType = MoreObjects.firstNonNull(processPair, windowPair).getSecond();
+                Annotation processAnnotation =
+                    Optional.ofNullable(processPair).map(Pair::getFirst).orElse(null);
+                Annotation windowAnnotation =
+                    Optional.ofNullable(windowPair).map(Pair::getFirst).orElse(null);
+                Preconditions.checkState(
+                    processPair == null
+                        || windowPair == null
+                        || processAnnotation == windowAnnotation
+                        || processAnnotation.equals(windowAnnotation));
+                return Pair.of(processAnnotation, argType);
+              })
+          .collect(Collectors.toList());
+    }
+
+    static List<Pair<AnnotationDescription, TypeDefinition>> createWrapperArgs(
+        ParameterizedType inputType, List<Pair<Annotation, Type>> wrapperArgList) {
+
+      List<Pair<? extends AnnotationDescription, ? extends TypeDefinition>> res =
+          wrapperArgList.stream()
               .map(
-                  t -> {
-                    Pair<Annotation, Integer> processPair = processArgs.get(t);
-                    Pair<Annotation, Integer> windowPair = onWindowArgs.get(t);
-                    int argTypePos = MoreObjects.firstNonNull(processPair, windowPair).getSecond();
-                    Type argType =
-                        processPair == null
-                            ? onWindowMethod.getGenericParameterTypes()[argTypePos]
-                            : processMehod.getGenericParameterTypes()[argTypePos];
-                    Annotation processAnnotation =
-                        Optional.ofNullable(processPair).map(Pair::getFirst).orElse(null);
-                    Annotation windowAnnotation =
-                        Optional.ofNullable(windowPair).map(Pair::getFirst).orElse(null);
-                    Preconditions.checkState(
-                        processPair == null
-                            || windowPair == null
-                            || processAnnotation == windowAnnotation
-                            || processAnnotation.equals(windowAnnotation));
-                    AnnotationDescription d =
-                        processAnnotation == null
-                            ? null
-                            : AnnotationDescription.ForLoadedAnnotation.of(processAnnotation);
-                    return Pair.of(d, TypeDescription.Generic.Builder.of(argType).build());
-                  })
+                  p ->
+                      Pair.of(
+                          p.getFirst() != null
+                              ? AnnotationDescription.ForLoadedAnnotation.of(p.getFirst())
+                              : null,
+                          TypeDescription.Generic.Builder.of(p.getSecond()).build()))
               .collect(Collectors.toList());
 
       // add @StateId for buffer
@@ -1024,18 +1024,21 @@ public class ExternalStateExpander {
       return (List) res;
     }
 
-    private static Map<Type, Pair<Annotation, Integer>> extractArgs(Method method) {
-      if (method == null) {
-        return Collections.emptyMap();
-      }
-      Map<Type, Pair<Annotation, Integer>> res = new HashMap<>();
-      for (int i = 0; i < method.getParameterCount(); i++) {
-        Annotation[] annotations = method.getParameterAnnotations()[i];
-        Type paramId =
-            annotations.length > 0
-                ? getSingleAnnotation(annotations)
-                : method.getGenericParameterTypes()[i];
-        res.put(paramId, Pair.of(annotations.length == 0 ? null : annotations[0], i));
+    private static LinkedHashMap<Type, Pair<Annotation, Type>> extractArgs(Method method) {
+      LinkedHashMap<Type, Pair<Annotation, Type>> res = new LinkedHashMap<>();
+      if (method != null) {
+        for (int i = 0; i < method.getParameterCount(); i++) {
+          Annotation[] annotations = method.getParameterAnnotations()[i];
+          Type paramId =
+              annotations.length > 0
+                  ? getSingleAnnotation(annotations)
+                  : method.getGenericParameterTypes()[i];
+          res.put(
+              paramId,
+              Pair.of(
+                  annotations.length == 0 ? null : annotations[0],
+                  method.getGenericParameterTypes()[i]));
+        }
       }
       return res;
     }
