@@ -15,9 +15,14 @@
  */
 package cz.o2.proxima.beam.util.state;
 
+import static org.junit.Assert.assertEquals;
+
 import com.google.common.base.MoreObjects;
+import cz.o2.proxima.core.util.SerializableScopedValue;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.apache.beam.runners.direct.DirectRunner;
 import org.apache.beam.runners.flink.FlinkRunner;
 import org.apache.beam.sdk.Pipeline;
@@ -35,6 +40,7 @@ import org.apache.beam.sdk.state.ValueState;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.transforms.DoFn;
+import org.apache.beam.sdk.transforms.MapElements;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.WithKeys;
@@ -148,6 +154,46 @@ public class ExternalStateExpanderTest {
             .withCoder(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())),
         dummy());
     pipeline.run();
+  }
+
+  @Test
+  public void testSimpleExpandWithStateStore() throws CoderException {
+    Pipeline pipeline = createPipeline();
+    PCollection<String> inputs = pipeline.apply(Create.of("1", "2"));
+    PCollection<KV<Integer, String>> withKeys =
+        inputs.apply(
+            WithKeys.<Integer, String>of(e -> Integer.parseInt(e) % 2)
+                .withKeyType(TypeDescriptors.integers()));
+    PCollection<Long> count = withKeys.apply("sum", ParDo.of(getSumFn()));
+    PAssert.that(count).containsInAnyOrder(1L, 2L);
+    Map<String, StateValue> states = new HashMap<>();
+    ExternalStateExpander.expand(
+        pipeline,
+        Create.empty(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())),
+        collectStates(states));
+    pipeline.run();
+    assertEquals(1, states.size());
+  }
+
+  private static PTransform<PCollection<KV<String, StateValue>>, PDone> collectStates(
+      Map<String, StateValue> states) {
+
+    int code = System.identityHashCode(states);
+    final SerializableScopedValue<Integer, Map<String, StateValue>> val =
+        new SerializableScopedValue<>(code, states);
+    return new PTransform<>() {
+      @Override
+      public PDone expand(PCollection<KV<String, StateValue>> input) {
+        input.apply(
+            MapElements.into(TypeDescriptors.voids())
+                .via(
+                    e -> {
+                      val.get(code).put(e.getKey(), e.getValue());
+                      return null;
+                    }));
+        return PDone.in(input.getPipeline());
+      }
+    };
   }
 
   private @NotNull Pipeline createPipeline() {
