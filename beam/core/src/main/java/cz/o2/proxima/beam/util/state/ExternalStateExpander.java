@@ -15,12 +15,12 @@
  */
 package cz.o2.proxima.beam.util.state;
 
-import cz.o2.proxima.core.functional.BiConsumer;
-import cz.o2.proxima.core.functional.Consumer;
+import static cz.o2.proxima.beam.util.state.MethodCallUtils.getInputKvType;
+
+import cz.o2.proxima.core.functional.UnaryFunction;
 import cz.o2.proxima.core.util.ExceptionUtils;
 import cz.o2.proxima.core.util.Pair;
 import cz.o2.proxima.internal.com.google.common.annotations.VisibleForTesting;
-import cz.o2.proxima.internal.com.google.common.base.Function;
 import cz.o2.proxima.internal.com.google.common.base.Preconditions;
 import cz.o2.proxima.internal.com.google.common.collect.Iterables;
 import java.io.File;
@@ -38,8 +38,6 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import net.bytebuddy.ByteBuddy;
 import net.bytebuddy.description.annotation.AnnotationDescription;
@@ -47,6 +45,7 @@ import net.bytebuddy.description.modifier.FieldManifestation;
 import net.bytebuddy.description.modifier.Visibility;
 import net.bytebuddy.description.type.TypeDefinition;
 import net.bytebuddy.description.type.TypeDescription;
+import net.bytebuddy.description.type.TypeDescription.ForLoadedType;
 import net.bytebuddy.description.type.TypeDescription.Generic;
 import net.bytebuddy.dynamic.DynamicType.Builder;
 import net.bytebuddy.dynamic.DynamicType.Builder.MethodDefinition;
@@ -63,7 +62,6 @@ import net.bytebuddy.implementation.bind.annotation.This;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.Pipeline.PipelineVisitor;
 import org.apache.beam.sdk.coders.Coder;
-import org.apache.beam.sdk.coders.InstantCoder;
 import org.apache.beam.sdk.coders.KvCoder;
 import org.apache.beam.sdk.runners.AppliedPTransform;
 import org.apache.beam.sdk.runners.PTransformOverride;
@@ -71,18 +69,8 @@ import org.apache.beam.sdk.runners.PTransformOverrideFactory;
 import org.apache.beam.sdk.runners.PTransformOverrideFactory.PTransformReplacement;
 import org.apache.beam.sdk.runners.TransformHierarchy;
 import org.apache.beam.sdk.state.BagState;
-import org.apache.beam.sdk.state.CombiningState;
-import org.apache.beam.sdk.state.MapState;
-import org.apache.beam.sdk.state.MultimapState;
-import org.apache.beam.sdk.state.OrderedListState;
-import org.apache.beam.sdk.state.SetState;
-import org.apache.beam.sdk.state.StateBinder;
 import org.apache.beam.sdk.state.StateSpec;
 import org.apache.beam.sdk.state.StateSpecs;
-import org.apache.beam.sdk.state.ValueState;
-import org.apache.beam.sdk.state.WatermarkHoldState;
-import org.apache.beam.sdk.transforms.Combine.CombineFn;
-import org.apache.beam.sdk.transforms.CombineWithContext.CombineFnWithContext;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.DoFn.ProcessElement;
 import org.apache.beam.sdk.transforms.DoFn.StateId;
@@ -94,7 +82,6 @@ import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.WithKeys;
 import org.apache.beam.sdk.transforms.reflect.DoFnSignatures;
-import org.apache.beam.sdk.transforms.windowing.TimestampCombiner;
 import org.apache.beam.sdk.util.ByteBuddyUtils;
 import org.apache.beam.sdk.util.CoderUtils;
 import org.apache.beam.sdk.util.construction.ReplacementOutputs;
@@ -107,15 +94,12 @@ import org.apache.beam.sdk.values.PDone;
 import org.apache.beam.sdk.values.PInput;
 import org.apache.beam.sdk.values.POutput;
 import org.apache.beam.sdk.values.PValue;
-import org.apache.beam.sdk.values.TimestampedValue;
 import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.sdk.values.TupleTagList;
 import org.apache.beam.sdk.values.TypeDescriptor;
 import org.apache.beam.sdk.values.TypeDescriptors;
 import org.apache.beam.vendor.guava.v32_1_2_jre.com.google.common.reflect.TypeToken;
 import org.checkerframework.checker.nullness.qual.NonNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
-import org.joda.time.Instant;
 
 public class ExternalStateExpander {
 
@@ -254,7 +238,7 @@ public class ExternalStateExpander {
         Coder<K> keyCoder = coder.getKeyCoder();
         Coder<V> valueCoder = coder.getValueCoder();
         TypeDescriptor<StateOrInput<V>> valueDescriptor =
-            new TypeDescriptor<>(new TypeToken<>() {}) {};
+            new TypeDescriptor<>(new TypeToken<StateOrInput<V>>() {}) {};
         PCollection<KV<K, StateOrInput<V>>> state =
             transformInputs
                 .apply(
@@ -281,7 +265,7 @@ public class ExternalStateExpander {
             PCollectionList.of(state).and(inputs).apply(Flatten.pCollections());
         PCollectionTuple tuple =
             flattened.apply(
-                ParDo.of(transformedDoFn(doFn, input.getCoder()))
+                ParDo.of(transformedDoFn(doFn, input.getCoder(), mainOutputTag))
                     .withOutputTags(mainOutputTag, otherOutputs.and(stateValueTupleTag)));
         PCollection<StateValue> stateValuePCollection = tuple.get(stateValueTupleTag);
         stateValuePCollection.apply(WithKeys.of(transformName)).apply(stateSink);
@@ -300,7 +284,9 @@ public class ExternalStateExpander {
   @VisibleForTesting
   static <K, V, InputT extends KV<K, StateOrInput<V>>, OutputT>
       DoFn<InputT, OutputT> transformedDoFn(
-          DoFn<KV<K, V>, OutputT> doFn, Coder<? extends KV<K, V>> inputCoder) {
+          DoFn<KV<K, V>, OutputT> doFn,
+          Coder<? extends KV<K, V>> inputCoder,
+          TupleTag<OutputT> mainTag) {
 
     @SuppressWarnings("unchecked")
     Class<? extends DoFn<KV<K, V>, OutputT>> doFnClass =
@@ -323,13 +309,30 @@ public class ExternalStateExpander {
     ByteBuddy buddy = new ByteBuddy();
     @SuppressWarnings("unchecked")
     ParameterizedType parameterizedSuperClass =
-        getParameterizedDoFn((Class<DoFn<InputT, OutputT>>) doFn.getClass());
+        getParameterizedDoFn((Class<DoFn<KV<K, V>, OutputT>>) doFn.getClass());
     ParameterizedType inputType =
         (ParameterizedType) parameterizedSuperClass.getActualTypeArguments()[0];
+    Preconditions.checkArgument(
+        inputType.getRawType().equals(KV.class),
+        "Input type to stateful DoFn must be KV, go %s",
+        inputType);
+
     Type outputType = parameterizedSuperClass.getActualTypeArguments()[1];
+    Type kType = inputType.getActualTypeArguments()[0];
+    Type vType = inputType.getActualTypeArguments()[1];
+    Generic wrapperInput =
+        Generic.Builder.parameterizedType(
+                ForLoadedType.of(KV.class),
+                Generic.Builder.of(kType).build(),
+                Generic.Builder.parameterizedType(StateOrInput.class, vType).build())
+            .build();
 
     Generic doFnGeneric =
-        Generic.Builder.parameterizedType(DoFn.class, inputType, outputType).build();
+        Generic.Builder.parameterizedType(
+                TypeDescription.ForLoadedType.of(DoFn.class),
+                wrapperInput,
+                TypeDescription.Generic.Builder.of(outputType).build())
+            .build();
     @SuppressWarnings("unchecked")
     Builder<DoFn<InputT, OutputT>> builder =
         (Builder<DoFn<InputT, OutputT>>)
@@ -350,7 +353,7 @@ public class ExternalStateExpander {
                             ExceptionUtils.uncheckedFactory(() -> DoFn.class.getConstructor()))
                         .andThen(FieldAccessor.ofField("delegate").setsArgumentAt(0))));
 
-    builder = addProcessingMethods(doFn, inputType, builder);
+    builder = addProcessingMethods(doFn, inputType, mainTag, outputType, builder);
     Unloaded<DoFn<InputT, OutputT>> dynamicClass = builder.make();
     // FIXME
     ExceptionUtils.unchecked(() -> dynamicClass.saveIn(new File("/tmp/dynamic-debug")));
@@ -402,14 +405,16 @@ public class ExternalStateExpander {
       Builder<DoFn<InputT, OutputT>> addProcessingMethods(
           DoFn<KV<K, V>, OutputT> doFn,
           ParameterizedType inputType,
+          TupleTag<OutputT> mainTag,
+          Type outputType,
           Builder<DoFn<InputT, OutputT>> builder) {
 
     builder = addProcessingMethod(doFn, DoFn.Setup.class, builder);
     builder = addProcessingMethod(doFn, DoFn.StartBundle.class, builder);
-    builder = addProcessElementMethod(doFn, inputType, builder);
+    builder = addProcessElementMethod(doFn, inputType, mainTag, outputType, builder);
     builder = addProcessingMethod(doFn, DoFn.FinishBundle.class, builder);
     builder = addProcessingMethod(doFn, DoFn.Teardown.class, builder);
-    builder = addOnWindowExpirationMethod(doFn, inputType, builder);
+    builder = addOnWindowExpirationMethod(doFn, inputType, mainTag, builder);
     builder = addProcessingMethod(doFn, DoFn.GetInitialRestriction.class, builder);
     builder = addProcessingMethod(doFn, DoFn.SplitRestriction.class, builder);
     builder = addProcessingMethod(doFn, DoFn.GetRestrictionCoder.class, builder);
@@ -426,44 +431,30 @@ public class ExternalStateExpander {
       Builder<DoFn<InputT, OutputT>> addProcessElementMethod(
           DoFn<KV<K, V>, OutputT> doFn,
           ParameterizedType inputType,
+          TupleTag<OutputT> mainTag,
+          Type outputType,
           Builder<DoFn<InputT, OutputT>> builder) {
 
     Class<? extends Annotation> annotation = ProcessElement.class;
     Method method = findMethod(doFn, annotation);
     if (method != null) {
-      Function<Object[], Boolean> processFn = createProcessFn(doFn, method);
-      Consumer<Object[]> paramMapper = createParamMapper(method);
-      List<TypeDefinition> originalArgs =
-          Arrays.stream(method.getGenericParameterTypes())
-              .map(t -> TypeDescription.Generic.Builder.of(t).build())
-              .collect(Collectors.toList());
-
-      // add parameter for accessing buffer
-      originalArgs.add(
-          TypeDescription.Generic.Builder.parameterizedType(
-                  TypeDescription.ForLoadedType.of(BagState.class), getInputKvType(inputType))
-              .build());
+      ProcessElementParameterExpander expander =
+          ProcessElementParameterExpander.of(doFn, method, inputType, mainTag, outputType);
+      List<Pair<AnnotationDescription, TypeDefinition>> wrapperArgs = expander.getWrapperArgs();
       MethodDefinition<DoFn<InputT, OutputT>> methodDefinition =
           builder
               .defineMethod(method.getName(), method.getReturnType(), Visibility.PUBLIC)
-              .withParameters(originalArgs)
+              .withParameters(
+                  wrapperArgs.stream().map(Pair::getSecond).collect(Collectors.toList()))
               .intercept(
-                  MethodDelegation.to(
-                      new ProcessElementInterceptor<>(doFn, processFn, paramMapper, method)));
+                  MethodDelegation.to(new ProcessElementInterceptor<>(doFn, expander, method)));
 
-      // retrieve parameter annotations and apply them
-      Annotation[][] parameterAnnotations = method.getParameterAnnotations();
-      for (int i = 0; i < parameterAnnotations.length; i++) {
-        for (Annotation paramAnnotation : parameterAnnotations[i]) {
-          methodDefinition = methodDefinition.annotateParameter(i, paramAnnotation);
+      for (int i = 0; i < wrapperArgs.size(); i++) {
+        Pair<AnnotationDescription, TypeDefinition> arg = wrapperArgs.get(i);
+        if (arg.getFirst() != null) {
+          methodDefinition = methodDefinition.annotateParameter(i, arg.getFirst());
         }
       }
-      methodDefinition =
-          methodDefinition.annotateParameter(
-              originalArgs.size() - 1,
-              AnnotationDescription.Builder.ofType(DoFn.StateId.class)
-                  .define("value", EXPANDER_STATE_NAME)
-                  .build());
       return methodDefinition.annotateMethod(
           AnnotationDescription.Builder.ofType(annotation).build());
     }
@@ -474,14 +465,17 @@ public class ExternalStateExpander {
       Builder<DoFn<InputT, OutputT>> addOnWindowExpirationMethod(
           DoFn<KV<K, V>, OutputT> doFn,
           ParameterizedType inputType,
+          TupleTag<OutputT> mainTag,
           Builder<DoFn<InputT, OutputT>> builder) {
 
     Class<? extends Annotation> annotation = DoFn.OnWindowExpiration.class;
     Method onWindowExpirationMethod = findMethod(doFn, annotation);
     Method processElementMethod = findMethod(doFn, DoFn.ProcessElement.class);
+    Type outputType = doFn.getOutputTypeDescriptor().getType();
     if (processElementMethod != null) {
       OnWindowParameterExpander expander =
-          OnWindowParameterExpander.of(inputType, processElementMethod, onWindowExpirationMethod);
+          OnWindowParameterExpander.of(
+              inputType, processElementMethod, onWindowExpirationMethod, mainTag, outputType);
       List<Pair<AnnotationDescription, TypeDefinition>> wrapperArgs = expander.getWrapperArgs();
       MethodDefinition<DoFn<InputT, OutputT>> methodDefinition =
           builder
@@ -517,228 +511,6 @@ public class ExternalStateExpander {
             .filter(m -> m.getAnnotation(annotation) != null)
             .collect(Collectors.toList()),
         null);
-  }
-
-  private static Consumer<Object[]> createParamMapper(Method method) {
-    int elementPos = findAnnotation(method, a -> a instanceof DoFn.Element);
-    Preconditions.checkState(
-        elementPos < method.getParameterCount(),
-        "Missing @Element annotation on method %s",
-        method);
-    return args -> {
-      KV<?, ?> kv = (KV<?, ?>) args[elementPos];
-      args[elementPos] = KV.of(kv.getKey(), ((StateOrInput<?>) kv.getValue()).getInput());
-    };
-  }
-
-  private static Function<Object[], Boolean> createProcessFn(DoFn<?, ?> doFn, Method method) {
-    int elementPos = findAnnotation(method, a -> a instanceof DoFn.Element);
-    Preconditions.checkState(
-        elementPos < method.getParameterCount(),
-        "Missing @Element annotation on method %s",
-        method);
-    Map<String, BiConsumer<Object, StateValue>> stateUpdaterMap = getStateUpdaters(doFn);
-    return args -> {
-      @SuppressWarnings("unchecked")
-      KV<?, StateOrInput<?>> elem = (KV<?, StateOrInput<?>>) args[elementPos];
-      boolean isState = Objects.requireNonNull(elem.getValue(), "elem").isState();
-      if (isState) {
-        StateValue state = elem.getValue().getState();
-        String stateName = state.getName();
-        // find state accessor
-        int statePos =
-            findAnnotation(
-                method,
-                a -> a instanceof DoFn.StateId && ((DoFn.StateId) a).value().equals(stateName));
-        Preconditions.checkArgument(
-            statePos < method.getParameterCount(), "Missing state accessor for %s", stateName);
-        Object stateAccessor = args[statePos];
-        // find declaration of state to find coder
-        BiConsumer<Object, StateValue> updater = stateUpdaterMap.get(stateName);
-        Preconditions.checkArgument(
-            updater != null, "Missing updater for state %s in %s", stateName, stateUpdaterMap);
-        updater.accept(stateAccessor, state);
-        return false;
-      }
-      // FIXME: read this from state
-      boolean shouldBuffer = true;
-      if (shouldBuffer) {
-        // store to state
-        @SuppressWarnings("unchecked")
-        BagState<KV<?, ?>> buffer = (BagState<KV<?, ?>>) args[args.length - 1];
-        buffer.add(KV.of(elem.getKey(), elem.getValue().getInput()));
-        return false;
-      }
-      return true;
-    };
-  }
-
-  private static Map<String, BiConsumer<Object, StateValue>> getStateUpdaters(DoFn<?, ?> doFn) {
-    Field[] fields = doFn.getClass().getDeclaredFields();
-    return Arrays.stream(fields)
-        .map(f -> Pair.of(f, f.getAnnotation(DoFn.StateId.class)))
-        .filter(p -> p.getSecond() != null)
-        .map(
-            p -> {
-              p.getFirst().setAccessible(true);
-              return p;
-            })
-        .map(
-            p ->
-                Pair.of(
-                    p.getSecond().value(),
-                    createUpdater(
-                        ((StateSpec<?>)
-                            ExceptionUtils.uncheckedFactory(() -> p.getFirst().get(doFn))))))
-        .filter(p -> p.getSecond() != null)
-        .collect(Collectors.toMap(Pair::getFirst, Pair::getSecond));
-  }
-
-  @SuppressWarnings("unchecked")
-  private static @Nullable BiConsumer<Object, StateValue> createUpdater(StateSpec<?> stateSpec) {
-    AtomicReference<BiConsumer<Object, StateValue>> consumer = new AtomicReference<>();
-    stateSpec.bind(
-        "dummy",
-        new StateBinder() {
-          @Override
-          public <T> ValueState<T> bindValue(
-              String id, StateSpec<ValueState<T>> spec, Coder<T> coder) {
-            consumer.set(
-                (accessor, value) -> {
-                  ((ValueState<T>) accessor)
-                      .write(
-                          ExceptionUtils.uncheckedFactory(
-                              () -> CoderUtils.decodeFromByteArray(coder, value.getValue())));
-                });
-            return null;
-          }
-
-          @Override
-          public <T> BagState<T> bindBag(
-              String id, StateSpec<BagState<T>> spec, Coder<T> elemCoder) {
-            consumer.set(
-                (accessor, value) -> {
-                  ((BagState<T>) accessor)
-                      .add(
-                          ExceptionUtils.uncheckedFactory(
-                              () -> CoderUtils.decodeFromByteArray(elemCoder, value.getValue())));
-                });
-            return null;
-          }
-
-          @Override
-          public <T> SetState<T> bindSet(
-              String id, StateSpec<SetState<T>> spec, Coder<T> elemCoder) {
-            consumer.set(
-                (accessor, value) -> {
-                  ((SetState<T>) accessor)
-                      .add(
-                          ExceptionUtils.uncheckedFactory(
-                              () -> CoderUtils.decodeFromByteArray(elemCoder, value.getValue())));
-                });
-            return null;
-          }
-
-          @Override
-          public <KeyT, ValueT> MapState<KeyT, ValueT> bindMap(
-              String id,
-              StateSpec<MapState<KeyT, ValueT>> spec,
-              Coder<KeyT> mapKeyCoder,
-              Coder<ValueT> mapValueCoder) {
-            KvCoder<KeyT, ValueT> coder = KvCoder.of(mapKeyCoder, mapValueCoder);
-            consumer.set(
-                (accessor, value) -> {
-                  KV<KeyT, ValueT> decoded =
-                      ExceptionUtils.uncheckedFactory(
-                          () -> CoderUtils.decodeFromByteArray(coder, value.getValue()));
-                  ((MapState<KeyT, ValueT>) accessor).put(decoded.getKey(), decoded.getValue());
-                });
-            return null;
-          }
-
-          @Override
-          public <T> OrderedListState<T> bindOrderedList(
-              String id, StateSpec<OrderedListState<T>> spec, Coder<T> elemCoder) {
-            KvCoder<T, Instant> coder = KvCoder.of(elemCoder, InstantCoder.of());
-            consumer.set(
-                (accessor, value) -> {
-                  KV<T, Instant> decoded =
-                      ExceptionUtils.uncheckedFactory(
-                          () -> CoderUtils.decodeFromByteArray(coder, value.getValue()));
-                  ((OrderedListState<T>) accessor)
-                      .add(TimestampedValue.of(decoded.getKey(), decoded.getValue()));
-                });
-            return null;
-          }
-
-          @Override
-          public <KeyT, ValueT> MultimapState<KeyT, ValueT> bindMultimap(
-              String id,
-              StateSpec<MultimapState<KeyT, ValueT>> spec,
-              Coder<KeyT> keyCoder,
-              Coder<ValueT> valueCoder) {
-            KvCoder<KeyT, ValueT> coder = KvCoder.of(keyCoder, valueCoder);
-            consumer.set(
-                (accessor, value) -> {
-                  KV<KeyT, ValueT> decoded =
-                      ExceptionUtils.uncheckedFactory(
-                          () -> CoderUtils.decodeFromByteArray(coder, value.getValue()));
-                  ((MapState<KeyT, ValueT>) accessor).put(decoded.getKey(), decoded.getValue());
-                });
-            return null;
-          }
-
-          @Override
-          public <InputT, AccumT, OutputT> CombiningState<InputT, AccumT, OutputT> bindCombining(
-              String id,
-              StateSpec<CombiningState<InputT, AccumT, OutputT>> spec,
-              Coder<AccumT> accumCoder,
-              CombineFn<InputT, AccumT, OutputT> combineFn) {
-            consumer.set(
-                (accessor, value) -> {
-                  ((CombiningState<InputT, AccumT, OutputT>) accessor)
-                      .addAccum(
-                          ExceptionUtils.uncheckedFactory(
-                              () -> CoderUtils.decodeFromByteArray(accumCoder, value.getValue())));
-                });
-            return null;
-          }
-
-          @Override
-          public <InputT, AccumT, OutputT>
-              CombiningState<InputT, AccumT, OutputT> bindCombiningWithContext(
-                  String id,
-                  StateSpec<CombiningState<InputT, AccumT, OutputT>> spec,
-                  Coder<AccumT> accumCoder,
-                  CombineFnWithContext<InputT, AccumT, OutputT> combineFn) {
-            consumer.set(
-                (accessor, value) -> {
-                  ((CombiningState<InputT, AccumT, OutputT>) accessor)
-                      .addAccum(
-                          ExceptionUtils.uncheckedFactory(
-                              () -> CoderUtils.decodeFromByteArray(accumCoder, value.getValue())));
-                });
-            return null;
-          }
-
-          @Override
-          public WatermarkHoldState bindWatermark(
-              String id, StateSpec<WatermarkHoldState> spec, TimestampCombiner timestampCombiner) {
-            return null;
-          }
-        });
-    return consumer.get();
-  }
-
-  private static int findAnnotation(Method method, Predicate<Annotation> predicate) {
-    int i = 0;
-    for (Annotation[] annotations : method.getParameterAnnotations()) {
-      if (Arrays.stream(annotations).anyMatch(predicate)) {
-        break;
-      }
-      i++;
-    }
-    return i;
   }
 
   private static <K, V, InputT extends KV<K, StateOrInput<V>>, OutputT, T extends Annotation>
@@ -849,42 +621,31 @@ public class ExternalStateExpander {
     return res;
   }
 
-  static Generic getInputKvType(ParameterizedType inputType) {
-    Type keyType = inputType.getActualTypeArguments()[0];
-    Type valueType = inputType.getActualTypeArguments()[1];
-
-    // generic type: KV<K, V>
-    Generic kvType = Generic.Builder.parameterizedType(KV.class, keyType, valueType).build();
-    return kvType;
-  }
-
   private static class ProcessElementInterceptor<K, V> {
 
     private final DoFn<KV<K, V>, ?> doFn;
-    private final Function<Object[], Boolean> processFn;
-    private final Consumer<Object[]> paramMapper;
+    private final ProcessElementParameterExpander expander;
     private final Method process;
+    private final UnaryFunction<Object[], Boolean> processFn;
 
     ProcessElementInterceptor(
-        DoFn<KV<K, V>, ?> doFn,
-        Function<Object[], Boolean> processFn,
-        Consumer<Object[]> paramMapper,
-        Method process) {
+        DoFn<KV<K, V>, ?> doFn, ProcessElementParameterExpander expander, Method process) {
 
       this.doFn = doFn;
-      this.processFn = processFn;
-      this.paramMapper = paramMapper;
+      this.expander = expander;
       this.process = process;
+      this.processFn = expander.getProcessFn();
     }
 
     @RuntimeType
     public void intercept(
         @This DoFn<KV<V, StateOrInput<V>>, ?> proxy, @AllArguments Object[] allArgs) {
 
+      System.err.println(" *** input args: " + Arrays.toString(allArgs));
       if (processFn.apply(allArgs)) {
-        paramMapper.accept(allArgs);
-        ExceptionUtils.unchecked(
-            () -> process.invoke(doFn, Arrays.copyOf(allArgs, allArgs.length - 1)));
+        Object[] methodArgs = expander.getProcessElementArgs(allArgs);
+        System.err.println(" *** methodArgs: " + Arrays.toString(methodArgs));
+        ExceptionUtils.unchecked(() -> process.invoke(doFn, methodArgs));
       }
     }
   }

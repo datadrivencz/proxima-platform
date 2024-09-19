@@ -18,6 +18,7 @@ package cz.o2.proxima.beam.util.state;
 import static org.junit.Assert.assertEquals;
 
 import com.google.common.base.MoreObjects;
+import com.google.common.base.Preconditions;
 import cz.o2.proxima.core.util.SerializableScopedValue;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -209,8 +210,11 @@ public class ExternalStateExpanderTest {
 
       @ProcessElement
       public void process(
-          @Element KV<Integer, String> element, @StateId("sum") ValueState<Long> sum) {
+          OutputReceiver<Long> ignored,
+          @Element KV<Integer, String> element,
+          @StateId("sum") ValueState<Long> sum) {
 
+        Preconditions.checkArgument(ignored instanceof OutputReceiver);
         long current = MoreObjects.firstNonNull(sum.read(), 0L);
         sum.write(current + Integer.parseInt(element.getValue()));
       }

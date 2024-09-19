@@ -15,6 +15,8 @@
  */
 package cz.o2.proxima.beam.util.state;
 
+import static cz.o2.proxima.beam.util.state.MethodCallUtils.*;
+
 import cz.o2.proxima.core.util.Pair;
 import cz.o2.proxima.internal.com.google.common.base.MoreObjects;
 import cz.o2.proxima.internal.com.google.common.base.Preconditions;
@@ -24,44 +26,49 @@ import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.BiFunction;
 import java.util.stream.Collectors;
 import net.bytebuddy.description.annotation.AnnotationDescription;
+import net.bytebuddy.description.annotation.AnnotationDescription.Builder;
 import net.bytebuddy.description.type.TypeDefinition;
 import net.bytebuddy.description.type.TypeDescription;
 import org.apache.beam.sdk.state.BagState;
 import org.apache.beam.sdk.transforms.DoFn;
+import org.apache.beam.sdk.transforms.DoFn.StateId;
 import org.apache.beam.sdk.values.KV;
+import org.apache.beam.sdk.values.TupleTag;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
 interface OnWindowParameterExpander {
 
   static OnWindowParameterExpander of(
-      ParameterizedType inputType, Method processElement, @Nullable Method onWindowExpiration) {
+      ParameterizedType inputType,
+      Method processElement,
+      @Nullable Method onWindowExpiration,
+      TupleTag<?> mainTag,
+      Type outputType) {
 
-    final LinkedHashMap<Type, Pair<Annotation, Type>> processArgs = extractArgs(processElement);
-    final LinkedHashMap<Type, Pair<Annotation, Type>> onWindowArgs =
+    final LinkedHashMap<TypeId, Pair<Annotation, Type>> processArgs = extractArgs(processElement);
+    final LinkedHashMap<TypeId, Pair<Annotation, Type>> onWindowArgs =
         extractArgs(onWindowExpiration);
     final List<Pair<Annotation, Type>> wrapperArgList =
         createWrapperArgList(processArgs, onWindowArgs);
-    final List<Pair<AnnotationDescription, TypeDefinition>> wrapperArgs =
+    final LinkedHashMap<TypeId, Pair<AnnotationDescription, TypeDefinition>> wrapperArgs =
         createWrapperArgs(inputType, wrapperArgList);
     final List<BiFunction<Object[], KV<?, ?>, Object>> processArgsGenerators =
-        projectArgs(wrapperArgList, processArgs);
+        projectArgs(wrapperArgs, processArgs, mainTag, outputType);
     final List<BiFunction<Object[], KV<?, ?>, Object>> windowArgsGenerators =
-        projectArgs(wrapperArgList, onWindowArgs);
+        projectArgs(wrapperArgs, onWindowArgs, mainTag, outputType);
 
     return new OnWindowParameterExpander() {
       @Override
       public List<Pair<AnnotationDescription, TypeDefinition>> getWrapperArgs() {
-        return wrapperArgs;
+        return new ArrayList<>(wrapperArgs.values());
       }
 
       @Override
@@ -73,50 +80,16 @@ interface OnWindowParameterExpander {
       public Object[] getOnWindowExpirationArgs(Object[] wrapperArgs) {
         return fromGenerators(null, windowArgsGenerators, wrapperArgs);
       }
-
-      private Object[] fromGenerators(
-          @Nullable KV<?, ?> elem,
-          List<BiFunction<Object[], KV<?, ?>, Object>> generators,
-          Object[] wrapperArgs) {
-
-        Object[] res = new Object[generators.size()];
-        for (int i = 0; i < generators.size(); i++) {
-          res[i] = generators.get(i).apply(wrapperArgs, elem);
-        }
-        return res;
-      }
     };
   }
 
-  static List<BiFunction<Object[], KV<?, ?>, Object>> projectArgs(
-      List<Pair<Annotation, Type>> wrapperArgList,
-      LinkedHashMap<Type, Pair<Annotation, Type>> argsMap) {
-
-    List<BiFunction<Object[], KV<?, ?>, Object>> res = new ArrayList<>(argsMap.size());
-    List<Type> paramIds =
-        wrapperArgList.stream()
-            .map(p -> p.getFirst() != null ? p.getFirst().annotationType() : p.getSecond())
-            .collect(Collectors.toList());
-    for (Map.Entry<Type, Pair<Annotation, Type>> e : argsMap.entrySet()) {
-      int wrapperArg = paramIds.indexOf(e.getKey());
-      if (wrapperArg < 0) {
-        Preconditions.checkArgument(
-            e.getValue().getFirst().annotationType().equals(DoFn.Element.class));
-        res.add((args, elem) -> elem);
-      } else {
-        res.add((args, elem) -> args[wrapperArg]);
-      }
-    }
-    return res;
-  }
-
   static List<Pair<Annotation, Type>> createWrapperArgList(
-      LinkedHashMap<Type, Pair<Annotation, Type>> processArgs,
-      LinkedHashMap<Type, Pair<Annotation, Type>> onWindowArgs) {
+      LinkedHashMap<TypeId, Pair<Annotation, Type>> processArgs,
+      LinkedHashMap<TypeId, Pair<Annotation, Type>> onWindowArgs) {
 
-    Set<Type> union = new HashSet<>(Sets.union(processArgs.keySet(), onWindowArgs.keySet()));
+    Set<TypeId> union = new HashSet<>(Sets.union(processArgs.keySet(), onWindowArgs.keySet()));
     // @Element is not supported by @OnWindowExpiration
-    union.remove(DoFn.Element.class);
+    union.remove(TypeId.of(AnnotationDescription.Builder.ofType(DoFn.Element.class).build()));
     return union.stream()
         .map(
             t -> {
@@ -137,55 +110,37 @@ interface OnWindowParameterExpander {
         .collect(Collectors.toList());
   }
 
-  static List<Pair<AnnotationDescription, TypeDefinition>> createWrapperArgs(
+  static LinkedHashMap<TypeId, Pair<AnnotationDescription, TypeDefinition>> createWrapperArgs(
       ParameterizedType inputType, List<Pair<Annotation, Type>> wrapperArgList) {
 
-    List<Pair<? extends AnnotationDescription, ? extends TypeDefinition>> res =
-        wrapperArgList.stream()
-            .map(
-                p ->
+    LinkedHashMap<TypeId, Pair<AnnotationDescription, TypeDefinition>> res = new LinkedHashMap<>();
+    wrapperArgList.stream()
+        .map(
+            p ->
+                Pair.of(
+                    p.getFirst() == null ? TypeId.of(p.getSecond()) : TypeId.of(p.getFirst()),
                     Pair.of(
                         p.getFirst() != null
-                            ? AnnotationDescription.ForLoadedAnnotation.of(p.getFirst())
+                            ? (AnnotationDescription)
+                                AnnotationDescription.ForLoadedAnnotation.of(p.getFirst())
                             : null,
-                        TypeDescription.Generic.Builder.of(p.getSecond()).build()))
-            .collect(Collectors.toList());
+                        (TypeDefinition)
+                            TypeDescription.Generic.Builder.of(p.getSecond()).build())))
+        .forEachOrdered(p -> res.put(p.getFirst(), p.getSecond()));
 
     // add @StateId for buffer
-    res.add(
+    AnnotationDescription buffer =
+        Builder.ofType(StateId.class)
+            .define("value", ExternalStateExpander.EXPANDER_STATE_NAME)
+            .build();
+    res.put(
+        TypeId.of(buffer),
         Pair.of(
-            AnnotationDescription.Builder.ofType(DoFn.StateId.class)
-                .define("value", ExternalStateExpander.EXPANDER_STATE_NAME)
-                .build(),
+            buffer,
             TypeDescription.Generic.Builder.parameterizedType(
-                    TypeDescription.ForLoadedType.of(BagState.class),
-                    ExternalStateExpander.getInputKvType(inputType))
+                    TypeDescription.ForLoadedType.of(BagState.class), getInputKvType(inputType))
                 .build()));
-    return (List) res;
-  }
-
-  private static LinkedHashMap<Type, Pair<Annotation, Type>> extractArgs(Method method) {
-    LinkedHashMap<Type, Pair<Annotation, Type>> res = new LinkedHashMap<>();
-    if (method != null) {
-      for (int i = 0; i < method.getParameterCount(); i++) {
-        Annotation[] annotations = method.getParameterAnnotations()[i];
-        Type paramId =
-            annotations.length > 0
-                ? getSingleAnnotation(annotations)
-                : method.getGenericParameterTypes()[i];
-        res.put(
-            paramId,
-            Pair.of(
-                annotations.length == 0 ? null : annotations[0],
-                method.getGenericParameterTypes()[i]));
-      }
-    }
     return res;
-  }
-
-  static Class<?> getSingleAnnotation(Annotation[] annotations) {
-    Preconditions.checkArgument(annotations.length == 1, Arrays.toString(annotations));
-    return annotations[0].annotationType();
   }
 
   /**
