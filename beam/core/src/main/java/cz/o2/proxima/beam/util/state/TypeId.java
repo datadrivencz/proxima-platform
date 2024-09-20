@@ -21,8 +21,13 @@ import java.lang.annotation.Annotation;
 import java.lang.reflect.Type;
 import net.bytebuddy.description.annotation.AnnotationDescription;
 import net.bytebuddy.description.type.TypeDefinition;
+import org.apache.beam.sdk.transforms.DoFn;
+import org.apache.beam.sdk.transforms.DoFn.StateId;
 
 public class TypeId {
+
+  private static TypeId ELEMENT_TYPE =
+      TypeId.of(AnnotationDescription.Builder.ofType(DoFn.Element.class).build());
 
   public static TypeId of(Annotation annotation) {
     return new TypeId(annotation.toString());
@@ -67,5 +72,17 @@ public class TypeId {
   @Override
   public String toString() {
     return MoreObjects.toStringHelper(this).add("id", stringId).toString();
+  }
+
+  public boolean isElement() {
+    return equals(ELEMENT_TYPE);
+  }
+
+  public boolean isState(String stateName) {
+    return equals(
+        TypeId.of(
+            AnnotationDescription.Builder.ofType(StateId.class)
+                .define("value", stateName)
+                .build()));
   }
 }

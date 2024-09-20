@@ -124,23 +124,19 @@ public interface ProcessElementParameterExpander {
       DoFn<?, ?> doFn,
       Method method) {
 
-    int elementPos = findParameter(wrapperArgs.keySet(), a -> a instanceof DoFn.Element);
+    int elementPos = findParameter(wrapperArgs.keySet(), TypeId::isElement);
     Preconditions.checkState(elementPos >= 0, "Missing @Element annotation on method %s", method);
     Map<String, BiConsumer<Object, StateValue>> stateUpdaterMap = getStateUpdaters(doFn);
     return args -> {
       @SuppressWarnings("unchecked")
       KV<?, StateOrInput<?>> elem = (KV<?, StateOrInput<?>>) args[elementPos];
       boolean isState = Objects.requireNonNull(elem.getValue(), "elem").isState();
+      System.err.println(" *** args to process: " + Arrays.toString(args));
       if (isState) {
         StateValue state = elem.getValue().getState();
         String stateName = state.getName();
         // find state accessor
-        TypeId stateAnnotation =
-            TypeId.of(
-                AnnotationDescription.Builder.ofType(StateId.class)
-                    .define("value", stateName)
-                    .build());
-        int statePos = findParameter(wrapperArgs.keySet(), a -> a.equals(stateAnnotation));
+        int statePos = findParameter(wrapperArgs.keySet(), a -> a.isState(stateName));
         Preconditions.checkArgument(
             statePos < method.getParameterCount(), "Missing state accessor for %s", stateName);
         Object stateAccessor = args[statePos];
@@ -165,14 +161,15 @@ public interface ProcessElementParameterExpander {
   }
 
   private static int findParameter(Collection<TypeId> args, Predicate<TypeId> predicate) {
-
     int i = 0;
+    System.err.println(" *** searching " + args);
     for (TypeId t : args) {
       if (predicate.test(t)) {
-        break;
+        return i;
       }
+      i++;
     }
-    return i < args.size() ? i : -1;
+    return -1;
   }
 
   private static Map<String, BiConsumer<Object, StateValue>> getStateUpdaters(DoFn<?, ?> doFn) {
@@ -206,12 +203,11 @@ public interface ProcessElementParameterExpander {
           public <T> ValueState<T> bindValue(
               String id, StateSpec<ValueState<T>> spec, Coder<T> coder) {
             consumer.set(
-                (accessor, value) -> {
-                  ((ValueState<T>) accessor)
-                      .write(
-                          ExceptionUtils.uncheckedFactory(
-                              () -> CoderUtils.decodeFromByteArray(coder, value.getValue())));
-                });
+                (accessor, value) ->
+                    ((ValueState<T>) accessor)
+                        .write(
+                            ExceptionUtils.uncheckedFactory(
+                                () -> CoderUtils.decodeFromByteArray(coder, value.getValue()))));
             return null;
           }
 

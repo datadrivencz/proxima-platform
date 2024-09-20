@@ -76,8 +76,7 @@ public class MethodCallUtils {
     for (Map.Entry<TypeId, Pair<Annotation, Type>> e : argsMap.entrySet()) {
       int wrapperArg = findArgIndex(wrapperArgList.keySet(), e.getKey());
       if (wrapperArg < 0) {
-        if (TypeId.of(AnnotationDescription.Builder.ofType(DoFn.Element.class).build())
-            .equals(e.getKey())) {
+        if (e.getKey().isElement()) {
           res.add((args, elem) -> elem);
         } else if (e.getKey()
             .equals(
