@@ -45,6 +45,7 @@ import net.bytebuddy.description.annotation.AnnotationDescription.ForLoadedAnnot
 import net.bytebuddy.description.type.TypeDefinition;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.description.type.TypeDescription.ForLoadedType;
+import net.bytebuddy.description.type.TypeDescription.Generic;
 import net.bytebuddy.description.type.TypeDescription.Generic.Builder;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.InstantCoder;
@@ -84,7 +85,7 @@ public interface ProcessElementParameterExpander {
 
     final LinkedHashMap<TypeId, Pair<Annotation, Type>> processArgs = extractArgs(processElement);
     final LinkedHashMap<TypeId, Pair<AnnotationDescription, TypeDefinition>> wrapperArgs =
-        createWrapperArgs(inputType, mainTag, outputType, processArgs.values());
+        createWrapperArgs(inputType, outputType, processArgs.values());
     final List<BiFunction<Object[], KV<?, ?>, Object>> processArgsGenerators =
         projectArgs(wrapperArgs, processArgs, mainTag, outputType);
 
@@ -122,8 +123,6 @@ public interface ProcessElementParameterExpander {
       LinkedHashMap<TypeId, Pair<AnnotationDescription, TypeDefinition>> wrapperArgs,
       DoFn<?, ?> doFn,
       Method method) {
-
-    // FIXME: this messes up parameters
 
     int elementPos = findParameter(wrapperArgs.keySet(), a -> a instanceof DoFn.Element);
     Preconditions.checkState(elementPos >= 0, "Missing @Element annotation on method %s", method);
@@ -352,27 +351,16 @@ public interface ProcessElementParameterExpander {
 
   static LinkedHashMap<TypeId, Pair<AnnotationDescription, TypeDefinition>> createWrapperArgs(
       ParameterizedType inputType,
-      TupleTag<?> mainTag,
       Type outputType,
-      Collection<Pair<Annotation, Type>> wrapperArgList) {
+      Collection<Pair<Annotation, Type>> processArgs) {
 
     LinkedHashMap<TypeId, Pair<AnnotationDescription, TypeDefinition>> res = new LinkedHashMap<>();
     TypeId mainOutputReceiverId =
         TypeId.of(Builder.parameterizedType(OutputReceiver.class, outputType).build());
-    wrapperArgList.stream()
-        .map(
-            p ->
-                Pair.of(
-                    p.getFirst() == null ? TypeId.of(p.getSecond()) : TypeId.of(p.getFirst()),
-                    Pair.of(
-                        p.getFirst() != null
-                            ? (AnnotationDescription) ForLoadedAnnotation.of(p.getFirst())
-                            : null,
-                        (TypeDefinition) Builder.of(p.getSecond()).build())))
+    processArgs.stream()
+        .map(p -> transformProcessArg(inputType, p))
         .filter(p -> !p.getFirst().equals(mainOutputReceiverId))
         .forEachOrdered(p -> res.put(p.getFirst(), p.getSecond()));
-
-    System.err.println(" **** " + mainOutputReceiverId + ", " + res);
 
     // add @StateId for buffer
     AnnotationDescription annotation =
@@ -391,5 +379,19 @@ public interface ProcessElementParameterExpander {
     TypeDescription receiver = ForLoadedType.of(MultiOutputReceiver.class);
     res.put(TypeId.of(receiver), Pair.of(null, receiver));
     return res;
+  }
+
+  static Pair<TypeId, Pair<AnnotationDescription, TypeDefinition>> transformProcessArg(
+      ParameterizedType inputType, Pair<Annotation, Type> p) {
+
+    TypeId typeId = p.getFirst() == null ? TypeId.of(p.getSecond()) : TypeId.of(p.getFirst());
+    AnnotationDescription annotation =
+        p.getFirst() != null ? ForLoadedAnnotation.of(p.getFirst()) : null;
+    Generic parameterType = Builder.of(p.getSecond()).build();
+    if (typeId.equals(
+        TypeId.of(AnnotationDescription.Builder.ofType(DoFn.Element.class).build()))) {
+      parameterType = getWrapperInputType(inputType);
+    }
+    return Pair.of(typeId, Pair.of(annotation, parameterType));
   }
 }

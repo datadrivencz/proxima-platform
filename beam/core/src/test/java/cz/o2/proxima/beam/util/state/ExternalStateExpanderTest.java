@@ -233,6 +233,7 @@ public class ExternalStateExpanderTest {
     return new PTransform<>() {
       @Override
       public PDone expand(PCollection<KV<String, StateValue>> input) {
+        input.apply(MapElements.into(TypeDescriptors.voids()).via(a -> null));
         return PDone.in(input.getPipeline());
       }
     };

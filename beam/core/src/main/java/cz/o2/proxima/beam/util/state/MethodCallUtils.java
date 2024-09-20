@@ -32,6 +32,7 @@ import java.util.stream.Collectors;
 import net.bytebuddy.description.annotation.AnnotationDescription;
 import net.bytebuddy.description.type.TypeDefinition;
 import net.bytebuddy.description.type.TypeDescription;
+import net.bytebuddy.description.type.TypeDescription.ForLoadedType;
 import net.bytebuddy.description.type.TypeDescription.Generic;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.DoFn.MultiOutputReceiver;
@@ -120,19 +121,23 @@ public class MethodCallUtils {
     LinkedHashMap<TypeId, Pair<Annotation, Type>> res = new LinkedHashMap<>();
     if (method != null) {
       for (int i = 0; i < method.getParameterCount(); i++) {
+        Type parameterType = method.getGenericParameterTypes()[i];
+        verifyArg(parameterType);
         Annotation[] annotations = method.getParameterAnnotations()[i];
         TypeId paramId =
             annotations.length > 0
                 ? TypeId.of(getSingleAnnotation(annotations))
-                : TypeId.of(method.getGenericParameterTypes()[i]);
-        res.put(
-            paramId,
-            Pair.of(
-                annotations.length == 0 ? null : annotations[0],
-                method.getGenericParameterTypes()[i]));
+                : TypeId.of(parameterType);
+        res.put(paramId, Pair.of(annotations.length == 0 ? null : annotations[0], parameterType));
       }
     }
     return res;
+  }
+
+  private static void verifyArg(Type parameterType) {
+    Preconditions.checkArgument(
+        !(parameterType instanceof DoFn.ProcessContext),
+        "ProcessContext is not supported. Please use the new-style @Element, @Timestamp, etc.");
   }
 
   static Annotation getSingleAnnotation(Annotation[] annotations) {
@@ -163,6 +168,16 @@ public class MethodCallUtils {
         multiOutput.get(mainTag).outputWithTimestamp(output, timestamp);
       }
     };
+  }
+
+  static Generic getWrapperInputType(ParameterizedType inputType) {
+    Type kType = inputType.getActualTypeArguments()[0];
+    Type vType = inputType.getActualTypeArguments()[1];
+    return Generic.Builder.parameterizedType(
+            ForLoadedType.of(KV.class),
+            Generic.Builder.of(kType).build(),
+            Generic.Builder.parameterizedType(StateOrInput.class, vType).build())
+        .build();
   }
 
   private MethodCallUtils() {}

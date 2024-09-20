@@ -16,6 +16,7 @@
 package cz.o2.proxima.beam.util.state;
 
 import static cz.o2.proxima.beam.util.state.MethodCallUtils.getInputKvType;
+import static cz.o2.proxima.beam.util.state.MethodCallUtils.getWrapperInputType;
 
 import cz.o2.proxima.core.functional.UnaryFunction;
 import cz.o2.proxima.core.util.ExceptionUtils;
@@ -45,7 +46,6 @@ import net.bytebuddy.description.modifier.FieldManifestation;
 import net.bytebuddy.description.modifier.Visibility;
 import net.bytebuddy.description.type.TypeDefinition;
 import net.bytebuddy.description.type.TypeDescription;
-import net.bytebuddy.description.type.TypeDescription.ForLoadedType;
 import net.bytebuddy.description.type.TypeDescription.Generic;
 import net.bytebuddy.dynamic.DynamicType.Builder;
 import net.bytebuddy.dynamic.DynamicType.Builder.MethodDefinition;
@@ -318,14 +318,7 @@ public class ExternalStateExpander {
         inputType);
 
     Type outputType = parameterizedSuperClass.getActualTypeArguments()[1];
-    Type kType = inputType.getActualTypeArguments()[0];
-    Type vType = inputType.getActualTypeArguments()[1];
-    Generic wrapperInput =
-        Generic.Builder.parameterizedType(
-                ForLoadedType.of(KV.class),
-                Generic.Builder.of(kType).build(),
-                Generic.Builder.parameterizedType(StateOrInput.class, vType).build())
-            .build();
+    Generic wrapperInput = getWrapperInputType(inputType);
 
     Generic doFnGeneric =
         Generic.Builder.parameterizedType(
@@ -641,10 +634,8 @@ public class ExternalStateExpander {
     public void intercept(
         @This DoFn<KV<V, StateOrInput<V>>, ?> proxy, @AllArguments Object[] allArgs) {
 
-      System.err.println(" *** input args: " + Arrays.toString(allArgs));
       if (processFn.apply(allArgs)) {
         Object[] methodArgs = expander.getProcessElementArgs(allArgs);
-        System.err.println(" *** methodArgs: " + Arrays.toString(methodArgs));
         ExceptionUtils.unchecked(() -> process.invoke(doFn, methodArgs));
       }
     }
