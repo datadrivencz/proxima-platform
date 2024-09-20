@@ -71,6 +71,10 @@ import org.apache.beam.sdk.runners.TransformHierarchy;
 import org.apache.beam.sdk.state.BagState;
 import org.apache.beam.sdk.state.StateSpec;
 import org.apache.beam.sdk.state.StateSpecs;
+import org.apache.beam.sdk.state.TimeDomain;
+import org.apache.beam.sdk.state.Timer;
+import org.apache.beam.sdk.state.TimerSpec;
+import org.apache.beam.sdk.state.TimerSpecs;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.DoFn.ProcessElement;
 import org.apache.beam.sdk.transforms.DoFn.StateId;
@@ -105,6 +109,8 @@ public class ExternalStateExpander {
 
   static final String EXPANDER_STATE_SPEC = "expanderStateSpec";
   static final String EXPANDER_STATE_NAME = "_expanderBuf";
+  static final String EXPANDER_TIMER_SPEC = "expanderTimerSpec";
+  static final String EXPANDER_TIMER_NAME = "_expanderTimer";
 
   /**
    * Expand the given @{link Pipeline} to support external state store and restore
@@ -375,8 +381,12 @@ public class ExternalStateExpander {
       }
     }
     delegate =
-        delegate.andThen(
-            FieldAccessor.ofField(EXPANDER_STATE_SPEC).setsValue(StateSpecs.bag(inputCoder)));
+        delegate
+            .andThen(
+                FieldAccessor.ofField(EXPANDER_STATE_SPEC).setsValue(StateSpecs.bag(inputCoder)))
+            .andThen(
+                FieldAccessor.ofField(EXPANDER_TIMER_SPEC)
+                    .setsValue(TimerSpecs.timer(TimeDomain.EVENT_TIME)));
     return delegate;
   }
 
@@ -415,6 +425,8 @@ public class ExternalStateExpander {
     builder = addProcessingMethod(doFn, DoFn.GetInitialWatermarkEstimatorState.class, builder);
     builder = addProcessingMethod(doFn, DoFn.NewWatermarkEstimator.class, builder);
     builder = addProcessingMethod(doFn, DoFn.NewTracker.class, builder);
+    builder = addProcessingMethod(doFn, DoFn.OnTimer.class, builder);
+    builder = addTimerFlushMethod(doFn, builder);
 
     // FIXME: timer callbacks
     return builder;
@@ -496,6 +508,49 @@ public class ExternalStateExpander {
     return builder;
   }
 
+  private static <K, V, OutputT, InputT extends KV<K, StateOrInput<V>>>
+      Builder<DoFn<InputT, OutputT>> addTimerFlushMethod(
+          DoFn<KV<K, V>, OutputT> doFn, Builder<DoFn<InputT, OutputT>> builder) {
+
+    List<Pair<Annotation, Type>> states =
+        Arrays.stream(doFn.getClass().getDeclaredFields())
+            .map(
+                f ->
+                    Pair.of(
+                        (Annotation) f.getAnnotation(DoFn.StateId.class),
+                        ((ParameterizedType) f.getGenericType()).getActualTypeArguments()[0]))
+            .filter(p -> p.getFirst() != null)
+            .collect(Collectors.toList());
+
+    List<Type> types = states.stream().map(Pair::getSecond).collect(Collectors.toList());
+    types.add(Timer.class);
+    types.add(DoFn.MultiOutputReceiver.class);
+
+    MethodDefinition<DoFn<InputT, OutputT>> methodDefinition =
+        builder
+            .defineMethod("expanderFlushTimer", void.class, Visibility.PUBLIC)
+            .withParameters(types)
+            .intercept(MethodDelegation.to(new TimerFlushInterceptor<>()));
+
+    // retrieve parameter annotations and apply them
+    for (int i = 0; i < states.size(); i++) {
+      Annotation ann = states.get(i).getFirst();
+      if (ann != null) {
+        methodDefinition = methodDefinition.annotateParameter(i, ann);
+      }
+    }
+    methodDefinition =
+        methodDefinition.annotateParameter(
+            states.size(),
+            AnnotationDescription.Builder.ofType(DoFn.TimerId.class)
+                .define("value", EXPANDER_TIMER_NAME)
+                .build());
+    return methodDefinition.annotateMethod(
+        AnnotationDescription.Builder.ofType(DoFn.OnTimer.class)
+            .define("value", EXPANDER_TIMER_NAME)
+            .build());
+  }
+
   private static <K, V, OutputT> Method findMethod(
       DoFn<KV<K, V>, OutputT> doFn, Class<? extends Annotation> annotation) {
 
@@ -562,6 +617,8 @@ public class ExternalStateExpander {
                     .build())
             .build();
 
+    Generic timerSpecFieldType = Generic.Builder.of(TimerSpec.class).build();
+
     builder =
         builder
             .defineField(
@@ -571,6 +628,17 @@ public class ExternalStateExpander {
             .annotateField(
                 AnnotationDescription.Builder.ofType(DoFn.StateId.class)
                     .define("value", EXPANDER_STATE_NAME)
+                    .build());
+
+    builder =
+        builder
+            .defineField(
+                EXPANDER_TIMER_SPEC,
+                timerSpecFieldType,
+                Visibility.PUBLIC.getMask() + FieldManifestation.FINAL.getMask())
+            .annotateField(
+                AnnotationDescription.Builder.ofType(DoFn.TimerId.class)
+                    .define("value", EXPANDER_TIMER_NAME)
                     .build());
     return builder;
   }
@@ -674,6 +742,13 @@ public class ExternalStateExpander {
       // invoke onWindowExpiration
       ExceptionUtils.unchecked(
           () -> onWindowExpiration.invoke(doFn, expander.getOnWindowExpirationArgs(allArgs)));
+    }
+  }
+
+  private static class TimerFlushInterceptor<K, V> {
+    @RuntimeType
+    public void intercept(@This DoFn<KV<V, StateOrInput<V>>, ?> doFn, @AllArguments Object[] args) {
+      // FIXME
     }
   }
 }

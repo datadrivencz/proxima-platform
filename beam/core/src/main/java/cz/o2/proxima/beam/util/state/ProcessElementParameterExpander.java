@@ -58,6 +58,7 @@ import org.apache.beam.sdk.state.OrderedListState;
 import org.apache.beam.sdk.state.SetState;
 import org.apache.beam.sdk.state.StateBinder;
 import org.apache.beam.sdk.state.StateSpec;
+import org.apache.beam.sdk.state.Timer;
 import org.apache.beam.sdk.state.ValueState;
 import org.apache.beam.sdk.state.WatermarkHoldState;
 import org.apache.beam.sdk.transforms.Combine.CombineFn;
@@ -131,7 +132,6 @@ public interface ProcessElementParameterExpander {
       @SuppressWarnings("unchecked")
       KV<?, StateOrInput<?>> elem = (KV<?, StateOrInput<?>>) args[elementPos];
       boolean isState = Objects.requireNonNull(elem.getValue(), "elem").isState();
-      System.err.println(" *** args to process: " + Arrays.toString(args));
       if (isState) {
         StateValue state = elem.getValue().getState();
         String stateName = state.getName();
@@ -162,7 +162,6 @@ public interface ProcessElementParameterExpander {
 
   private static int findParameter(Collection<TypeId> args, Predicate<TypeId> predicate) {
     int i = 0;
-    System.err.println(" *** searching " + args);
     for (TypeId t : args) {
       if (predicate.test(t)) {
         return i;
@@ -358,15 +357,23 @@ public interface ProcessElementParameterExpander {
         .filter(p -> !p.getFirst().equals(mainOutputReceiverId))
         .forEachOrdered(p -> res.put(p.getFirst(), p.getSecond()));
 
+    // add @TimerId for flush timer
+    AnnotationDescription timerAnnotation =
+        AnnotationDescription.Builder.ofType(DoFn.TimerId.class)
+            .define("value", ExternalStateExpander.EXPANDER_TIMER_NAME)
+            .build();
+    res.put(
+        TypeId.of(timerAnnotation),
+        Pair.of(timerAnnotation, TypeDescription.Generic.Builder.of(Timer.class).build()));
     // add @StateId for buffer
-    AnnotationDescription annotation =
+    AnnotationDescription stateAnnotation =
         AnnotationDescription.Builder.ofType(StateId.class)
             .define("value", ExternalStateExpander.EXPANDER_STATE_NAME)
             .build();
     res.put(
-        TypeId.of(annotation),
+        TypeId.of(stateAnnotation),
         Pair.of(
-            annotation,
+            stateAnnotation,
             TypeDescription.Generic.Builder.parameterizedType(
                     TypeDescription.ForLoadedType.of(BagState.class), getInputKvType(inputType))
                 .build()));
