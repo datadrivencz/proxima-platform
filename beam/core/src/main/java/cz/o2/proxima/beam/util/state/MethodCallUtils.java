@@ -32,6 +32,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
 import java.util.stream.Collectors;
@@ -101,7 +102,7 @@ public class MethodCallUtils {
       int wrapperArg = findArgIndex(wrapperArgList.keySet(), e.getKey());
       if (wrapperArg < 0) {
         if (e.getKey().isElement()) {
-          res.add((args, elem) -> elem);
+          res.add((args, elem) -> Objects.requireNonNull(elem));
         } else if (e.getKey()
             .equals(
                 TypeId.of(
@@ -123,10 +124,19 @@ public class MethodCallUtils {
                   + wrapperArgList.keySet());
         }
       } else {
-        res.add((args, elem) -> args[wrapperArg]);
+        if (e.getKey().isElement()) {
+          res.add((args, elem) -> extractValue((KV<?, StateOrInput<?>>) args[wrapperArg]));
+        } else {
+          res.add((args, elem) -> args[wrapperArg]);
+        }
       }
     }
     return res;
+  }
+
+  private static KV<?, ?> extractValue(KV<?, StateOrInput<?>> arg) {
+    Preconditions.checkArgument(!arg.getValue().isState());
+    return KV.of(arg.getKey(), arg.getValue().getInput());
   }
 
   private static int findArgIndex(Collection<TypeId> collection, TypeId key) {
@@ -359,10 +369,13 @@ public class MethodCallUtils {
     return consumer.get();
   }
 
-  static Map<String, BiFunction<Object, byte[], Iterable<StateValue>>> getStateReaders(
+  static LinkedHashMap<String, BiFunction<Object, byte[], Iterable<StateValue>>> getStateReaders(
       DoFn<?, ?> doFn) {
+
     Field[] fields = doFn.getClass().getDeclaredFields();
-    return Arrays.stream(fields)
+    LinkedHashMap<String, BiFunction<Object, byte[], Iterable<StateValue>>> res =
+        new LinkedHashMap<>();
+    Arrays.stream(fields)
         .map(f -> Pair.of(f, f.getAnnotation(DoFn.StateId.class)))
         .filter(p -> p.getSecond() != null)
         .map(
@@ -378,7 +391,8 @@ public class MethodCallUtils {
                         ((StateSpec<?>)
                             ExceptionUtils.uncheckedFactory(() -> p.getFirst().get(doFn))))))
         .filter(p -> p.getSecond() != null)
-        .collect(Collectors.toMap(Pair::getFirst, Pair::getSecond));
+        .forEachOrdered(p -> res.put(p.getFirst(), p.getSecond()));
+    return res;
   }
 
   @SuppressWarnings("unchecked")

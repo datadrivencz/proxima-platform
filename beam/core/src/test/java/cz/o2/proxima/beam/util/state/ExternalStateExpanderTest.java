@@ -214,6 +214,7 @@ public class ExternalStateExpanderTest {
           @Element KV<Integer, String> element,
           @StateId("sum") ValueState<Long> sum) {
 
+        System.err.println(" *** " + ignored + ", " + element);
         Preconditions.checkArgument(ignored instanceof OutputReceiver);
         long current = MoreObjects.firstNonNull(sum.read(), 0L);
         sum.write(current + Integer.parseInt(element.getValue()));

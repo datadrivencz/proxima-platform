@@ -15,8 +15,7 @@
  */
 package cz.o2.proxima.beam.util.state;
 
-import static cz.o2.proxima.beam.util.state.MethodCallUtils.getInputKvType;
-import static cz.o2.proxima.beam.util.state.MethodCallUtils.getWrapperInputType;
+import static cz.o2.proxima.beam.util.state.MethodCallUtils.*;
 
 import cz.o2.proxima.core.functional.UnaryFunction;
 import cz.o2.proxima.core.util.ExceptionUtils;
@@ -34,11 +33,13 @@ import java.lang.reflect.Type;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.BiFunction;
 import java.util.stream.Collectors;
 import net.bytebuddy.ByteBuddy;
 import net.bytebuddy.description.annotation.AnnotationDescription;
@@ -76,6 +77,8 @@ import org.apache.beam.sdk.state.Timer;
 import org.apache.beam.sdk.state.TimerSpec;
 import org.apache.beam.sdk.state.TimerSpecs;
 import org.apache.beam.sdk.transforms.DoFn;
+import org.apache.beam.sdk.transforms.DoFn.MultiOutputReceiver;
+import org.apache.beam.sdk.transforms.DoFn.OutputReceiver;
 import org.apache.beam.sdk.transforms.DoFn.ProcessElement;
 import org.apache.beam.sdk.transforms.DoFn.StateId;
 import org.apache.beam.sdk.transforms.DoFn.TimerId;
@@ -111,6 +114,8 @@ public class ExternalStateExpander {
   static final String EXPANDER_STATE_NAME = "_expanderBuf";
   static final String EXPANDER_TIMER_SPEC = "expanderTimerSpec";
   static final String EXPANDER_TIMER_NAME = "_expanderTimer";
+
+  static final TupleTag<StateValue> stateValueTupleTag = new TupleTag<>() {};
 
   /**
    * Expand the given @{link Pipeline} to support external state store and restore
@@ -209,7 +214,6 @@ public class ExternalStateExpander {
             .apply(Filter.by(kv -> kv.getKey().equals(transformName)))
             .apply(MapElements.into(TypeDescriptor.of(StateValue.class)).via(KV::getValue));
     TupleTag<POutput> mainOutputTag = rawTransform.getMainOutputTag();
-    TupleTag<StateValue> stateValueTupleTag = new TupleTag<>() {};
     return PTransformReplacement.of(
         pMainInput,
         transformedParDo(
@@ -217,7 +221,6 @@ public class ExternalStateExpander {
             transformInputs,
             (DoFn) doFn,
             mainOutputTag,
-            stateValueTupleTag,
             TupleTagList.of(
                 transform.getOutputs().keySet().stream()
                     .filter(t -> !t.equals(mainOutputTag))
@@ -232,7 +235,6 @@ public class ExternalStateExpander {
           PCollection<StateValue> transformInputs,
           DoFn<KV<K, V>, OutputT> doFn,
           TupleTag<OutputT> mainOutputTag,
-          TupleTag<StateValue> stateValueTupleTag,
           TupleTagList otherOutputs,
           PTransform<PCollection<KV<String, StateValue>>, PDone> stateSink) {
 
@@ -271,7 +273,7 @@ public class ExternalStateExpander {
             PCollectionList.of(state).and(inputs).apply(Flatten.pCollections());
         PCollectionTuple tuple =
             flattened.apply(
-                ParDo.of(transformedDoFn(doFn, input.getCoder(), mainOutputTag))
+                ParDo.of(transformedDoFn(doFn, (KvCoder<K, V>) input.getCoder(), mainOutputTag))
                     .withOutputTags(mainOutputTag, otherOutputs.and(stateValueTupleTag)));
         PCollection<StateValue> stateValuePCollection = tuple.get(stateValueTupleTag);
         stateValuePCollection.apply(WithKeys.of(transformName)).apply(stateSink);
@@ -290,9 +292,7 @@ public class ExternalStateExpander {
   @VisibleForTesting
   static <K, V, InputT extends KV<K, StateOrInput<V>>, OutputT>
       DoFn<InputT, OutputT> transformedDoFn(
-          DoFn<KV<K, V>, OutputT> doFn,
-          Coder<? extends KV<K, V>> inputCoder,
-          TupleTag<OutputT> mainTag) {
+          DoFn<KV<K, V>, OutputT> doFn, KvCoder<K, V> inputCoder, TupleTag<OutputT> mainTag) {
 
     @SuppressWarnings("unchecked")
     Class<? extends DoFn<KV<K, V>, OutputT>> doFnClass =
@@ -352,7 +352,9 @@ public class ExternalStateExpander {
                             ExceptionUtils.uncheckedFactory(() -> DoFn.class.getConstructor()))
                         .andThen(FieldAccessor.ofField("delegate").setsArgumentAt(0))));
 
-    builder = addProcessingMethods(doFn, inputType, mainTag, outputType, builder);
+    builder =
+        addProcessingMethods(
+            doFn, inputType, inputCoder.getKeyCoder(), mainTag, outputType, builder);
     Unloaded<DoFn<InputT, OutputT>> dynamicClass = builder.make();
     // FIXME
     ExceptionUtils.unchecked(() -> dynamicClass.saveIn(new File("/tmp/dynamic-debug")));
@@ -408,6 +410,7 @@ public class ExternalStateExpander {
       Builder<DoFn<InputT, OutputT>> addProcessingMethods(
           DoFn<KV<K, V>, OutputT> doFn,
           ParameterizedType inputType,
+          Coder<K> keyCoder,
           TupleTag<OutputT> mainTag,
           Type outputType,
           Builder<DoFn<InputT, OutputT>> builder) {
@@ -426,7 +429,7 @@ public class ExternalStateExpander {
     builder = addProcessingMethod(doFn, DoFn.NewWatermarkEstimator.class, builder);
     builder = addProcessingMethod(doFn, DoFn.NewTracker.class, builder);
     builder = addProcessingMethod(doFn, DoFn.OnTimer.class, builder);
-    builder = addTimerFlushMethod(doFn, builder);
+    builder = addTimerFlushMethod(doFn, inputType, keyCoder, stateValueTupleTag, builder);
 
     // FIXME: timer callbacks
     return builder;
@@ -510,7 +513,11 @@ public class ExternalStateExpander {
 
   private static <K, V, OutputT, InputT extends KV<K, StateOrInput<V>>>
       Builder<DoFn<InputT, OutputT>> addTimerFlushMethod(
-          DoFn<KV<K, V>, OutputT> doFn, Builder<DoFn<InputT, OutputT>> builder) {
+          DoFn<KV<K, V>, OutputT> doFn,
+          ParameterizedType inputType,
+          Coder<K> keyCoder,
+          TupleTag stateTag,
+          Builder<DoFn<InputT, OutputT>> builder) {
 
     List<Pair<Annotation, Type>> states =
         Arrays.stream(doFn.getClass().getDeclaredFields())
@@ -523,6 +530,8 @@ public class ExternalStateExpander {
             .collect(Collectors.toList());
 
     List<Type> types = states.stream().map(Pair::getSecond).collect(Collectors.toList());
+    // add parameter for key
+    types.add(inputType.getActualTypeArguments()[0]);
     types.add(Timer.class);
     types.add(DoFn.MultiOutputReceiver.class);
 
@@ -530,7 +539,7 @@ public class ExternalStateExpander {
         builder
             .defineMethod("expanderFlushTimer", void.class, Visibility.PUBLIC)
             .withParameters(types)
-            .intercept(MethodDelegation.to(new TimerFlushInterceptor<>()));
+            .intercept(MethodDelegation.to(new TimerFlushInterceptor<>(doFn, keyCoder, stateTag)));
 
     // retrieve parameter annotations and apply them
     for (int i = 0; i < states.size(); i++) {
@@ -541,7 +550,10 @@ public class ExternalStateExpander {
     }
     methodDefinition =
         methodDefinition.annotateParameter(
-            states.size(),
+            states.size(), AnnotationDescription.Builder.ofType(DoFn.Key.class).build());
+    methodDefinition =
+        methodDefinition.annotateParameter(
+            states.size() + 1,
             AnnotationDescription.Builder.ofType(DoFn.TimerId.class)
                 .define("value", EXPANDER_TIMER_NAME)
                 .build());
@@ -746,9 +758,33 @@ public class ExternalStateExpander {
   }
 
   private static class TimerFlushInterceptor<K, V> {
+
+    private final LinkedHashMap<String, BiFunction<Object, byte[], Iterable<StateValue>>>
+        stateReaders;
+    private final Coder<K> keyCoder;
+    private final TupleTag<StateValue> stateTag;
+
+    TimerFlushInterceptor(
+        DoFn<KV<K, V>, ?> doFn, Coder<K> keyCoder, TupleTag<StateValue> stateTag) {
+      this.stateReaders = getStateReaders(doFn);
+      this.keyCoder = keyCoder;
+      this.stateTag = stateTag;
+    }
+
     @RuntimeType
     public void intercept(@This DoFn<KV<V, StateOrInput<V>>, ?> doFn, @AllArguments Object[] args) {
-      // FIXME
+      @SuppressWarnings("unchecked")
+      K key = (K) args[args.length - 3];
+      MultiOutputReceiver outputReceiver = (MultiOutputReceiver) args[args.length - 1];
+      OutputReceiver<StateValue> output = outputReceiver.get(stateTag);
+      byte[] keyBytes =
+          ExceptionUtils.uncheckedFactory(() -> CoderUtils.encodeToByteArray(keyCoder, key));
+      int i = 0;
+      for (BiFunction<Object, byte[], Iterable<StateValue>> f : stateReaders.values()) {
+        Object accessor = args[i++];
+        System.err.println(" *** reading from " + accessor);
+        f.apply(accessor, keyBytes).forEach(output::output);
+      }
     }
   }
 }

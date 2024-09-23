@@ -47,10 +47,9 @@ import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.DoFn.MultiOutputReceiver;
 import org.apache.beam.sdk.transforms.DoFn.OutputReceiver;
 import org.apache.beam.sdk.transforms.DoFn.StateId;
-import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.TupleTag;
-import org.joda.time.Duration;
+import org.joda.time.Instant;
 
 public interface ProcessElementParameterExpander {
 
@@ -110,7 +109,8 @@ public interface ProcessElementParameterExpander {
       KV<?, StateOrInput<?>> elem = (KV<?, StateOrInput<?>>) args[elementPos];
       Timer flushTimer = (Timer) args[args.length - 3];
       // FIXME: set for particular timestamp
-      flushTimer.set(BoundedWindow.TIMESTAMP_MAX_VALUE.minus(Duration.standardDays(90)));
+      System.err.println(" *** " + elem + ", " + flushTimer.getCurrentRelativeTime());
+      flushTimer.set(new Instant(0));
       boolean isState = Objects.requireNonNull(elem.getValue(), "elem").isState();
       if (isState) {
         StateValue state = elem.getValue().getState();
@@ -128,7 +128,8 @@ public interface ProcessElementParameterExpander {
         return false;
       }
       // FIXME: read this from state
-      boolean shouldBuffer = true;
+      // FIXME: set to 'true' for most tests to work now
+      boolean shouldBuffer = false;
       if (shouldBuffer) {
         // store to state
         @SuppressWarnings("unchecked")
