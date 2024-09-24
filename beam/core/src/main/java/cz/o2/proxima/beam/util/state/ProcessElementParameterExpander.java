@@ -21,7 +21,6 @@ import static cz.o2.proxima.beam.util.state.MethodCallUtils.projectArgs;
 import cz.o2.proxima.core.functional.BiConsumer;
 import cz.o2.proxima.core.functional.UnaryFunction;
 import cz.o2.proxima.core.util.Pair;
-import cz.o2.proxima.internal.com.google.common.base.MoreObjects;
 import cz.o2.proxima.internal.com.google.common.base.Preconditions;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
@@ -113,7 +112,7 @@ public interface ProcessElementParameterExpander {
       KV<?, StateOrInput<?>> elem = (KV<?, StateOrInput<?>>) args[elementPos];
       Timer flushTimer = (Timer) args[args.length - 4];
       @SuppressWarnings("unchecked")
-      ValueState<Boolean> finishedState = (ValueState<Boolean>) args[args.length - 3];
+      ValueState<Instant> finishedState = (ValueState<Instant>) args[args.length - 3];
       flushTimer.set(stateWriteInstant);
       boolean isState = Objects.requireNonNull(elem.getValue(), "elem").isState();
       if (isState) {
@@ -131,7 +130,10 @@ public interface ProcessElementParameterExpander {
         updater.accept(stateAccessor, state);
         return false;
       }
-      boolean shouldBuffer = !MoreObjects.firstNonNull(finishedState.read(), false);
+      Instant nextFlush = finishedState.read();
+      boolean shouldBuffer = nextFlush == null /* we have not finished reading state */
+          // FIXME: || nextFlush.isBefore(/* timestamp */)
+          ;
       System.err.println(
           " *** process "
               + elem
@@ -186,13 +188,13 @@ public interface ProcessElementParameterExpander {
     // add @StateId for finished buffer
     AnnotationDescription finishedAnnotation =
         AnnotationDescription.Builder.ofType(DoFn.StateId.class)
-            .define("value", ExternalStateExpander.EXPANDER_FINISHED_STATE_NAME)
+            .define("value", ExternalStateExpander.EXPANDER_FLUSH_STATE_NAME)
             .build();
     res.put(
         TypeId.of(finishedAnnotation),
         Pair.of(
             finishedAnnotation,
-            TypeDescription.Generic.Builder.parameterizedType(ValueState.class, Boolean.class)
+            TypeDescription.Generic.Builder.parameterizedType(ValueState.class, Instant.class)
                 .build()));
 
     // add @StateId for buffer

@@ -115,8 +115,8 @@ public class ExternalStateExpander {
 
   static final String EXPANDER_BUF_STATE_SPEC = "expanderBufStateSpec";
   static final String EXPANDER_BUF_STATE_NAME = "_expanderBuf";
-  static final String EXPANDER_FINISHED_STATE_SPEC = "expanderFinishedStateSpec";
-  static final String EXPANDER_FINISHED_STATE_NAME = "_expanderFinished";
+  static final String EXPANDER_FLUSH_STATE_SPEC = "expanderFlushStateSpec";
+  static final String EXPANDER_FLUSH_STATE_NAME = "_expanderFlush";
   static final String EXPANDER_TIMER_SPEC = "expanderTimerSpec";
   static final String EXPANDER_TIMER_NAME = "_expanderTimer";
 
@@ -426,8 +426,7 @@ public class ExternalStateExpander {
             .andThen(
                 FieldAccessor.ofField(EXPANDER_BUF_STATE_SPEC)
                     .setsValue(StateSpecs.bag(inputCoder)))
-            .andThen(
-                FieldAccessor.ofField(EXPANDER_FINISHED_STATE_SPEC).setsValue(StateSpecs.value()))
+            .andThen(FieldAccessor.ofField(EXPANDER_FLUSH_STATE_SPEC).setsValue(StateSpecs.value()))
             .andThen(
                 FieldAccessor.ofField(EXPANDER_TIMER_SPEC)
                     .setsValue(TimerSpecs.timer(TimeDomain.EVENT_TIME)));
@@ -587,7 +586,7 @@ public class ExternalStateExpander {
     types.add(TypeDescription.Generic.Builder.of(inputType.getActualTypeArguments()[0]).build());
     types.add(TypeDescription.ForLoadedType.of(Timer.class));
     types.add(
-        TypeDescription.Generic.Builder.parameterizedType(ValueState.class, Boolean.class).build());
+        TypeDescription.Generic.Builder.parameterizedType(ValueState.class, Instant.class).build());
     types.add(TypeDescription.Generic.Builder.parameterizedType(BagState.class, inputType).build());
     types.add(TypeDescription.ForLoadedType.of(DoFn.MultiOutputReceiver.class));
 
@@ -622,7 +621,7 @@ public class ExternalStateExpander {
         methodDefinition.annotateParameter(
             states.size() + 3,
             AnnotationDescription.Builder.ofType(DoFn.StateId.class)
-                .define("value", EXPANDER_FINISHED_STATE_NAME)
+                .define("value", EXPANDER_FLUSH_STATE_NAME)
                 .build());
     methodDefinition =
         methodDefinition.annotateParameter(
@@ -701,11 +700,11 @@ public class ExternalStateExpander {
                         TypeDescription.ForLoadedType.of(BagState.class), kvType)
                     .build())
             .build();
-    // type: StateSpec<ValueState<Boolean>>
+    // type: StateSpec<ValueState<Instant>>
     Generic finishedStateSpecFieldType =
         Generic.Builder.parameterizedType(
                 TypeDescription.ForLoadedType.of(StateSpec.class),
-                Generic.Builder.parameterizedType(ValueState.class, Boolean.class).build())
+                Generic.Builder.parameterizedType(ValueState.class, Instant.class).build())
             .build();
 
     Generic timerSpecFieldType = Generic.Builder.of(TimerSpec.class).build();
@@ -722,8 +721,8 @@ public class ExternalStateExpander {
             builder,
             finishedStateSpecFieldType,
             DoFn.StateId.class,
-            EXPANDER_FINISHED_STATE_SPEC,
-            EXPANDER_FINISHED_STATE_NAME);
+            EXPANDER_FLUSH_STATE_SPEC,
+            EXPANDER_FLUSH_STATE_NAME);
     builder =
         defineStateField(
             builder,
@@ -880,14 +879,15 @@ public class ExternalStateExpander {
       @SuppressWarnings("unchecked")
       K key = (K) args[args.length - 5];
       @SuppressWarnings("unchecked")
-      ValueState<Boolean> finishedState = (ValueState<Boolean>) args[args.length - 3];
+      ValueState<Instant> lastFlushState = (ValueState<Instant>) args[args.length - 3];
       Timer flushTimer = (Timer) args[args.length - 4];
       Instant nextFlush = nextFlushInstantFn.apply(now);
+      Instant lastFlush = lastFlushState.read();
       if (nextFlush != null && nextFlush.isBefore(BoundedWindow.TIMESTAMP_MAX_VALUE)) {
         flushTimer.set(nextFlush);
+        lastFlushState.write(nextFlush);
       }
-      if (!Boolean.TRUE.equals(finishedState.read())) {
-        finishedState.write(true);
+      if (lastFlush == null) {
         // FIXME: flush the buffer to processFn
         BagState<KV<K, V>> bufState = (BagState<KV<K, V>>) args[args.length - 2];
         bufState.read().forEach(kv -> System.err.println(" *** flushing state " + kv));
