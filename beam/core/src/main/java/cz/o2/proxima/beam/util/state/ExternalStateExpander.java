@@ -76,6 +76,7 @@ import org.apache.beam.sdk.state.TimeDomain;
 import org.apache.beam.sdk.state.Timer;
 import org.apache.beam.sdk.state.TimerSpec;
 import org.apache.beam.sdk.state.TimerSpecs;
+import org.apache.beam.sdk.state.ValueState;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.DoFn.MultiOutputReceiver;
 import org.apache.beam.sdk.transforms.DoFn.OutputReceiver;
@@ -110,8 +111,10 @@ import org.checkerframework.checker.nullness.qual.NonNull;
 
 public class ExternalStateExpander {
 
-  static final String EXPANDER_STATE_SPEC = "expanderStateSpec";
-  static final String EXPANDER_STATE_NAME = "_expanderBuf";
+  static final String EXPANDER_BUF_STATE_SPEC = "expanderBufStateSpec";
+  static final String EXPANDER_BUF_STATE_NAME = "_expanderBuf";
+  static final String EXPANDER_FINISHED_STATE_SPEC = "expanderFinishedStateSpec";
+  static final String EXPANDER_FINISHED_STATE_NAME = "_expanderFinished";
   static final String EXPANDER_TIMER_SPEC = "expanderTimerSpec";
   static final String EXPANDER_TIMER_NAME = "_expanderTimer";
 
@@ -385,7 +388,10 @@ public class ExternalStateExpander {
     delegate =
         delegate
             .andThen(
-                FieldAccessor.ofField(EXPANDER_STATE_SPEC).setsValue(StateSpecs.bag(inputCoder)))
+                FieldAccessor.ofField(EXPANDER_BUF_STATE_SPEC)
+                    .setsValue(StateSpecs.bag(inputCoder)))
+            .andThen(
+                FieldAccessor.ofField(EXPANDER_FINISHED_STATE_SPEC).setsValue(StateSpecs.value()))
             .andThen(
                 FieldAccessor.ofField(EXPANDER_TIMER_SPEC)
                     .setsValue(TimerSpecs.timer(TimeDomain.EVENT_TIME)));
@@ -621,38 +627,62 @@ public class ExternalStateExpander {
     Generic kvType = getInputKvType(inputType);
 
     // type: StateSpec<BagState<KV<K, V>>>
-    Generic stateSpecFieldType =
+    Generic bufStateSpecFieldType =
         Generic.Builder.parameterizedType(
                 TypeDescription.ForLoadedType.of(StateSpec.class),
                 Generic.Builder.parameterizedType(
                         TypeDescription.ForLoadedType.of(BagState.class), kvType)
                     .build())
             .build();
+    // type: StateSpec<ValueState<Boolean>>
+    Generic finishedStateSpecFieldType =
+        Generic.Builder.parameterizedType(
+                TypeDescription.ForLoadedType.of(StateSpec.class),
+                Generic.Builder.parameterizedType(ValueState.class, Boolean.class).build())
+            .build();
 
     Generic timerSpecFieldType = Generic.Builder.of(TimerSpec.class).build();
 
     builder =
-        builder
-            .defineField(
-                EXPANDER_STATE_SPEC,
-                stateSpecFieldType,
-                Visibility.PUBLIC.getMask() + FieldManifestation.FINAL.getMask())
-            .annotateField(
-                AnnotationDescription.Builder.ofType(DoFn.StateId.class)
-                    .define("value", EXPANDER_STATE_NAME)
-                    .build());
-
+        defineStateField(
+            builder,
+            bufStateSpecFieldType,
+            DoFn.StateId.class,
+            EXPANDER_BUF_STATE_SPEC,
+            EXPANDER_BUF_STATE_NAME);
     builder =
-        builder
-            .defineField(
-                EXPANDER_TIMER_SPEC,
-                timerSpecFieldType,
-                Visibility.PUBLIC.getMask() + FieldManifestation.FINAL.getMask())
-            .annotateField(
-                AnnotationDescription.Builder.ofType(DoFn.TimerId.class)
-                    .define("value", EXPANDER_TIMER_NAME)
-                    .build());
+        defineStateField(
+            builder,
+            finishedStateSpecFieldType,
+            DoFn.StateId.class,
+            EXPANDER_FINISHED_STATE_SPEC,
+            EXPANDER_FINISHED_STATE_NAME);
+    builder =
+        defineStateField(
+            builder,
+            timerSpecFieldType,
+            DoFn.TimerId.class,
+            EXPANDER_TIMER_SPEC,
+            EXPANDER_TIMER_NAME);
+
     return builder;
+  }
+
+  private static <K, V, InputT extends KV<K, StateOrInput<V>>, OutputT>
+      Builder<DoFn<InputT, OutputT>> defineStateField(
+          Builder<DoFn<InputT, OutputT>> builder,
+          Generic stateSpecFieldType,
+          Class<? extends Annotation> annotation,
+          String fieldName,
+          String name) {
+
+    return builder
+        .defineField(
+            fieldName,
+            stateSpecFieldType,
+            Visibility.PUBLIC.getMask() + FieldManifestation.FINAL.getMask())
+        .annotateField(
+            AnnotationDescription.Builder.ofType(annotation).define("value", name).build());
   }
 
   private static <K, V, InputT extends KV<K, StateOrInput<V>>, OutputT, T extends Annotation>

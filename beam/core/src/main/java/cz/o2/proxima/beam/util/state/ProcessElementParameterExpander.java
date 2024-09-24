@@ -43,6 +43,7 @@ import net.bytebuddy.description.type.TypeDescription.Generic;
 import net.bytebuddy.description.type.TypeDescription.Generic.Builder;
 import org.apache.beam.sdk.state.BagState;
 import org.apache.beam.sdk.state.Timer;
+import org.apache.beam.sdk.state.ValueState;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.DoFn.MultiOutputReceiver;
 import org.apache.beam.sdk.transforms.DoFn.OutputReceiver;
@@ -107,7 +108,7 @@ public interface ProcessElementParameterExpander {
     return args -> {
       @SuppressWarnings("unchecked")
       KV<?, StateOrInput<?>> elem = (KV<?, StateOrInput<?>>) args[elementPos];
-      Timer flushTimer = (Timer) args[args.length - 3];
+      Timer flushTimer = (Timer) args[args.length - 4];
       // FIXME: set for particular timestamp
       System.err.println(" *** " + elem + ", " + flushTimer.getCurrentRelativeTime());
       flushTimer.set(new Instant(0));
@@ -173,10 +174,23 @@ public interface ProcessElementParameterExpander {
     res.put(
         TypeId.of(timerAnnotation),
         Pair.of(timerAnnotation, TypeDescription.Generic.Builder.of(Timer.class).build()));
+
+    // add @StateId for finished buffer
+    AnnotationDescription finishedAnnotation =
+        AnnotationDescription.Builder.ofType(DoFn.StateId.class)
+            .define("value", ExternalStateExpander.EXPANDER_FINISHED_STATE_NAME)
+            .build();
+    res.put(
+        TypeId.of(finishedAnnotation),
+        Pair.of(
+            finishedAnnotation,
+            TypeDescription.Generic.Builder.parameterizedType(ValueState.class, Boolean.class)
+                .build()));
+
     // add @StateId for buffer
     AnnotationDescription stateAnnotation =
         AnnotationDescription.Builder.ofType(StateId.class)
-            .define("value", ExternalStateExpander.EXPANDER_STATE_NAME)
+            .define("value", ExternalStateExpander.EXPANDER_BUF_STATE_NAME)
             .build();
     res.put(
         TypeId.of(stateAnnotation),

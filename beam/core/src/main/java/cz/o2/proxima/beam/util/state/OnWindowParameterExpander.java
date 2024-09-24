@@ -131,7 +131,7 @@ interface OnWindowParameterExpander {
     // add @StateId for buffer
     AnnotationDescription buffer =
         Builder.ofType(StateId.class)
-            .define("value", ExternalStateExpander.EXPANDER_STATE_NAME)
+            .define("value", ExternalStateExpander.EXPANDER_BUF_STATE_NAME)
             .build();
     res.put(
         TypeId.of(buffer),
