@@ -108,6 +108,7 @@ import org.apache.beam.sdk.values.TypeDescriptor;
 import org.apache.beam.sdk.values.TypeDescriptors;
 import org.apache.beam.vendor.guava.v32_1_2_jre.com.google.common.reflect.TypeToken;
 import org.checkerframework.checker.nullness.qual.NonNull;
+import org.joda.time.Instant;
 
 public class ExternalStateExpander {
 
@@ -125,11 +126,15 @@ public class ExternalStateExpander {
    *
    * @param pipeline the Pipeline to expand
    * @param inputs transform to read inputs
+   * @param stateWriteInstant the instant at which write of the last state occurred
+   * @param nextFlushInstantFn function that returns instant of next flush from current time
    * @param stateSink transform to store outputs
    */
   public static void expand(
       Pipeline pipeline,
       PTransform<PBegin, PCollection<KV<String, StateValue>>> inputs,
+      Instant stateWriteInstant,
+      UnaryFunction<Instant, Instant> nextFlushInstantFn,
       PTransform<PCollection<KV<String, StateValue>>, PDone> stateSink) {
 
     validatePipeline(pipeline);
@@ -138,7 +143,9 @@ public class ExternalStateExpander {
 
     // replace all MultiParDos
     pipeline.replaceAll(
-        Collections.singletonList(statefulParMultiDoOverride(inputsMaterialized, stateSink)));
+        Collections.singletonList(
+            statefulParMultiDoOverride(
+                inputsMaterialized, stateWriteInstant, nextFlushInstantFn, stateSink)));
   }
 
   private static void validatePipeline(Pipeline pipeline) {
@@ -173,21 +180,26 @@ public class ExternalStateExpander {
 
   private static PTransformOverride statefulParMultiDoOverride(
       PCollection<KV<String, StateValue>> inputs,
+      Instant stateWriteInstant,
+      UnaryFunction<Instant, Instant> nextFlushInstantFn,
       PTransform<PCollection<KV<String, StateValue>>, PDone> stateSink) {
 
     return PTransformOverride.of(
         application -> application.getTransform() instanceof ParDo.MultiOutput,
-        parMultiDoReplacementFactory(inputs, stateSink));
+        parMultiDoReplacementFactory(inputs, stateWriteInstant, nextFlushInstantFn, stateSink));
   }
 
   private static PTransformOverrideFactory parMultiDoReplacementFactory(
       PCollection<KV<String, StateValue>> inputs,
+      Instant stateWriteInstant,
+      UnaryFunction<Instant, Instant> nextFlushInstantFn,
       PTransform<PCollection<KV<String, StateValue>>, PDone> stateSink) {
 
     return new PTransformOverrideFactory() {
       @Override
       public PTransformReplacement getReplacementTransform(AppliedPTransform transform) {
-        return replaceParMultiDo(transform, inputs, stateSink);
+        return replaceParMultiDo(
+            transform, inputs, stateWriteInstant, nextFlushInstantFn, stateSink);
       }
 
       @SuppressWarnings("unchecked")
@@ -202,6 +214,8 @@ public class ExternalStateExpander {
   private static PTransformReplacement<PInput, POutput> replaceParMultiDo(
       AppliedPTransform<PInput, POutput, ?> transform,
       PCollection<KV<String, StateValue>> inputs,
+      Instant stateWriteInstant,
+      UnaryFunction<Instant, Instant> nextFlushInstantFn,
       PTransform<PCollection<KV<String, StateValue>>, PDone> stateSink) {
 
     ParDo.MultiOutput<PInput, POutput> rawTransform =
@@ -228,6 +242,8 @@ public class ExternalStateExpander {
                 transform.getOutputs().keySet().stream()
                     .filter(t -> !t.equals(mainOutputTag))
                     .collect(Collectors.toList())),
+            stateWriteInstant,
+            nextFlushInstantFn,
             stateSink));
   }
 
@@ -239,6 +255,8 @@ public class ExternalStateExpander {
           DoFn<KV<K, V>, OutputT> doFn,
           TupleTag<OutputT> mainOutputTag,
           TupleTagList otherOutputs,
+          Instant stateWriteInstant,
+          UnaryFunction<Instant, Instant> nextFlushInstantFn,
           PTransform<PCollection<KV<String, StateValue>>, PDone> stateSink) {
 
     return new PTransform<>() {
@@ -276,7 +294,13 @@ public class ExternalStateExpander {
             PCollectionList.of(state).and(inputs).apply(Flatten.pCollections());
         PCollectionTuple tuple =
             flattened.apply(
-                ParDo.of(transformedDoFn(doFn, (KvCoder<K, V>) input.getCoder(), mainOutputTag))
+                ParDo.of(
+                        transformedDoFn(
+                            doFn,
+                            (KvCoder<K, V>) input.getCoder(),
+                            mainOutputTag,
+                            stateWriteInstant,
+                            nextFlushInstantFn))
                     .withOutputTags(mainOutputTag, otherOutputs.and(stateValueTupleTag)));
         PCollection<StateValue> stateValuePCollection = tuple.get(stateValueTupleTag);
         stateValuePCollection.apply(WithKeys.of(transformName)).apply(stateSink);
@@ -295,7 +319,11 @@ public class ExternalStateExpander {
   @VisibleForTesting
   static <K, V, InputT extends KV<K, StateOrInput<V>>, OutputT>
       DoFn<InputT, OutputT> transformedDoFn(
-          DoFn<KV<K, V>, OutputT> doFn, KvCoder<K, V> inputCoder, TupleTag<OutputT> mainTag) {
+          DoFn<KV<K, V>, OutputT> doFn,
+          KvCoder<K, V> inputCoder,
+          TupleTag<OutputT> mainTag,
+          Instant stateWriteInstant,
+          UnaryFunction<Instant, Instant> nextFlushInstantFn) {
 
     @SuppressWarnings("unchecked")
     Class<? extends DoFn<KV<K, V>, OutputT>> doFnClass =
@@ -357,7 +385,14 @@ public class ExternalStateExpander {
 
     builder =
         addProcessingMethods(
-            doFn, inputType, inputCoder.getKeyCoder(), mainTag, outputType, builder);
+            doFn,
+            inputType,
+            inputCoder.getKeyCoder(),
+            mainTag,
+            outputType,
+            stateWriteInstant,
+            nextFlushInstantFn,
+            builder);
     Unloaded<DoFn<InputT, OutputT>> dynamicClass = builder.make();
     // FIXME
     ExceptionUtils.unchecked(() -> dynamicClass.saveIn(new File("/tmp/dynamic-debug")));
@@ -419,11 +454,14 @@ public class ExternalStateExpander {
           Coder<K> keyCoder,
           TupleTag<OutputT> mainTag,
           Type outputType,
+          Instant stateWriteInstant,
+          UnaryFunction<Instant, Instant> nextFlushInstantFn,
           Builder<DoFn<InputT, OutputT>> builder) {
 
     builder = addProcessingMethod(doFn, DoFn.Setup.class, builder);
     builder = addProcessingMethod(doFn, DoFn.StartBundle.class, builder);
-    builder = addProcessElementMethod(doFn, inputType, mainTag, outputType, builder);
+    builder =
+        addProcessElementMethod(doFn, inputType, mainTag, outputType, stateWriteInstant, builder);
     builder = addProcessingMethod(doFn, DoFn.FinishBundle.class, builder);
     builder = addProcessingMethod(doFn, DoFn.Teardown.class, builder);
     builder = addOnWindowExpirationMethod(doFn, inputType, mainTag, builder);
@@ -435,9 +473,9 @@ public class ExternalStateExpander {
     builder = addProcessingMethod(doFn, DoFn.NewWatermarkEstimator.class, builder);
     builder = addProcessingMethod(doFn, DoFn.NewTracker.class, builder);
     builder = addProcessingMethod(doFn, DoFn.OnTimer.class, builder);
-    builder = addTimerFlushMethod(doFn, inputType, keyCoder, stateValueTupleTag, builder);
-
-    // FIXME: timer callbacks
+    builder =
+        addTimerFlushMethod(
+            doFn, inputType, keyCoder, stateValueTupleTag, nextFlushInstantFn, builder);
     return builder;
   }
 
@@ -447,13 +485,15 @@ public class ExternalStateExpander {
           ParameterizedType inputType,
           TupleTag<OutputT> mainTag,
           Type outputType,
+          Instant stateWriteInstant,
           Builder<DoFn<InputT, OutputT>> builder) {
 
     Class<? extends Annotation> annotation = ProcessElement.class;
     Method method = findMethod(doFn, annotation);
     if (method != null) {
       ProcessElementParameterExpander expander =
-          ProcessElementParameterExpander.of(doFn, method, inputType, mainTag, outputType);
+          ProcessElementParameterExpander.of(
+              doFn, method, inputType, mainTag, outputType, stateWriteInstant);
       List<Pair<AnnotationDescription, TypeDefinition>> wrapperArgs = expander.getWrapperArgs();
       MethodDefinition<DoFn<InputT, OutputT>> methodDefinition =
           builder
@@ -522,7 +562,8 @@ public class ExternalStateExpander {
           DoFn<KV<K, V>, OutputT> doFn,
           ParameterizedType inputType,
           Coder<K> keyCoder,
-          TupleTag stateTag,
+          TupleTag<StateValue> stateTag,
+          UnaryFunction<Instant, Instant> nextFlushInstantFn,
           Builder<DoFn<InputT, OutputT>> builder) {
 
     List<Pair<Annotation, Type>> states =
@@ -535,17 +576,25 @@ public class ExternalStateExpander {
             .filter(p -> p.getFirst() != null)
             .collect(Collectors.toList());
 
-    List<Type> types = states.stream().map(Pair::getSecond).collect(Collectors.toList());
+    List<TypeDefinition> types =
+        states.stream()
+            .map(Pair::getSecond)
+            .map(t -> TypeDescription.Generic.Builder.of(t).build())
+            .collect(Collectors.toList());
     // add parameter for key
-    types.add(inputType.getActualTypeArguments()[0]);
-    types.add(Timer.class);
-    types.add(DoFn.MultiOutputReceiver.class);
+    types.add(TypeDescription.Generic.Builder.of(inputType.getActualTypeArguments()[0]).build());
+    types.add(TypeDescription.ForLoadedType.of(Timer.class));
+    types.add(
+        TypeDescription.Generic.Builder.parameterizedType(ValueState.class, Boolean.class).build());
+    types.add(TypeDescription.ForLoadedType.of(DoFn.MultiOutputReceiver.class));
 
     MethodDefinition<DoFn<InputT, OutputT>> methodDefinition =
         builder
             .defineMethod("expanderFlushTimer", void.class, Visibility.PUBLIC)
             .withParameters(types)
-            .intercept(MethodDelegation.to(new TimerFlushInterceptor<>(doFn, keyCoder, stateTag)));
+            .intercept(
+                MethodDelegation.to(
+                    new TimerFlushInterceptor<>(doFn, keyCoder, stateTag, nextFlushInstantFn)));
 
     // retrieve parameter annotations and apply them
     for (int i = 0; i < states.size(); i++) {
@@ -562,6 +611,12 @@ public class ExternalStateExpander {
             states.size() + 1,
             AnnotationDescription.Builder.ofType(DoFn.TimerId.class)
                 .define("value", EXPANDER_TIMER_NAME)
+                .build());
+    methodDefinition =
+        methodDefinition.annotateParameter(
+            states.size() + 2,
+            AnnotationDescription.Builder.ofType(DoFn.StateId.class)
+                .define("value", EXPANDER_FINISHED_STATE_NAME)
                 .build());
     return methodDefinition.annotateMethod(
         AnnotationDescription.Builder.ofType(DoFn.OnTimer.class)
@@ -793,27 +848,40 @@ public class ExternalStateExpander {
         stateReaders;
     private final Coder<K> keyCoder;
     private final TupleTag<StateValue> stateTag;
+    private final UnaryFunction<Instant, Instant> nextFlushInstantFn;
 
     TimerFlushInterceptor(
-        DoFn<KV<K, V>, ?> doFn, Coder<K> keyCoder, TupleTag<StateValue> stateTag) {
+        DoFn<KV<K, V>, ?> doFn,
+        Coder<K> keyCoder,
+        TupleTag<StateValue> stateTag,
+        UnaryFunction<Instant, Instant> nextFlushInstantFn) {
+
       this.stateReaders = getStateReaders(doFn);
       this.keyCoder = keyCoder;
       this.stateTag = stateTag;
+      this.nextFlushInstantFn = nextFlushInstantFn;
     }
 
     @RuntimeType
     public void intercept(@This DoFn<KV<V, StateOrInput<V>>, ?> doFn, @AllArguments Object[] args) {
       @SuppressWarnings("unchecked")
-      K key = (K) args[args.length - 3];
-      MultiOutputReceiver outputReceiver = (MultiOutputReceiver) args[args.length - 1];
-      OutputReceiver<StateValue> output = outputReceiver.get(stateTag);
-      byte[] keyBytes =
-          ExceptionUtils.uncheckedFactory(() -> CoderUtils.encodeToByteArray(keyCoder, key));
-      int i = 0;
-      for (BiFunction<Object, byte[], Iterable<StateValue>> f : stateReaders.values()) {
-        Object accessor = args[i++];
-        System.err.println(" *** reading from " + accessor);
-        f.apply(accessor, keyBytes).forEach(output::output);
+      K key = (K) args[args.length - 4];
+      @SuppressWarnings("unchecked")
+      ValueState<Boolean> finishedState = (ValueState<Boolean>) args[args.length - 2];
+      if (finishedState.read() == null) {
+        finishedState.write(true);
+      } else {
+        Timer flushTimer = (Timer) args[args.length - 3];
+        flushTimer.set(nextFlushInstantFn.apply(flushTimer.getCurrentRelativeTime()));
+        MultiOutputReceiver outputReceiver = (MultiOutputReceiver) args[args.length - 1];
+        OutputReceiver<StateValue> output = outputReceiver.get(stateTag);
+        byte[] keyBytes =
+            ExceptionUtils.uncheckedFactory(() -> CoderUtils.encodeToByteArray(keyCoder, key));
+        int i = 0;
+        for (BiFunction<Object, byte[], Iterable<StateValue>> f : stateReaders.values()) {
+          Object accessor = args[i++];
+          f.apply(accessor, keyBytes).forEach(output::output);
+        }
       }
     }
   }

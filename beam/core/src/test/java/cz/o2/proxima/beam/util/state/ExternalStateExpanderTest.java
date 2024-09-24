@@ -45,6 +45,7 @@ import org.apache.beam.sdk.transforms.MapElements;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.WithKeys;
+import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.util.CoderUtils;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
@@ -53,6 +54,7 @@ import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.sdk.values.TupleTagList;
 import org.apache.beam.sdk.values.TypeDescriptors;
 import org.jetbrains.annotations.NotNull;
+import org.joda.time.Instant;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -80,7 +82,11 @@ public class ExternalStateExpanderTest {
     PCollection<Long> count = withKeys.apply(ParDo.of(getSumFn()));
     PAssert.that(count).containsInAnyOrder(2L, 4L);
     ExternalStateExpander.expand(
-        pipeline, Create.empty(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())), dummy());
+        pipeline,
+        Create.empty(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())),
+        new Instant(0),
+        ign -> BoundedWindow.TIMESTAMP_MAX_VALUE,
+        dummy());
     pipeline.run();
   }
 
@@ -99,7 +105,11 @@ public class ExternalStateExpanderTest {
             .get(mainTag);
     PAssert.that(count).containsInAnyOrder(2L, 4L);
     ExternalStateExpander.expand(
-        pipeline, Create.empty(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())), dummy());
+        pipeline,
+        Create.empty(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())),
+        new Instant(0),
+        ign -> BoundedWindow.TIMESTAMP_MAX_VALUE,
+        dummy());
     pipeline.run();
   }
 
@@ -121,7 +131,11 @@ public class ExternalStateExpanderTest {
     PCollection<Long> count = inputs.apply(transform);
     PAssert.that(count).containsInAnyOrder(2L, 4L);
     ExternalStateExpander.expand(
-        pipeline, Create.empty(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())), dummy());
+        pipeline,
+        Create.empty(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())),
+        new Instant(0),
+        ign -> BoundedWindow.TIMESTAMP_MAX_VALUE,
+        dummy());
     pipeline.run();
   }
 
@@ -153,6 +167,8 @@ public class ExternalStateExpanderTest {
                         "sum",
                         CoderUtils.encodeToByteArray(longCoder, 1L))))
             .withCoder(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())),
+        new Instant(0),
+        ign -> BoundedWindow.TIMESTAMP_MAX_VALUE,
         dummy());
     pipeline.run();
   }
@@ -171,6 +187,9 @@ public class ExternalStateExpanderTest {
     ExternalStateExpander.expand(
         pipeline,
         Create.empty(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())),
+        // FIXME
+        new Instant(0),
+        ign -> BoundedWindow.TIMESTAMP_MAX_VALUE,
         collectStates(states));
     pipeline.run();
     assertEquals(1, states.size());
@@ -214,7 +233,6 @@ public class ExternalStateExpanderTest {
           @Element KV<Integer, String> element,
           @StateId("sum") ValueState<Long> sum) {
 
-        System.err.println(" *** " + ignored + ", " + element);
         Preconditions.checkArgument(ignored instanceof OutputReceiver);
         long current = MoreObjects.firstNonNull(sum.read(), 0L);
         sum.write(current + Integer.parseInt(element.getValue()));

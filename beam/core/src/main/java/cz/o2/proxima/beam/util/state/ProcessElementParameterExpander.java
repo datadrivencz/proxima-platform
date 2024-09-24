@@ -21,6 +21,7 @@ import static cz.o2.proxima.beam.util.state.MethodCallUtils.projectArgs;
 import cz.o2.proxima.core.functional.BiConsumer;
 import cz.o2.proxima.core.functional.UnaryFunction;
 import cz.o2.proxima.core.util.Pair;
+import cz.o2.proxima.internal.com.google.common.base.MoreObjects;
 import cz.o2.proxima.internal.com.google.common.base.Preconditions;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
@@ -59,7 +60,8 @@ public interface ProcessElementParameterExpander {
       Method processElement,
       ParameterizedType inputType,
       TupleTag<?> mainTag,
-      Type outputType) {
+      Type outputType,
+      Instant stateWriteInstant) {
 
     final LinkedHashMap<TypeId, Pair<Annotation, Type>> processArgs = extractArgs(processElement);
     final LinkedHashMap<TypeId, Pair<AnnotationDescription, TypeDefinition>> wrapperArgs =
@@ -80,7 +82,7 @@ public interface ProcessElementParameterExpander {
 
       @Override
       public UnaryFunction<Object[], Boolean> getProcessFn() {
-        return createProcessFn(wrapperArgs, doFn, processElement);
+        return createProcessFn(wrapperArgs, doFn, processElement, stateWriteInstant);
       }
     };
   }
@@ -100,7 +102,8 @@ public interface ProcessElementParameterExpander {
   private static UnaryFunction<Object[], Boolean> createProcessFn(
       LinkedHashMap<TypeId, Pair<AnnotationDescription, TypeDefinition>> wrapperArgs,
       DoFn<?, ?> doFn,
-      Method method) {
+      Method method,
+      Instant stateWriteInstant) {
 
     int elementPos = findParameter(wrapperArgs.keySet(), TypeId::isElement);
     Preconditions.checkState(elementPos >= 0, "Missing @Element annotation on method %s", method);
@@ -109,9 +112,9 @@ public interface ProcessElementParameterExpander {
       @SuppressWarnings("unchecked")
       KV<?, StateOrInput<?>> elem = (KV<?, StateOrInput<?>>) args[elementPos];
       Timer flushTimer = (Timer) args[args.length - 4];
-      // FIXME: set for particular timestamp
-      System.err.println(" *** " + elem + ", " + flushTimer.getCurrentRelativeTime());
-      flushTimer.set(new Instant(0));
+      @SuppressWarnings("unchecked")
+      ValueState<Boolean> finishedState = (ValueState<Boolean>) args[args.length - 3];
+      flushTimer.set(stateWriteInstant);
       boolean isState = Objects.requireNonNull(elem.getValue(), "elem").isState();
       if (isState) {
         StateValue state = elem.getValue().getState();
@@ -128,9 +131,7 @@ public interface ProcessElementParameterExpander {
         updater.accept(stateAccessor, state);
         return false;
       }
-      // FIXME: read this from state
-      // FIXME: set to 'true' for most tests to work now
-      boolean shouldBuffer = false;
+      boolean shouldBuffer = !MoreObjects.firstNonNull(finishedState.read(), false);
       if (shouldBuffer) {
         // store to state
         @SuppressWarnings("unchecked")
