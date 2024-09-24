@@ -588,6 +588,7 @@ public class ExternalStateExpander {
     types.add(TypeDescription.ForLoadedType.of(Timer.class));
     types.add(
         TypeDescription.Generic.Builder.parameterizedType(ValueState.class, Boolean.class).build());
+    types.add(TypeDescription.Generic.Builder.parameterizedType(BagState.class, inputType).build());
     types.add(TypeDescription.ForLoadedType.of(DoFn.MultiOutputReceiver.class));
 
     MethodDefinition<DoFn<InputT, OutputT>> methodDefinition =
@@ -622,6 +623,12 @@ public class ExternalStateExpander {
             states.size() + 3,
             AnnotationDescription.Builder.ofType(DoFn.StateId.class)
                 .define("value", EXPANDER_FINISHED_STATE_NAME)
+                .build());
+    methodDefinition =
+        methodDefinition.annotateParameter(
+            states.size() + 4,
+            AnnotationDescription.Builder.ofType(DoFn.StateId.class)
+                .define("value", EXPANDER_BUF_STATE_NAME)
                 .build());
     return methodDefinition.annotateMethod(
         AnnotationDescription.Builder.ofType(DoFn.OnTimer.class)
@@ -869,12 +876,12 @@ public class ExternalStateExpander {
 
     @RuntimeType
     public void intercept(@This DoFn<KV<V, StateOrInput<V>>, ?> doFn, @AllArguments Object[] args) {
-      Instant now = (Instant) args[args.length - 5];
+      Instant now = (Instant) args[args.length - 6];
       @SuppressWarnings("unchecked")
-      K key = (K) args[args.length - 4];
+      K key = (K) args[args.length - 5];
       @SuppressWarnings("unchecked")
-      ValueState<Boolean> finishedState = (ValueState<Boolean>) args[args.length - 2];
-      Timer flushTimer = (Timer) args[args.length - 3];
+      ValueState<Boolean> finishedState = (ValueState<Boolean>) args[args.length - 3];
+      Timer flushTimer = (Timer) args[args.length - 4];
       Instant nextFlush = nextFlushInstantFn.apply(now);
       if (nextFlush != null && nextFlush.isBefore(BoundedWindow.TIMESTAMP_MAX_VALUE)) {
         flushTimer.set(nextFlush);
@@ -882,8 +889,9 @@ public class ExternalStateExpander {
       if (!Boolean.TRUE.equals(finishedState.read())) {
         finishedState.write(true);
         // FIXME: flush the buffer to processFn
+        BagState<KV<K, V>> bufState = (BagState<KV<K, V>>) args[args.length - 2];
+        bufState.read().forEach(kv -> System.err.println(" *** flushing state " + kv));
       } else {
-        System.err.println(" *** flushing state ");
         MultiOutputReceiver outputReceiver = (MultiOutputReceiver) args[args.length - 1];
         OutputReceiver<StateValue> output = outputReceiver.get(stateTag);
         byte[] keyBytes =
