@@ -103,6 +103,8 @@ import org.apache.beam.sdk.values.PDone;
 import org.apache.beam.sdk.values.PInput;
 import org.apache.beam.sdk.values.POutput;
 import org.apache.beam.sdk.values.PValue;
+import org.apache.beam.sdk.values.TimestampedValue;
+import org.apache.beam.sdk.values.TimestampedValue.TimestampedValueCoder;
 import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.sdk.values.TupleTagList;
 import org.apache.beam.sdk.values.TypeDescriptor;
@@ -425,7 +427,7 @@ public class ExternalStateExpander {
         delegate
             .andThen(
                 FieldAccessor.ofField(EXPANDER_BUF_STATE_SPEC)
-                    .setsValue(StateSpecs.bag(inputCoder)))
+                    .setsValue(StateSpecs.bag(TimestampedValueCoder.of(inputCoder))))
             .andThen(FieldAccessor.ofField(EXPANDER_FLUSH_STATE_SPEC).setsValue(StateSpecs.value()))
             .andThen(
                 FieldAccessor.ofField(EXPANDER_TIMER_SPEC)
@@ -587,7 +589,7 @@ public class ExternalStateExpander {
     types.add(TypeDescription.ForLoadedType.of(Timer.class));
     types.add(
         TypeDescription.Generic.Builder.parameterizedType(ValueState.class, Instant.class).build());
-    types.add(TypeDescription.Generic.Builder.parameterizedType(BagState.class, inputType).build());
+    types.add(bagStateFromInputType(inputType));
     types.add(TypeDescription.ForLoadedType.of(DoFn.MultiOutputReceiver.class));
 
     MethodDefinition<DoFn<InputT, OutputT>> methodDefinition =
@@ -690,15 +692,10 @@ public class ExternalStateExpander {
       Builder<DoFn<InputT, OutputT>> addBufferingStatesAndTimer(
           ParameterizedType inputType, Builder<DoFn<InputT, OutputT>> builder) {
 
-    Generic kvType = getInputKvType(inputType);
-
     // type: StateSpec<BagState<KV<K, V>>>
     Generic bufStateSpecFieldType =
         Generic.Builder.parameterizedType(
-                TypeDescription.ForLoadedType.of(StateSpec.class),
-                Generic.Builder.parameterizedType(
-                        TypeDescription.ForLoadedType.of(BagState.class), kvType)
-                    .build())
+                TypeDescription.ForLoadedType.of(StateSpec.class), bagStateFromInputType(inputType))
             .build();
     // type: StateSpec<ValueState<Instant>>
     Generic finishedStateSpecFieldType =
@@ -840,12 +837,15 @@ public class ExternalStateExpander {
         @This DoFn<KV<V, StateOrInput<V>>, ?> proxy, @AllArguments Object[] allArgs) {
 
       @SuppressWarnings("unchecked")
-      BagState<KV<K, V>> buf = (BagState<KV<K, V>>) allArgs[allArgs.length - 1];
-      Iterable<KV<K, V>> buffered = buf.read();
+      BagState<TimestampedValue<KV<K, V>>> buf =
+          (BagState<TimestampedValue<KV<K, V>>>) allArgs[allArgs.length - 1];
+      Iterable<TimestampedValue<KV<K, V>>> buffered = buf.read();
       // feed all data to @ProcessElement
-      for (KV<K, V> kv : buffered) {
+      for (TimestampedValue<KV<K, V>> kv : buffered) {
         ExceptionUtils.unchecked(
-            () -> processElement.invoke(doFn, expander.getProcessElementArgs(kv, allArgs)));
+            () ->
+                processElement.invoke(
+                    doFn, expander.getProcessElementArgs(kv.getValue(), allArgs)));
       }
       // invoke onWindowExpiration
       ExceptionUtils.unchecked(
@@ -889,7 +889,8 @@ public class ExternalStateExpander {
       }
       if (lastFlush == null) {
         // FIXME: flush the buffer to processFn
-        BagState<KV<K, V>> bufState = (BagState<KV<K, V>>) args[args.length - 2];
+        BagState<TimestampedValue<KV<K, V>>> bufState =
+            (BagState<TimestampedValue<KV<K, V>>>) args[args.length - 2];
         bufState.read().forEach(kv -> System.err.println(" *** flushing state " + kv));
       } else {
         MultiOutputReceiver outputReceiver = (MultiOutputReceiver) args[args.length - 1];
@@ -903,5 +904,12 @@ public class ExternalStateExpander {
         }
       }
     }
+  }
+
+  static Generic bagStateFromInputType(ParameterizedType inputType) {
+    return Generic.Builder.parameterizedType(
+            TypeDescription.ForLoadedType.of(BagState.class),
+            Generic.Builder.parameterizedType(TimestampedValue.class, inputType).build())
+        .build();
   }
 }

@@ -49,6 +49,7 @@ import org.apache.beam.sdk.transforms.DoFn.MultiOutputReceiver;
 import org.apache.beam.sdk.transforms.DoFn.OutputReceiver;
 import org.apache.beam.sdk.transforms.DoFn.StateId;
 import org.apache.beam.sdk.values.KV;
+import org.apache.beam.sdk.values.TimestampedValue;
 import org.apache.beam.sdk.values.TupleTag;
 import org.joda.time.Instant;
 
@@ -110,6 +111,7 @@ public interface ProcessElementParameterExpander {
     return args -> {
       @SuppressWarnings("unchecked")
       KV<?, StateOrInput<?>> elem = (KV<?, StateOrInput<?>>) args[elementPos];
+      Instant ts = (Instant) args[args.length - 5];
       Timer flushTimer = (Timer) args[args.length - 4];
       @SuppressWarnings("unchecked")
       ValueState<Instant> finishedState = (ValueState<Instant>) args[args.length - 3];
@@ -144,8 +146,9 @@ public interface ProcessElementParameterExpander {
       if (shouldBuffer) {
         // store to state
         @SuppressWarnings("unchecked")
-        BagState<KV<?, ?>> buffer = (BagState<KV<?, ?>>) args[args.length - 2];
-        buffer.add(KV.of(elem.getKey(), elem.getValue().getInput()));
+        BagState<TimestampedValue<KV<?, ?>>> buffer =
+            (BagState<TimestampedValue<KV<?, ?>>>) args[args.length - 2];
+        buffer.add(TimestampedValue.of(KV.of(elem.getKey(), elem.getValue().getInput()), ts));
         return false;
       }
       return true;
@@ -173,9 +176,15 @@ public interface ProcessElementParameterExpander {
         TypeId.of(Builder.parameterizedType(OutputReceiver.class, outputType).build());
     processArgs.stream()
         .map(p -> transformProcessArg(inputType, p))
-        .filter(p -> !p.getFirst().equals(mainOutputReceiverId))
+        .filter(p -> !p.getFirst().equals(mainOutputReceiverId) && !p.getFirst().isTimestamp())
         .forEachOrdered(p -> res.put(p.getFirst(), p.getSecond()));
 
+    // add @Timestamp
+    AnnotationDescription timestampAnnotation =
+        AnnotationDescription.Builder.ofType(DoFn.Timestamp.class).build();
+    res.put(
+        TypeId.of(timestampAnnotation),
+        Pair.of(timestampAnnotation, TypeDescription.ForLoadedType.of(Instant.class)));
     // add @TimerId for flush timer
     AnnotationDescription timerAnnotation =
         AnnotationDescription.Builder.ofType(DoFn.TimerId.class)
@@ -183,7 +192,7 @@ public interface ProcessElementParameterExpander {
             .build();
     res.put(
         TypeId.of(timerAnnotation),
-        Pair.of(timerAnnotation, TypeDescription.Generic.Builder.of(Timer.class).build()));
+        Pair.of(timerAnnotation, TypeDescription.ForLoadedType.of(Timer.class)));
 
     // add @StateId for finished buffer
     AnnotationDescription finishedAnnotation =
@@ -204,11 +213,7 @@ public interface ProcessElementParameterExpander {
             .build();
     res.put(
         TypeId.of(stateAnnotation),
-        Pair.of(
-            stateAnnotation,
-            TypeDescription.Generic.Builder.parameterizedType(
-                    TypeDescription.ForLoadedType.of(BagState.class), getInputKvType(inputType))
-                .build()));
+        Pair.of(stateAnnotation, ExternalStateExpander.bagStateFromInputType(inputType)));
 
     // add MultiOutputReceiver
     TypeDescription receiver = ForLoadedType.of(MultiOutputReceiver.class);

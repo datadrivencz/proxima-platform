@@ -26,7 +26,10 @@ import org.apache.beam.sdk.transforms.DoFn.StateId;
 
 public class TypeId {
 
-  private static TypeId ELEMENT_TYPE =
+  private static final TypeId TIMESTAMP_TYPE =
+      TypeId.of(AnnotationDescription.Builder.ofType(DoFn.Timestamp.class).build());
+
+  private static final TypeId ELEMENT_TYPE =
       TypeId.of(AnnotationDescription.Builder.ofType(DoFn.Element.class).build());
 
   public static TypeId of(Annotation annotation) {
@@ -84,5 +87,9 @@ public class TypeId {
             AnnotationDescription.Builder.ofType(StateId.class)
                 .define("value", stateName)
                 .build()));
+  }
+
+  public boolean isTimestamp() {
+    return equals(TIMESTAMP_TYPE);
   }
 }

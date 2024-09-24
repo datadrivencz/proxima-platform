@@ -15,6 +15,7 @@
  */
 package cz.o2.proxima.beam.util.state;
 
+import static cz.o2.proxima.beam.util.state.ExternalStateExpander.bagStateFromInputType;
 import static cz.o2.proxima.beam.util.state.MethodCallUtils.*;
 
 import cz.o2.proxima.core.util.Pair;
@@ -37,7 +38,6 @@ import net.bytebuddy.description.annotation.AnnotationDescription;
 import net.bytebuddy.description.annotation.AnnotationDescription.Builder;
 import net.bytebuddy.description.type.TypeDefinition;
 import net.bytebuddy.description.type.TypeDescription;
-import org.apache.beam.sdk.state.BagState;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.DoFn.StateId;
 import org.apache.beam.sdk.values.KV;
@@ -133,13 +133,7 @@ interface OnWindowParameterExpander {
         Builder.ofType(StateId.class)
             .define("value", ExternalStateExpander.EXPANDER_BUF_STATE_NAME)
             .build();
-    res.put(
-        TypeId.of(buffer),
-        Pair.of(
-            buffer,
-            TypeDescription.Generic.Builder.parameterizedType(
-                    TypeDescription.ForLoadedType.of(BagState.class), getInputKvType(inputType))
-                .build()));
+    res.put(TypeId.of(buffer), Pair.of(buffer, bagStateFromInputType(inputType)));
     return res;
   }
 
