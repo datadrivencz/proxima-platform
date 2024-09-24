@@ -50,6 +50,7 @@ import org.apache.beam.sdk.util.CoderUtils;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PDone;
+import org.apache.beam.sdk.values.TimestampedValue;
 import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.sdk.values.TupleTagList;
 import org.apache.beam.sdk.values.TypeDescriptors;
@@ -168,15 +169,18 @@ public class ExternalStateExpanderTest {
                         CoderUtils.encodeToByteArray(longCoder, 1L))))
             .withCoder(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())),
         new Instant(0),
-        ign -> BoundedWindow.TIMESTAMP_MAX_VALUE,
+        current -> BoundedWindow.TIMESTAMP_MAX_VALUE,
         dummy());
     pipeline.run();
   }
 
   @Test
-  public void testSimpleExpandWithStateStore() throws CoderException {
+  public void testSimpleExpandWithStateStore() {
     Pipeline pipeline = createPipeline();
-    PCollection<String> inputs = pipeline.apply(Create.of("1", "2"));
+    Instant now = new Instant(0);
+    PCollection<String> inputs =
+        pipeline.apply(
+            Create.timestamped(TimestampedValue.of("1", now), TimestampedValue.of("2", now)));
     PCollection<KV<Integer, String>> withKeys =
         inputs.apply(
             WithKeys.<Integer, String>of(e -> Integer.parseInt(e) % 2)
@@ -187,9 +191,8 @@ public class ExternalStateExpanderTest {
     ExternalStateExpander.expand(
         pipeline,
         Create.empty(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())),
-        // FIXME
-        new Instant(0),
-        ign -> BoundedWindow.TIMESTAMP_MAX_VALUE,
+        now,
+        current -> current.equals(now) ? now.plus(1) : BoundedWindow.TIMESTAMP_MAX_VALUE,
         collectStates(states));
     pipeline.run();
     assertEquals(1, states.size());

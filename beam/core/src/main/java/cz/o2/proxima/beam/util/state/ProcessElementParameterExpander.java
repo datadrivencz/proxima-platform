@@ -132,6 +132,13 @@ public interface ProcessElementParameterExpander {
         return false;
       }
       boolean shouldBuffer = !MoreObjects.firstNonNull(finishedState.read(), false);
+      System.err.println(
+          " *** process "
+              + elem
+              + ", "
+              + shouldBuffer
+              + " , at "
+              + flushTimer.getCurrentRelativeTime());
       if (shouldBuffer) {
         // store to state
         @SuppressWarnings("unchecked")

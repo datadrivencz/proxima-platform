@@ -90,6 +90,7 @@ import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.WithKeys;
 import org.apache.beam.sdk.transforms.reflect.DoFnSignatures;
+import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.util.ByteBuddyUtils;
 import org.apache.beam.sdk.util.CoderUtils;
 import org.apache.beam.sdk.util.construction.ReplacementOutputs;
@@ -581,7 +582,8 @@ public class ExternalStateExpander {
             .map(Pair::getSecond)
             .map(t -> TypeDescription.Generic.Builder.of(t).build())
             .collect(Collectors.toList());
-    // add parameter for key
+    // add parameter for timestamp, key, timer, state and output
+    types.add(TypeDescription.ForLoadedType.of(Instant.class));
     types.add(TypeDescription.Generic.Builder.of(inputType.getActualTypeArguments()[0]).build());
     types.add(TypeDescription.ForLoadedType.of(Timer.class));
     types.add(
@@ -605,16 +607,19 @@ public class ExternalStateExpander {
     }
     methodDefinition =
         methodDefinition.annotateParameter(
-            states.size(), AnnotationDescription.Builder.ofType(DoFn.Key.class).build());
+            states.size(), AnnotationDescription.Builder.ofType(DoFn.Timestamp.class).build());
     methodDefinition =
         methodDefinition.annotateParameter(
-            states.size() + 1,
+            states.size() + 1, AnnotationDescription.Builder.ofType(DoFn.Key.class).build());
+    methodDefinition =
+        methodDefinition.annotateParameter(
+            states.size() + 2,
             AnnotationDescription.Builder.ofType(DoFn.TimerId.class)
                 .define("value", EXPANDER_TIMER_NAME)
                 .build());
     methodDefinition =
         methodDefinition.annotateParameter(
-            states.size() + 2,
+            states.size() + 3,
             AnnotationDescription.Builder.ofType(DoFn.StateId.class)
                 .define("value", EXPANDER_FINISHED_STATE_NAME)
                 .build());
@@ -864,15 +869,21 @@ public class ExternalStateExpander {
 
     @RuntimeType
     public void intercept(@This DoFn<KV<V, StateOrInput<V>>, ?> doFn, @AllArguments Object[] args) {
+      Instant now = (Instant) args[args.length - 5];
       @SuppressWarnings("unchecked")
       K key = (K) args[args.length - 4];
       @SuppressWarnings("unchecked")
       ValueState<Boolean> finishedState = (ValueState<Boolean>) args[args.length - 2];
-      if (finishedState.read() == null) {
+      Timer flushTimer = (Timer) args[args.length - 3];
+      Instant nextFlush = nextFlushInstantFn.apply(now);
+      if (nextFlush != null && nextFlush.isBefore(BoundedWindow.TIMESTAMP_MAX_VALUE)) {
+        flushTimer.set(nextFlush);
+      }
+      if (!Boolean.TRUE.equals(finishedState.read())) {
         finishedState.write(true);
+        // FIXME: flush the buffer to processFn
       } else {
-        Timer flushTimer = (Timer) args[args.length - 3];
-        flushTimer.set(nextFlushInstantFn.apply(flushTimer.getCurrentRelativeTime()));
+        System.err.println(" *** flushing state ");
         MultiOutputReceiver outputReceiver = (MultiOutputReceiver) args[args.length - 1];
         OutputReceiver<StateValue> output = outputReceiver.get(stateTag);
         byte[] keyBytes =
