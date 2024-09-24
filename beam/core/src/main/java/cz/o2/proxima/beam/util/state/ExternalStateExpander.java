@@ -477,7 +477,14 @@ public class ExternalStateExpander {
     builder = addProcessingMethod(doFn, DoFn.OnTimer.class, builder);
     builder =
         addTimerFlushMethod(
-            doFn, inputType, keyCoder, stateValueTupleTag, nextFlushInstantFn, builder);
+            doFn,
+            inputType,
+            keyCoder,
+            mainTag,
+            stateValueTupleTag,
+            outputType,
+            nextFlushInstantFn,
+            builder);
     return builder;
   }
 
@@ -564,73 +571,31 @@ public class ExternalStateExpander {
           DoFn<KV<K, V>, OutputT> doFn,
           ParameterizedType inputType,
           Coder<K> keyCoder,
+          TupleTag<?> mainTag,
           TupleTag<StateValue> stateTag,
+          Type outputType,
           UnaryFunction<Instant, Instant> nextFlushInstantFn,
           Builder<DoFn<InputT, OutputT>> builder) {
 
-    List<Pair<Annotation, Type>> states =
-        Arrays.stream(doFn.getClass().getDeclaredFields())
-            .map(
-                f ->
-                    Pair.of(
-                        (Annotation) f.getAnnotation(DoFn.StateId.class),
-                        ((ParameterizedType) f.getGenericType()).getActualTypeArguments()[0]))
-            .filter(p -> p.getFirst() != null)
-            .collect(Collectors.toList());
-
-    List<TypeDefinition> types =
-        states.stream()
-            .map(Pair::getSecond)
-            .map(t -> TypeDescription.Generic.Builder.of(t).build())
-            .collect(Collectors.toList());
-    // add parameter for timestamp, key, timer, state and output
-    types.add(TypeDescription.ForLoadedType.of(Instant.class));
-    types.add(TypeDescription.Generic.Builder.of(inputType.getActualTypeArguments()[0]).build());
-    types.add(TypeDescription.ForLoadedType.of(Timer.class));
-    types.add(
-        TypeDescription.Generic.Builder.parameterizedType(ValueState.class, Instant.class).build());
-    types.add(bagStateFromInputType(inputType));
-    types.add(TypeDescription.ForLoadedType.of(DoFn.MultiOutputReceiver.class));
-
+    Method processElement = findMethod(doFn, ProcessElement.class);
+    FlushTimerParameterExpander expander =
+        FlushTimerParameterExpander.of(doFn, inputType, processElement, mainTag, outputType);
+    List<Pair<AnnotationDescription, TypeDefinition>> wrapperArgs = expander.getWrapperArgs();
     MethodDefinition<DoFn<InputT, OutputT>> methodDefinition =
         builder
             .defineMethod("expanderFlushTimer", void.class, Visibility.PUBLIC)
-            .withParameters(types)
+            .withParameters(wrapperArgs.stream().map(Pair::getSecond).collect(Collectors.toList()))
             .intercept(
                 MethodDelegation.to(
-                    new TimerFlushInterceptor<>(doFn, keyCoder, stateTag, nextFlushInstantFn)));
-
-    // retrieve parameter annotations and apply them
-    for (int i = 0; i < states.size(); i++) {
-      Annotation ann = states.get(i).getFirst();
-      if (ann != null) {
-        methodDefinition = methodDefinition.annotateParameter(i, ann);
+                    new TimerFlushInterceptor<>(
+                        doFn, processElement, expander, keyCoder, stateTag, nextFlushInstantFn)));
+    int i = 0;
+    for (Pair<AnnotationDescription, TypeDefinition> p : wrapperArgs) {
+      if (p.getFirst() != null) {
+        methodDefinition = methodDefinition.annotateParameter(i, p.getFirst());
       }
+      i++;
     }
-    methodDefinition =
-        methodDefinition.annotateParameter(
-            states.size(), AnnotationDescription.Builder.ofType(DoFn.Timestamp.class).build());
-    methodDefinition =
-        methodDefinition.annotateParameter(
-            states.size() + 1, AnnotationDescription.Builder.ofType(DoFn.Key.class).build());
-    methodDefinition =
-        methodDefinition.annotateParameter(
-            states.size() + 2,
-            AnnotationDescription.Builder.ofType(DoFn.TimerId.class)
-                .define("value", EXPANDER_TIMER_NAME)
-                .build());
-    methodDefinition =
-        methodDefinition.annotateParameter(
-            states.size() + 3,
-            AnnotationDescription.Builder.ofType(DoFn.StateId.class)
-                .define("value", EXPANDER_FLUSH_STATE_NAME)
-                .build());
-    methodDefinition =
-        methodDefinition.annotateParameter(
-            states.size() + 4,
-            AnnotationDescription.Builder.ofType(DoFn.StateId.class)
-                .define("value", EXPANDER_BUF_STATE_NAME)
-                .build());
     return methodDefinition.annotateMethod(
         AnnotationDescription.Builder.ofType(DoFn.OnTimer.class)
             .define("value", EXPANDER_TIMER_NAME)
@@ -857,17 +822,23 @@ public class ExternalStateExpander {
 
     private final LinkedHashMap<String, BiFunction<Object, byte[], Iterable<StateValue>>>
         stateReaders;
+    private final Method processElementMethod;
+    private final FlushTimerParameterExpander expander;
     private final Coder<K> keyCoder;
     private final TupleTag<StateValue> stateTag;
     private final UnaryFunction<Instant, Instant> nextFlushInstantFn;
 
     TimerFlushInterceptor(
         DoFn<KV<K, V>, ?> doFn,
+        Method processElementMethod,
+        FlushTimerParameterExpander expander,
         Coder<K> keyCoder,
         TupleTag<StateValue> stateTag,
         UnaryFunction<Instant, Instant> nextFlushInstantFn) {
 
       this.stateReaders = getStateReaders(doFn);
+      this.processElementMethod = processElementMethod;
+      this.expander = expander;
       this.keyCoder = keyCoder;
       this.stateTag = stateTag;
       this.nextFlushInstantFn = nextFlushInstantFn;
