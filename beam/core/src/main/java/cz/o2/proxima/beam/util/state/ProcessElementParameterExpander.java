@@ -136,13 +136,6 @@ public interface ProcessElementParameterExpander {
       boolean shouldBuffer = nextFlush == null /* we have not finished reading state */
           // FIXME: || nextFlush.isBefore(/* timestamp */)
           ;
-      System.err.println(
-          " *** process "
-              + elem
-              + ", "
-              + shouldBuffer
-              + " , at "
-              + flushTimer.getCurrentRelativeTime());
       if (shouldBuffer) {
         // store to state
         @SuppressWarnings("unchecked")

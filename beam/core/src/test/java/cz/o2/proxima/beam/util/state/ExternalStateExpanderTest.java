@@ -24,6 +24,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.apache.beam.runners.direct.DirectRunner;
 import org.apache.beam.runners.flink.FlinkRunner;
 import org.apache.beam.sdk.Pipeline;
@@ -82,13 +83,14 @@ public class ExternalStateExpanderTest {
                 .withKeyType(TypeDescriptors.integers()));
     PCollection<Long> count = withKeys.apply(ParDo.of(getSumFn()));
     PAssert.that(count).containsInAnyOrder(2L, 4L);
-    ExternalStateExpander.expand(
-        pipeline,
-        Create.empty(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())),
-        new Instant(0),
-        ign -> BoundedWindow.TIMESTAMP_MAX_VALUE,
-        dummy());
-    pipeline.run();
+    Pipeline expanded =
+        ExternalStateExpander.expand(
+            pipeline,
+            Create.empty(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())),
+            new Instant(0),
+            ign -> BoundedWindow.TIMESTAMP_MAX_VALUE,
+            dummy());
+    expanded.run();
   }
 
   @Test
@@ -105,13 +107,14 @@ public class ExternalStateExpanderTest {
             .apply(ParDo.of(getSumFn()).withOutputTags(mainTag, TupleTagList.empty()))
             .get(mainTag);
     PAssert.that(count).containsInAnyOrder(2L, 4L);
-    ExternalStateExpander.expand(
-        pipeline,
-        Create.empty(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())),
-        new Instant(0),
-        ign -> BoundedWindow.TIMESTAMP_MAX_VALUE,
-        dummy());
-    pipeline.run();
+    Pipeline expanded =
+        ExternalStateExpander.expand(
+            pipeline,
+            Create.empty(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())),
+            new Instant(0),
+            ign -> BoundedWindow.TIMESTAMP_MAX_VALUE,
+            dummy());
+    expanded.run();
   }
 
   @Test
@@ -131,13 +134,14 @@ public class ExternalStateExpanderTest {
     PCollection<String> inputs = pipeline.apply(Create.of("1", "2", "3"));
     PCollection<Long> count = inputs.apply(transform);
     PAssert.that(count).containsInAnyOrder(2L, 4L);
-    ExternalStateExpander.expand(
-        pipeline,
-        Create.empty(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())),
-        new Instant(0),
-        ign -> BoundedWindow.TIMESTAMP_MAX_VALUE,
-        dummy());
-    pipeline.run();
+    Pipeline expanded =
+        ExternalStateExpander.expand(
+            pipeline,
+            Create.empty(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())),
+            new Instant(0),
+            ign -> BoundedWindow.TIMESTAMP_MAX_VALUE,
+            dummy());
+    expanded.run();
   }
 
   @Test
@@ -152,30 +156,31 @@ public class ExternalStateExpanderTest {
     PAssert.that(count).containsInAnyOrder(6L, 4L);
     VarIntCoder intCoder = VarIntCoder.of();
     VarLongCoder longCoder = VarLongCoder.of();
-    ExternalStateExpander.expand(
-        pipeline,
-        Create.of(
-                KV.of(
-                    "sum/ParMultiDo(Anonymous)",
-                    new StateValue(
-                        CoderUtils.encodeToByteArray(intCoder, 0),
-                        "sum",
-                        CoderUtils.encodeToByteArray(longCoder, 2L))),
-                KV.of(
-                    "sum/ParMultiDo(Anonymous)",
-                    new StateValue(
-                        CoderUtils.encodeToByteArray(intCoder, 1),
-                        "sum",
-                        CoderUtils.encodeToByteArray(longCoder, 1L))))
-            .withCoder(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())),
-        new Instant(0),
-        current -> BoundedWindow.TIMESTAMP_MAX_VALUE,
-        dummy());
-    pipeline.run();
+    Pipeline expanded =
+        ExternalStateExpander.expand(
+            pipeline,
+            Create.of(
+                    KV.of(
+                        "sum/ParMultiDo(Anonymous)",
+                        new StateValue(
+                            CoderUtils.encodeToByteArray(intCoder, 0),
+                            "sum",
+                            CoderUtils.encodeToByteArray(longCoder, 2L))),
+                    KV.of(
+                        "sum/ParMultiDo(Anonymous)",
+                        new StateValue(
+                            CoderUtils.encodeToByteArray(intCoder, 1),
+                            "sum",
+                            CoderUtils.encodeToByteArray(longCoder, 1L))))
+                .withCoder(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())),
+            new Instant(0),
+            current -> BoundedWindow.TIMESTAMP_MAX_VALUE,
+            dummy());
+    expanded.run();
   }
 
-  @Test
-  public void testSimpleExpandWithStateStore() {
+  @Test(timeout = 10_000)
+  public void testSimpleExpandWithStateStore() throws InterruptedException {
     Pipeline pipeline = createPipeline();
     Instant now = new Instant(0);
     PCollection<String> inputs =
@@ -188,22 +193,23 @@ public class ExternalStateExpanderTest {
     PCollection<Long> count = withKeys.apply("sum", ParDo.of(getSumFn()));
     PAssert.that(count).containsInAnyOrder(1L, 2L);
     Map<String, StateValue> states = new HashMap<>();
-    ExternalStateExpander.expand(
-        pipeline,
-        Create.empty(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())),
-        now,
-        current -> current.equals(now) ? now.plus(1) : BoundedWindow.TIMESTAMP_MAX_VALUE,
-        collectStates(states));
-    pipeline.run();
+    Pipeline expanded =
+        ExternalStateExpander.expand(
+            pipeline,
+            Create.empty(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())),
+            now,
+            current -> current.equals(now) ? now.plus(1) : BoundedWindow.TIMESTAMP_MAX_VALUE,
+            collectStates(states));
+    expanded.run();
     assertEquals(1, states.size());
   }
 
   private static PTransform<PCollection<KV<String, StateValue>>, PDone> collectStates(
       Map<String, StateValue> states) {
 
-    int code = System.identityHashCode(states);
-    final SerializableScopedValue<Integer, Map<String, StateValue>> val =
-        new SerializableScopedValue<>(code, states);
+    String id = UUID.randomUUID().toString();
+    final SerializableScopedValue<String, Map<String, StateValue>> val =
+        new SerializableScopedValue<>(id, states);
     return new PTransform<>() {
       @Override
       public PDone expand(PCollection<KV<String, StateValue>> input) {
@@ -211,7 +217,10 @@ public class ExternalStateExpanderTest {
             MapElements.into(TypeDescriptors.voids())
                 .via(
                     e -> {
-                      val.get(code).put(e.getKey(), e.getValue());
+                      Map<String, StateValue> m = val.get(id);
+                      synchronized (m) {
+                        m.put(e.getKey(), e.getValue());
+                      }
                       return null;
                     }));
         return PDone.in(input.getPipeline());
