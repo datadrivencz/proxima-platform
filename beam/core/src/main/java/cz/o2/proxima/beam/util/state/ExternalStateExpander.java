@@ -766,7 +766,7 @@ public class ExternalStateExpander {
         res = res.and((TupleTag) e.getKey(), e.getValue());
       }
     }
-    return res;
+    return Objects.requireNonNull(res);
   }
 
   private static class ProcessElementInterceptor<K, V> {

@@ -241,7 +241,7 @@ public class MethodCallUtils {
         "dummy",
         new StateBinder() {
           @Override
-          public <T> ValueState<T> bindValue(
+          public <T> @Nullable ValueState<T> bindValue(
               String id, StateSpec<ValueState<T>> spec, Coder<T> coder) {
             consumer.set(
                 (accessor, value) ->
@@ -253,7 +253,7 @@ public class MethodCallUtils {
           }
 
           @Override
-          public <T> BagState<T> bindBag(
+          public <T> @Nullable BagState<T> bindBag(
               String id, StateSpec<BagState<T>> spec, Coder<T> elemCoder) {
             consumer.set(
                 (accessor, value) -> {
@@ -266,7 +266,7 @@ public class MethodCallUtils {
           }
 
           @Override
-          public <T> SetState<T> bindSet(
+          public <T> @Nullable SetState<T> bindSet(
               String id, StateSpec<SetState<T>> spec, Coder<T> elemCoder) {
             consumer.set(
                 (accessor, value) -> {
@@ -279,7 +279,7 @@ public class MethodCallUtils {
           }
 
           @Override
-          public <KeyT, ValueT> MapState<KeyT, ValueT> bindMap(
+          public <KeyT, ValueT> @Nullable MapState<KeyT, ValueT> bindMap(
               String id,
               StateSpec<MapState<KeyT, ValueT>> spec,
               Coder<KeyT> mapKeyCoder,
@@ -296,7 +296,7 @@ public class MethodCallUtils {
           }
 
           @Override
-          public <T> OrderedListState<T> bindOrderedList(
+          public <T> @Nullable OrderedListState<T> bindOrderedList(
               String id, StateSpec<OrderedListState<T>> spec, Coder<T> elemCoder) {
             KvCoder<T, Instant> coder = KvCoder.of(elemCoder, InstantCoder.of());
             consumer.set(
@@ -311,7 +311,7 @@ public class MethodCallUtils {
           }
 
           @Override
-          public <KeyT, ValueT> MultimapState<KeyT, ValueT> bindMultimap(
+          public <KeyT, ValueT> @Nullable MultimapState<KeyT, ValueT> bindMultimap(
               String id,
               StateSpec<MultimapState<KeyT, ValueT>> spec,
               Coder<KeyT> keyCoder,
@@ -328,11 +328,12 @@ public class MethodCallUtils {
           }
 
           @Override
-          public <InputT, AccumT, OutputT> CombiningState<InputT, AccumT, OutputT> bindCombining(
-              String id,
-              StateSpec<CombiningState<InputT, AccumT, OutputT>> spec,
-              Coder<AccumT> accumCoder,
-              CombineFn<InputT, AccumT, OutputT> combineFn) {
+          public <InputT, AccumT, OutputT> @Nullable
+              CombiningState<InputT, AccumT, OutputT> bindCombining(
+                  String id,
+                  StateSpec<CombiningState<InputT, AccumT, OutputT>> spec,
+                  Coder<AccumT> accumCoder,
+                  CombineFn<InputT, AccumT, OutputT> combineFn) {
             consumer.set(
                 (accessor, value) -> {
                   ((CombiningState<InputT, AccumT, OutputT>) accessor)
@@ -344,7 +345,7 @@ public class MethodCallUtils {
           }
 
           @Override
-          public <InputT, AccumT, OutputT>
+          public <InputT, AccumT, OutputT> @Nullable
               CombiningState<InputT, AccumT, OutputT> bindCombiningWithContext(
                   String id,
                   StateSpec<CombiningState<InputT, AccumT, OutputT>> spec,
@@ -361,7 +362,7 @@ public class MethodCallUtils {
           }
 
           @Override
-          public WatermarkHoldState bindWatermark(
+          public @Nullable WatermarkHoldState bindWatermark(
               String id, StateSpec<WatermarkHoldState> spec, TimestampCombiner timestampCombiner) {
             return null;
           }
@@ -403,7 +404,7 @@ public class MethodCallUtils {
         "dummy",
         new StateBinder() {
           @Override
-          public <T> ValueState<T> bindValue(
+          public <T> @Nullable ValueState<T> bindValue(
               String id, StateSpec<ValueState<T>> spec, Coder<T> coder) {
             res.set(
                 (accessor, key) -> {
@@ -420,7 +421,7 @@ public class MethodCallUtils {
           }
 
           @Override
-          public <T> BagState<T> bindBag(
+          public <T> @Nullable BagState<T> bindBag(
               String id, StateSpec<BagState<T>> spec, Coder<T> elemCoder) {
             res.set(
                 (accessor, key) ->
@@ -436,7 +437,7 @@ public class MethodCallUtils {
           }
 
           @Override
-          public <T> SetState<T> bindSet(
+          public <T> @Nullable SetState<T> bindSet(
               String id, StateSpec<SetState<T>> spec, Coder<T> elemCoder) {
             res.set(
                 (accessor, key) ->
@@ -452,7 +453,7 @@ public class MethodCallUtils {
           }
 
           @Override
-          public <KeyT, ValueT> MapState<KeyT, ValueT> bindMap(
+          public <KeyT, ValueT> @Nullable MapState<KeyT, ValueT> bindMap(
               String id,
               StateSpec<MapState<KeyT, ValueT>> spec,
               Coder<KeyT> mapKeyCoder,
@@ -474,7 +475,7 @@ public class MethodCallUtils {
           }
 
           @Override
-          public <T> OrderedListState<T> bindOrderedList(
+          public <T> @Nullable OrderedListState<T> bindOrderedList(
               String id, StateSpec<OrderedListState<T>> spec, Coder<T> elemCoder) {
             KvCoder<T, Instant> coder = KvCoder.of(elemCoder, InstantCoder.of());
             res.set(
@@ -493,7 +494,7 @@ public class MethodCallUtils {
           }
 
           @Override
-          public <KeyT, ValueT> MultimapState<KeyT, ValueT> bindMultimap(
+          public <KeyT, ValueT> @Nullable MultimapState<KeyT, ValueT> bindMultimap(
               String id,
               StateSpec<MultimapState<KeyT, ValueT>> spec,
               Coder<KeyT> keyCoder,
@@ -515,11 +516,12 @@ public class MethodCallUtils {
           }
 
           @Override
-          public <InputT, AccumT, OutputT> CombiningState<InputT, AccumT, OutputT> bindCombining(
-              String id,
-              StateSpec<CombiningState<InputT, AccumT, OutputT>> spec,
-              Coder<AccumT> accumCoder,
-              CombineFn<InputT, AccumT, OutputT> combineFn) {
+          public <InputT, AccumT, OutputT> @Nullable
+              CombiningState<InputT, AccumT, OutputT> bindCombining(
+                  String id,
+                  StateSpec<CombiningState<InputT, AccumT, OutputT>> spec,
+                  Coder<AccumT> accumCoder,
+                  CombineFn<InputT, AccumT, OutputT> combineFn) {
             res.set(
                 (accessor, key) -> {
                   AccumT accum = ((CombiningState<InputT, AccumT, OutputT>) accessor).getAccum();
@@ -534,7 +536,7 @@ public class MethodCallUtils {
           }
 
           @Override
-          public <InputT, AccumT, OutputT>
+          public <InputT, AccumT, OutputT> @Nullable
               CombiningState<InputT, AccumT, OutputT> bindCombiningWithContext(
                   String id,
                   StateSpec<CombiningState<InputT, AccumT, OutputT>> spec,
@@ -554,7 +556,7 @@ public class MethodCallUtils {
           }
 
           @Override
-          public WatermarkHoldState bindWatermark(
+          public @Nullable WatermarkHoldState bindWatermark(
               String id, StateSpec<WatermarkHoldState> spec, TimestampCombiner timestampCombiner) {
             return null;
           }

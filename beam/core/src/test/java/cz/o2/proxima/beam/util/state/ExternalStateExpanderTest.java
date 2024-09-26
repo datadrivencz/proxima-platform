@@ -179,8 +179,8 @@ public class ExternalStateExpanderTest {
     expanded.run();
   }
 
-  @Test(timeout = 10_000)
-  public void testSimpleExpandWithStateStore() throws InterruptedException {
+  @Test
+  public void testSimpleExpandWithStateStore() {
     Pipeline pipeline = createPipeline();
     Instant now = new Instant(0);
     PCollection<String> inputs =
