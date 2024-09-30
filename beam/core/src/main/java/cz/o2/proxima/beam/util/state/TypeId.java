@@ -24,7 +24,7 @@ import net.bytebuddy.description.type.TypeDefinition;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.DoFn.StateId;
 
-public class TypeId {
+class TypeId {
 
   private static final TypeId TIMESTAMP_TYPE =
       TypeId.of(AnnotationDescription.Builder.ofType(DoFn.Timestamp.class).build());

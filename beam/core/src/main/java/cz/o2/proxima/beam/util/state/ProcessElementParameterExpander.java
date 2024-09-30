@@ -34,6 +34,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.BiFunction;
 import java.util.function.Predicate;
+import lombok.extern.slf4j.Slf4j;
 import net.bytebuddy.description.annotation.AnnotationDescription;
 import net.bytebuddy.description.annotation.AnnotationDescription.ForLoadedAnnotation;
 import net.bytebuddy.description.type.TypeDefinition;
@@ -53,7 +54,7 @@ import org.apache.beam.sdk.values.TimestampedValue;
 import org.apache.beam.sdk.values.TupleTag;
 import org.joda.time.Instant;
 
-public interface ProcessElementParameterExpander {
+interface ProcessElementParameterExpander {
 
   static ProcessElementParameterExpander of(
       DoFn<?, ?> doFn,
@@ -108,44 +109,7 @@ public interface ProcessElementParameterExpander {
     int elementPos = findParameter(wrapperArgs.keySet(), TypeId::isElement);
     Preconditions.checkState(elementPos >= 0, "Missing @Element annotation on method %s", method);
     Map<String, BiConsumer<Object, StateValue>> stateUpdaterMap = getStateUpdaters(doFn);
-    return args -> {
-      @SuppressWarnings("unchecked")
-      KV<?, StateOrInput<?>> elem = (KV<?, StateOrInput<?>>) args[elementPos];
-      Instant ts = (Instant) args[args.length - 5];
-      Timer flushTimer = (Timer) args[args.length - 4];
-      @SuppressWarnings("unchecked")
-      ValueState<Instant> finishedState = (ValueState<Instant>) args[args.length - 3];
-      flushTimer.set(stateWriteInstant);
-      boolean isState = Objects.requireNonNull(elem.getValue(), "elem").isState();
-      if (isState) {
-        StateValue state = elem.getValue().getState();
-        String stateName = state.getName();
-        // find state accessor
-        int statePos = findParameter(wrapperArgs.keySet(), a -> a.isState(stateName));
-        Preconditions.checkArgument(
-            statePos < method.getParameterCount(), "Missing state accessor for %s", stateName);
-        Object stateAccessor = args[statePos];
-        // find declaration of state to find coder
-        BiConsumer<Object, StateValue> updater = stateUpdaterMap.get(stateName);
-        Preconditions.checkArgument(
-            updater != null, "Missing updater for state %s in %s", stateName, stateUpdaterMap);
-        updater.accept(stateAccessor, state);
-        return false;
-      }
-      Instant nextFlush = finishedState.read();
-      boolean shouldBuffer =
-          nextFlush == null /* we have not finished reading state */
-              || nextFlush.isBefore(ts) /* the timestamp if after next flush */;
-      if (shouldBuffer) {
-        // store to state
-        @SuppressWarnings("unchecked")
-        BagState<TimestampedValue<KV<?, ?>>> buffer =
-            (BagState<TimestampedValue<KV<?, ?>>>) args[args.length - 2];
-        buffer.add(TimestampedValue.of(KV.of(elem.getKey(), elem.getValue().getInput()), ts));
-        return false;
-      }
-      return true;
-    };
+    return new ProcessFn(elementPos, stateWriteInstant, wrapperArgs, method, stateUpdaterMap);
   }
 
   private static int findParameter(Collection<TypeId> args, Predicate<TypeId> predicate) {
@@ -226,5 +190,71 @@ public interface ProcessElementParameterExpander {
       parameterType = getWrapperInputType(inputType);
     }
     return Pair.of(typeId, Pair.of(annotation, parameterType));
+  }
+
+  @Slf4j
+  class ProcessFn implements UnaryFunction<Object[], Boolean> {
+    private final int elementPos;
+    private final Instant stateWriteInstant;
+    private final LinkedHashMap<TypeId, Pair<AnnotationDescription, TypeDefinition>> wrapperArgs;
+    private final Method method;
+    private final Map<String, BiConsumer<Object, StateValue>> stateUpdaterMap;
+
+    public ProcessFn(
+        int elementPos,
+        Instant stateWriteInstant,
+        LinkedHashMap<TypeId, Pair<AnnotationDescription, TypeDefinition>> wrapperArgs,
+        Method method,
+        Map<String, BiConsumer<Object, StateValue>> stateUpdaterMap) {
+      this.elementPos = elementPos;
+      this.stateWriteInstant = stateWriteInstant;
+      this.wrapperArgs = wrapperArgs;
+      this.method = method;
+      this.stateUpdaterMap = stateUpdaterMap;
+    }
+
+    @Override
+    public Boolean apply(Object[] args) {
+      @SuppressWarnings("unchecked")
+      KV<?, StateOrInput<?>> elem = (KV<?, StateOrInput<?>>) args[elementPos];
+      Instant ts = (Instant) args[args.length - 5];
+      Timer flushTimer = (Timer) args[args.length - 4];
+      @SuppressWarnings("unchecked")
+      ValueState<Instant> finishedState = (ValueState<Instant>) args[args.length - 3];
+      boolean isState = Objects.requireNonNull(elem.getValue(), "elem").isState();
+      if (isState) {
+        StateValue state = elem.getValue().getState();
+        String stateName = state.getName();
+        // find state accessor
+        int statePos = findParameter(wrapperArgs.keySet(), a -> a.isState(stateName));
+        Preconditions.checkArgument(
+            statePos < method.getParameterCount(), "Missing state accessor for %s", stateName);
+        Object stateAccessor = args[statePos];
+        // find declaration of state to find coder
+        BiConsumer<Object, StateValue> updater = stateUpdaterMap.get(stateName);
+        Preconditions.checkArgument(
+            updater != null, "Missing updater for state %s in %s", stateName, stateUpdaterMap);
+        updater.accept(stateAccessor, state);
+        return false;
+      }
+      Instant nextFlush = finishedState.read();
+      if (nextFlush == null) {
+        // set the initial timer
+        flushTimer.set(stateWriteInstant);
+      }
+      boolean shouldBuffer =
+          nextFlush == null /* we have not finished reading state */
+              || nextFlush.isBefore(ts) /* the timestamp if after next flush */;
+      if (shouldBuffer) {
+        log.debug("Buffering element {} at {} with nextFlush {}", elem, ts, nextFlush);
+        // store to state
+        @SuppressWarnings("unchecked")
+        BagState<TimestampedValue<KV<?, ?>>> buffer =
+            (BagState<TimestampedValue<KV<?, ?>>>) args[args.length - 2];
+        buffer.add(TimestampedValue.of(KV.of(elem.getKey(), elem.getValue().getInput()), ts));
+        return false;
+      }
+      return true;
+    }
   }
 }

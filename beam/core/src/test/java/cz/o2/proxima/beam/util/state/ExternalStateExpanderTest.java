@@ -59,7 +59,6 @@ import org.apache.beam.sdk.values.TupleTagList;
 import org.apache.beam.sdk.values.TypeDescriptors;
 import org.jetbrains.annotations.NotNull;
 import org.joda.time.Instant;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -208,16 +207,15 @@ public class ExternalStateExpanderTest {
   }
 
   @Test
-  @Ignore
   public void testStateWithElementEarly() throws CoderException {
     Pipeline pipeline = createPipeline();
     Instant now = new Instant(0);
     PCollection<String> inputs =
         pipeline.apply(
             TestStream.create(StringUtf8Coder.of())
-                .addElements(TimestampedValue.of("1", now))
-                .advanceWatermarkTo(new Instant(0))
-                .addElements(TimestampedValue.of("3", now.plus(2)))
+                // the second timestamped value MUST not be part of the state produced at 1
+                .addElements(TimestampedValue.of("1", now), TimestampedValue.of("3", now.plus(2)))
+                .advanceWatermarkTo(new Instant(1))
                 .advanceWatermarkToInfinity());
     PCollection<KV<Integer, String>> withKeys =
         inputs.apply(

@@ -21,6 +21,7 @@ import cz.o2.proxima.core.functional.UnaryFunction;
 import cz.o2.proxima.core.util.ExceptionUtils;
 import cz.o2.proxima.core.util.Pair;
 import cz.o2.proxima.internal.com.google.common.annotations.VisibleForTesting;
+import cz.o2.proxima.internal.com.google.common.base.MoreObjects;
 import cz.o2.proxima.internal.com.google.common.base.Preconditions;
 import cz.o2.proxima.internal.com.google.common.collect.Iterables;
 import java.lang.annotation.Annotation;
@@ -41,6 +42,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.BiFunction;
 import java.util.stream.Collectors;
+import lombok.extern.slf4j.Slf4j;
 import net.bytebuddy.ByteBuddy;
 import net.bytebuddy.description.annotation.AnnotationDescription;
 import net.bytebuddy.description.modifier.FieldManifestation;
@@ -112,6 +114,7 @@ import org.apache.beam.vendor.guava.v32_1_2_jre.com.google.common.reflect.TypeTo
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.joda.time.Instant;
 
+@Slf4j
 public class ExternalStateExpander {
 
   static final String EXPANDER_BUF_STATE_SPEC = "expanderBufStateSpec";
@@ -589,7 +592,7 @@ public class ExternalStateExpander {
             .withParameters(wrapperArgs.stream().map(Pair::getSecond).collect(Collectors.toList()))
             .intercept(
                 MethodDelegation.to(
-                    new TimerFlushInterceptor<>(
+                    new FlushTimerInterceptor<>(
                         doFn, processElement, expander, keyCoder, stateTag, nextFlushInstantFn)));
     int i = 0;
     for (Pair<AnnotationDescription, TypeDefinition> p : wrapperArgs) {
@@ -819,7 +822,7 @@ public class ExternalStateExpander {
     }
   }
 
-  private static class TimerFlushInterceptor<K, V> {
+  private static class FlushTimerInterceptor<K, V> {
 
     private final DoFn<KV<K, V>, ?> doFn;
     private final LinkedHashMap<String, BiFunction<Object, byte[], Iterable<StateValue>>>
@@ -830,7 +833,7 @@ public class ExternalStateExpander {
     private final TupleTag<StateValue> stateTag;
     private final UnaryFunction<Instant, Instant> nextFlushInstantFn;
 
-    TimerFlushInterceptor(
+    FlushTimerInterceptor(
         DoFn<KV<K, V>, ?> doFn,
         Method processElementMethod,
         FlushTimerParameterExpander expander,
@@ -857,20 +860,19 @@ public class ExternalStateExpander {
       Timer flushTimer = (Timer) args[args.length - 4];
       Instant nextFlush = nextFlushInstantFn.apply(now);
       Instant lastFlush = nextFlushState.read();
-      if (nextFlush != null && nextFlush.isBefore(BoundedWindow.TIMESTAMP_MAX_VALUE)) {
+      boolean isNextScheduled =
+          nextFlush != null && nextFlush.isBefore(BoundedWindow.TIMESTAMP_MAX_VALUE);
+      if (isNextScheduled) {
         flushTimer.set(nextFlush);
         nextFlushState.write(nextFlush);
       }
+      @SuppressWarnings("unchecked")
       BagState<TimestampedValue<KV<K, V>>> bufState =
           (BagState<TimestampedValue<KV<K, V>>>) args[args.length - 2];
-      bufState
-          .read()
-          .forEach(
-              kv -> {
-                Object[] processArgs = expander.getProcessElementArgs(kv.getValue(), args);
-                ExceptionUtils.unchecked(() -> processElementMethod.invoke(this.doFn, processArgs));
-              });
+      List<TimestampedValue<KV<K, V>>> pushedBackElements =
+          processBuffer(args, bufState.read(), MoreObjects.firstNonNull(lastFlush, now));
       bufState.clear();
+      // if we have already processed state data
       if (lastFlush != null) {
         MultiOutputReceiver outputReceiver = (MultiOutputReceiver) args[args.length - 1];
         OutputReceiver<StateValue> output = outputReceiver.get(stateTag);
@@ -879,9 +881,34 @@ public class ExternalStateExpander {
         int i = 0;
         for (BiFunction<Object, byte[], Iterable<StateValue>> f : stateReaders.values()) {
           Object accessor = args[i++];
-          f.apply(accessor, keyBytes).forEach(output::output);
+          Iterable<StateValue> values = f.apply(accessor, keyBytes);
+          values.forEach(output::output);
         }
       }
+      List<TimestampedValue<KV<K, V>>> remaining =
+          processBuffer(
+              args,
+              pushedBackElements,
+              MoreObjects.firstNonNull(nextFlush, BoundedWindow.TIMESTAMP_MAX_VALUE));
+      remaining.forEach(bufState::add);
+    }
+
+    private List<TimestampedValue<KV<K, V>>> processBuffer(
+        Object[] args, Iterable<TimestampedValue<KV<K, V>>> buffer, Instant maxTs) {
+
+      List<TimestampedValue<KV<K, V>>> pushedBackElements = new ArrayList<>();
+      buffer.forEach(
+          kv -> {
+            if (kv.getTimestamp().isBefore(maxTs)) {
+              Object[] processArgs = expander.getProcessElementArgs(kv.getValue(), args);
+              ExceptionUtils.unchecked(() -> processElementMethod.invoke(this.doFn, processArgs));
+            } else {
+              // return back to buffer
+              log.debug("Returning element {} to flush buffer", kv);
+              pushedBackElements.add(kv);
+            }
+          });
+      return pushedBackElements;
     }
   }
 

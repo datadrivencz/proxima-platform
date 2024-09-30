@@ -38,7 +38,7 @@ import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.TupleTag;
 import org.joda.time.Instant;
 
-public interface FlushTimerParameterExpander {
+interface FlushTimerParameterExpander {
 
   static FlushTimerParameterExpander of(
       DoFn<?, ?> doFn,

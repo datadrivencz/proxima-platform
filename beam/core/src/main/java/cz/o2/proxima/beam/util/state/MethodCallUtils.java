@@ -68,7 +68,7 @@ import org.apache.beam.sdk.values.TupleTag;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Instant;
 
-public class MethodCallUtils {
+class MethodCallUtils {
 
   static Object[] fromGenerators(
       List<BiFunction<Object[], KV<?, ?>, Object>> generators, Object[] wrapperArgs) {
@@ -93,6 +93,9 @@ public class MethodCallUtils {
       LinkedHashMap<TypeId, Pair<Annotation, Type>> argsMap,
       TupleTag<?> mainTag,
       Type outputType) {
+
+    // FIXME: interchange @Timestamp and transform OutputReceiver to output correct
+    // timestamp
 
     List<BiFunction<Object[], KV<?, ?>, Object>> res = new ArrayList<>(argsMap.size());
     List<TypeDefinition> wrapperParamsIds =
