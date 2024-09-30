@@ -184,8 +184,7 @@ public class MethodCallUtils {
     Type valueType = inputType.getActualTypeArguments()[1];
 
     // generic type: KV<K, V>
-    Generic kvType = Generic.Builder.parameterizedType(KV.class, keyType, valueType).build();
-    return kvType;
+    return Generic.Builder.parameterizedType(KV.class, keyType, valueType).build();
   }
 
   private static <T> OutputReceiver<T> fromMultiOutput(
@@ -295,12 +294,11 @@ public class MethodCallUtils {
       public <T> @Nullable BagState<T> bindBag(
           String id, StateSpec<BagState<T>> spec, Coder<T> elemCoder) {
         consumer.set(
-            (accessor, value) -> {
-              ((BagState<T>) accessor)
-                  .add(
-                      ExceptionUtils.uncheckedFactory(
-                          () -> CoderUtils.decodeFromByteArray(elemCoder, value.getValue())));
-            });
+            (accessor, value) ->
+                ((BagState<T>) accessor)
+                    .add(
+                        ExceptionUtils.uncheckedFactory(
+                            () -> CoderUtils.decodeFromByteArray(elemCoder, value.getValue()))));
         return null;
       }
 
@@ -308,12 +306,11 @@ public class MethodCallUtils {
       public <T> @Nullable SetState<T> bindSet(
           String id, StateSpec<SetState<T>> spec, Coder<T> elemCoder) {
         consumer.set(
-            (accessor, value) -> {
-              ((SetState<T>) accessor)
-                  .add(
-                      ExceptionUtils.uncheckedFactory(
-                          () -> CoderUtils.decodeFromByteArray(elemCoder, value.getValue())));
-            });
+            (accessor, value) ->
+                ((SetState<T>) accessor)
+                    .add(
+                        ExceptionUtils.uncheckedFactory(
+                            () -> CoderUtils.decodeFromByteArray(elemCoder, value.getValue()))));
         return null;
       }
 
@@ -374,12 +371,11 @@ public class MethodCallUtils {
               Coder<AccumT> accumCoder,
               CombineFn<InputT, AccumT, OutputT> combineFn) {
         consumer.set(
-            (accessor, value) -> {
-              ((CombiningState<InputT, AccumT, OutputT>) accessor)
-                  .addAccum(
-                      ExceptionUtils.uncheckedFactory(
-                          () -> CoderUtils.decodeFromByteArray(accumCoder, value.getValue())));
-            });
+            (accessor, value) ->
+                ((CombiningState<InputT, AccumT, OutputT>) accessor)
+                    .addAccum(
+                        ExceptionUtils.uncheckedFactory(
+                            () -> CoderUtils.decodeFromByteArray(accumCoder, value.getValue()))));
         return null;
       }
 
@@ -391,12 +387,11 @@ public class MethodCallUtils {
               Coder<AccumT> accumCoder,
               CombineFnWithContext<InputT, AccumT, OutputT> combineFn) {
         consumer.set(
-            (accessor, value) -> {
-              ((CombiningState<InputT, AccumT, OutputT>) accessor)
-                  .addAccum(
-                      ExceptionUtils.uncheckedFactory(
-                          () -> CoderUtils.decodeFromByteArray(accumCoder, value.getValue())));
-            });
+            (accessor, value) ->
+                ((CombiningState<InputT, AccumT, OutputT>) accessor)
+                    .addAccum(
+                        ExceptionUtils.uncheckedFactory(
+                            () -> CoderUtils.decodeFromByteArray(accumCoder, value.getValue()))));
         return null;
       }
 

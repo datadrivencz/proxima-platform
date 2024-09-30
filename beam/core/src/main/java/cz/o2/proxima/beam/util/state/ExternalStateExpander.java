@@ -23,7 +23,6 @@ import cz.o2.proxima.core.util.Pair;
 import cz.o2.proxima.internal.com.google.common.annotations.VisibleForTesting;
 import cz.o2.proxima.internal.com.google.common.base.Preconditions;
 import cz.o2.proxima.internal.com.google.common.collect.Iterables;
-import java.io.File;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -103,7 +102,6 @@ import org.apache.beam.sdk.values.PCollectionTuple;
 import org.apache.beam.sdk.values.PDone;
 import org.apache.beam.sdk.values.PInput;
 import org.apache.beam.sdk.values.POutput;
-import org.apache.beam.sdk.values.PValue;
 import org.apache.beam.sdk.values.TimestampedValue;
 import org.apache.beam.sdk.values.TimestampedValue.TimestampedValueCoder;
 import org.apache.beam.sdk.values.TupleTag;
@@ -122,6 +120,7 @@ public class ExternalStateExpander {
   static final String EXPANDER_FLUSH_STATE_NAME = "_expanderFlush";
   static final String EXPANDER_TIMER_SPEC = "expanderTimerSpec";
   static final String EXPANDER_TIMER_NAME = "_expanderTimer";
+  static final String DELEGATE_FIELD_NAME = "delegate";
 
   static final TupleTag<StateValue> STATE_TUPLE_TAG = new StateTupleTag() {};
 
@@ -179,9 +178,7 @@ public class ExternalStateExpander {
     // check that all nodes have unique names
     Set<String> names = new HashSet<>();
     pipeline.traverseTopologically(
-        new PipelineVisitor() {
-          @Override
-          public void enterPipeline(Pipeline p) {}
+        new PipelineVisitor.Defaults() {
 
           @Override
           public CompositeBehavior enterCompositeTransform(TransformHierarchy.Node node) {
@@ -190,18 +187,9 @@ public class ExternalStateExpander {
           }
 
           @Override
-          public void leaveCompositeTransform(TransformHierarchy.Node node) {}
-
-          @Override
           public void visitPrimitiveTransform(TransformHierarchy.Node node) {
             Preconditions.checkState(names.add(node.getFullName()));
           }
-
-          @Override
-          public void visitValue(PValue value, TransformHierarchy.Node producer) {}
-
-          @Override
-          public void leavePipeline(Pipeline pipeline) {}
         });
   }
 
@@ -215,12 +203,13 @@ public class ExternalStateExpander {
         parMultiDoReplacementFactory(inputs, stateWriteInstant, nextFlushInstantFn));
   }
 
-  private static PTransformOverrideFactory parMultiDoReplacementFactory(
+  @SuppressWarnings({"unchecked", "rawtypes"})
+  private static PTransformOverrideFactory<?, ?, ?> parMultiDoReplacementFactory(
       PCollection<KV<String, StateValue>> inputs,
       Instant stateWriteInstant,
       UnaryFunction<Instant, Instant> nextFlushInstantFn) {
 
-    return new PTransformOverrideFactory() {
+    return new PTransformOverrideFactory<>() {
       @Override
       public PTransformReplacement getReplacementTransform(AppliedPTransform transform) {
         return replaceParMultiDo(transform, inputs, stateWriteInstant, nextFlushInstantFn);
@@ -257,7 +246,6 @@ public class ExternalStateExpander {
     return PTransformReplacement.of(
         pMainInput,
         transformedParDo(
-            Objects.requireNonNull(transformName),
             transformInputs,
             (DoFn) doFn,
             mainOutputTag,
@@ -272,7 +260,6 @@ public class ExternalStateExpander {
   @SuppressWarnings("unchecked")
   private static <K, V, InputT extends KV<K, V>, OutputT>
       PTransform<PCollection<InputT>, PCollectionTuple> transformedParDo(
-          String transformName,
           PCollection<StateValue> transformInputs,
           DoFn<KV<K, V>, OutputT> doFn,
           TupleTag<OutputT> mainOutputTag,
@@ -389,8 +376,8 @@ public class ExternalStateExpander {
             buddy
                 .subclass(doFnGeneric)
                 .name(className)
-                .defineField("delegate", doFnClass, Visibility.PRIVATE);
-    builder = addStateAndTimers(doFnClass, inputType, inputCoder, builder);
+                .defineField(DELEGATE_FIELD_NAME, doFnClass, Visibility.PRIVATE);
+    builder = addStateAndTimers(doFnClass, inputType, builder);
     builder =
         builder
             .defineConstructor(Visibility.PUBLIC)
@@ -401,7 +388,7 @@ public class ExternalStateExpander {
                     inputCoder,
                     MethodCall.invoke(
                             ExceptionUtils.uncheckedFactory(() -> DoFn.class.getConstructor()))
-                        .andThen(FieldAccessor.ofField("delegate").setsArgumentAt(0))));
+                        .andThen(FieldAccessor.ofField(DELEGATE_FIELD_NAME).setsArgumentAt(0))));
 
     builder =
         addProcessingMethods(
@@ -414,8 +401,6 @@ public class ExternalStateExpander {
             nextFlushInstantFn,
             builder);
     Unloaded<DoFn<InputT, OutputT>> dynamicClass = builder.make();
-    // FIXME
-    ExceptionUtils.unchecked(() -> dynamicClass.saveIn(new File("/tmp/dynamic-debug")));
     return ExceptionUtils.uncheckedFactory(
         () ->
             dynamicClass
@@ -641,7 +626,7 @@ public class ExternalStateExpander {
           builder
               .defineMethod(method.getName(), method.getReturnType(), Visibility.PUBLIC)
               .withParameters(method.getGenericParameterTypes())
-              .intercept(MethodCall.invoke(method).onField("delegate").withAllArguments());
+              .intercept(MethodCall.invoke(method).onField(DELEGATE_FIELD_NAME).withAllArguments());
 
       // retrieve parameter annotations and apply them
       Annotation[][] parameterAnnotations = method.getParameterAnnotations();
@@ -660,7 +645,6 @@ public class ExternalStateExpander {
       Builder<DoFn<InputT, OutputT>> addStateAndTimers(
           Class<? extends DoFn<KV<K, V>, OutputT>> doFnClass,
           ParameterizedType inputType,
-          Coder<? extends KV<K, V>> inputCoder,
           Builder<DoFn<InputT, OutputT>> builder) {
 
     builder = cloneFields(doFnClass, StateId.class, builder);
@@ -909,4 +893,7 @@ public class ExternalStateExpander {
   }
 
   private static class StateTupleTag extends TupleTag<StateValue> {}
+
+  // do not construct
+  private ExternalStateExpander() {}
 }

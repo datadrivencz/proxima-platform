@@ -133,9 +133,9 @@ public interface ProcessElementParameterExpander {
         return false;
       }
       Instant nextFlush = finishedState.read();
-      boolean shouldBuffer = nextFlush == null /* we have not finished reading state */
-          // FIXME: || nextFlush.isBefore(/* timestamp */)
-          ;
+      boolean shouldBuffer =
+          nextFlush == null /* we have not finished reading state */
+              || nextFlush.isBefore(ts) /* the timestamp if after next flush */;
       if (shouldBuffer) {
         // store to state
         @SuppressWarnings("unchecked")

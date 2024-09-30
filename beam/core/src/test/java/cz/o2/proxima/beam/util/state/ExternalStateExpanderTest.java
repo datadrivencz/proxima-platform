@@ -19,6 +19,7 @@ import static org.junit.Assert.assertEquals;
 
 import com.google.common.base.MoreObjects;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.Iterables;
 import cz.o2.proxima.core.util.SerializableScopedValue;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -40,6 +41,7 @@ import org.apache.beam.sdk.state.StateSpec;
 import org.apache.beam.sdk.state.StateSpecs;
 import org.apache.beam.sdk.state.ValueState;
 import org.apache.beam.sdk.testing.PAssert;
+import org.apache.beam.sdk.testing.TestStream;
 import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.MapElements;
@@ -57,6 +59,7 @@ import org.apache.beam.sdk.values.TupleTagList;
 import org.apache.beam.sdk.values.TypeDescriptors;
 import org.jetbrains.annotations.NotNull;
 import org.joda.time.Instant;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -202,6 +205,41 @@ public class ExternalStateExpanderTest {
             collectStates(states));
     expanded.run();
     assertEquals(1, states.size());
+  }
+
+  @Test
+  @Ignore
+  public void testStateWithElementEarly() throws CoderException {
+    Pipeline pipeline = createPipeline();
+    Instant now = new Instant(0);
+    PCollection<String> inputs =
+        pipeline.apply(
+            TestStream.create(StringUtf8Coder.of())
+                .addElements(TimestampedValue.of("1", now))
+                .advanceWatermarkTo(new Instant(0))
+                .addElements(TimestampedValue.of("3", now.plus(2)))
+                .advanceWatermarkToInfinity());
+    PCollection<KV<Integer, String>> withKeys =
+        inputs.apply(
+            WithKeys.<Integer, String>of(e -> Integer.parseInt(e) % 2)
+                .withKeyType(TypeDescriptors.integers()));
+    PCollection<Long> count = withKeys.apply("sum", ParDo.of(getSumFn()));
+    PAssert.that(count).containsInAnyOrder(4L);
+    Map<String, StateValue> states = new HashMap<>();
+    Pipeline expanded =
+        ExternalStateExpander.expand(
+            pipeline,
+            Create.empty(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())),
+            now,
+            current -> current.equals(now) ? now.plus(1) : BoundedWindow.TIMESTAMP_MAX_VALUE,
+            collectStates(states));
+    expanded.run();
+    assertEquals(1, states.size());
+    assertEquals(
+        1L,
+        (long)
+            CoderUtils.decodeFromByteArray(
+                VarLongCoder.of(), Iterables.getOnlyElement(states.values()).getValue()));
   }
 
   private static PTransform<PCollection<KV<String, StateValue>>, PDone> collectStates(

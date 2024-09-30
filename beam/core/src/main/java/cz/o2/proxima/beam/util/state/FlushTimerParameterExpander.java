@@ -49,7 +49,7 @@ public interface FlushTimerParameterExpander {
 
     final LinkedHashMap<TypeId, Pair<Annotation, Type>> processArgs = extractArgs(processElement);
     final LinkedHashMap<TypeId, Pair<AnnotationDescription, TypeDefinition>> wrapperArgs =
-        createWrapperArgs(doFn, inputType, processArgs);
+        createWrapperArgs(doFn, inputType);
     final List<java.util.function.BiFunction<Object[], KV<?, ?>, Object>> processArgsGenerators =
         projectArgs(wrapperArgs, processArgs, mainTag, outputType);
 
@@ -67,10 +67,7 @@ public interface FlushTimerParameterExpander {
   }
 
   private static LinkedHashMap<TypeId, Pair<AnnotationDescription, TypeDefinition>>
-      createWrapperArgs(
-          DoFn<?, ?> doFn,
-          ParameterizedType inputType,
-          LinkedHashMap<TypeId, Pair<Annotation, Type>> processArgs) {
+      createWrapperArgs(DoFn<?, ?> doFn, ParameterizedType inputType) {
 
     List<Pair<Annotation, Type>> states =
         Arrays.stream(doFn.getClass().getDeclaredFields())
