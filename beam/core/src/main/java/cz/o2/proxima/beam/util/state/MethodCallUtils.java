@@ -18,6 +18,7 @@ package cz.o2.proxima.beam.util.state;
 import cz.o2.proxima.core.functional.BiConsumer;
 import cz.o2.proxima.core.util.ExceptionUtils;
 import cz.o2.proxima.core.util.Pair;
+import cz.o2.proxima.internal.com.google.common.annotations.VisibleForTesting;
 import cz.o2.proxima.internal.com.google.common.base.Preconditions;
 import cz.o2.proxima.internal.com.google.common.collect.Iterables;
 import java.lang.annotation.Annotation;
@@ -237,136 +238,7 @@ public class MethodCallUtils {
   @SuppressWarnings("unchecked")
   private static @Nullable BiConsumer<Object, StateValue> createUpdater(StateSpec<?> stateSpec) {
     AtomicReference<BiConsumer<Object, StateValue>> consumer = new AtomicReference<>();
-    stateSpec.bind(
-        "dummy",
-        new StateBinder() {
-          @Override
-          public <T> @Nullable ValueState<T> bindValue(
-              String id, StateSpec<ValueState<T>> spec, Coder<T> coder) {
-            consumer.set(
-                (accessor, value) ->
-                    ((ValueState<T>) accessor)
-                        .write(
-                            ExceptionUtils.uncheckedFactory(
-                                () -> CoderUtils.decodeFromByteArray(coder, value.getValue()))));
-            return null;
-          }
-
-          @Override
-          public <T> @Nullable BagState<T> bindBag(
-              String id, StateSpec<BagState<T>> spec, Coder<T> elemCoder) {
-            consumer.set(
-                (accessor, value) -> {
-                  ((BagState<T>) accessor)
-                      .add(
-                          ExceptionUtils.uncheckedFactory(
-                              () -> CoderUtils.decodeFromByteArray(elemCoder, value.getValue())));
-                });
-            return null;
-          }
-
-          @Override
-          public <T> @Nullable SetState<T> bindSet(
-              String id, StateSpec<SetState<T>> spec, Coder<T> elemCoder) {
-            consumer.set(
-                (accessor, value) -> {
-                  ((SetState<T>) accessor)
-                      .add(
-                          ExceptionUtils.uncheckedFactory(
-                              () -> CoderUtils.decodeFromByteArray(elemCoder, value.getValue())));
-                });
-            return null;
-          }
-
-          @Override
-          public <KeyT, ValueT> @Nullable MapState<KeyT, ValueT> bindMap(
-              String id,
-              StateSpec<MapState<KeyT, ValueT>> spec,
-              Coder<KeyT> mapKeyCoder,
-              Coder<ValueT> mapValueCoder) {
-            KvCoder<KeyT, ValueT> coder = KvCoder.of(mapKeyCoder, mapValueCoder);
-            consumer.set(
-                (accessor, value) -> {
-                  KV<KeyT, ValueT> decoded =
-                      ExceptionUtils.uncheckedFactory(
-                          () -> CoderUtils.decodeFromByteArray(coder, value.getValue()));
-                  ((MapState<KeyT, ValueT>) accessor).put(decoded.getKey(), decoded.getValue());
-                });
-            return null;
-          }
-
-          @Override
-          public <T> @Nullable OrderedListState<T> bindOrderedList(
-              String id, StateSpec<OrderedListState<T>> spec, Coder<T> elemCoder) {
-            KvCoder<T, Instant> coder = KvCoder.of(elemCoder, InstantCoder.of());
-            consumer.set(
-                (accessor, value) -> {
-                  KV<T, Instant> decoded =
-                      ExceptionUtils.uncheckedFactory(
-                          () -> CoderUtils.decodeFromByteArray(coder, value.getValue()));
-                  ((OrderedListState<T>) accessor)
-                      .add(TimestampedValue.of(decoded.getKey(), decoded.getValue()));
-                });
-            return null;
-          }
-
-          @Override
-          public <KeyT, ValueT> @Nullable MultimapState<KeyT, ValueT> bindMultimap(
-              String id,
-              StateSpec<MultimapState<KeyT, ValueT>> spec,
-              Coder<KeyT> keyCoder,
-              Coder<ValueT> valueCoder) {
-            KvCoder<KeyT, ValueT> coder = KvCoder.of(keyCoder, valueCoder);
-            consumer.set(
-                (accessor, value) -> {
-                  KV<KeyT, ValueT> decoded =
-                      ExceptionUtils.uncheckedFactory(
-                          () -> CoderUtils.decodeFromByteArray(coder, value.getValue()));
-                  ((MapState<KeyT, ValueT>) accessor).put(decoded.getKey(), decoded.getValue());
-                });
-            return null;
-          }
-
-          @Override
-          public <InputT, AccumT, OutputT> @Nullable
-              CombiningState<InputT, AccumT, OutputT> bindCombining(
-                  String id,
-                  StateSpec<CombiningState<InputT, AccumT, OutputT>> spec,
-                  Coder<AccumT> accumCoder,
-                  CombineFn<InputT, AccumT, OutputT> combineFn) {
-            consumer.set(
-                (accessor, value) -> {
-                  ((CombiningState<InputT, AccumT, OutputT>) accessor)
-                      .addAccum(
-                          ExceptionUtils.uncheckedFactory(
-                              () -> CoderUtils.decodeFromByteArray(accumCoder, value.getValue())));
-                });
-            return null;
-          }
-
-          @Override
-          public <InputT, AccumT, OutputT> @Nullable
-              CombiningState<InputT, AccumT, OutputT> bindCombiningWithContext(
-                  String id,
-                  StateSpec<CombiningState<InputT, AccumT, OutputT>> spec,
-                  Coder<AccumT> accumCoder,
-                  CombineFnWithContext<InputT, AccumT, OutputT> combineFn) {
-            consumer.set(
-                (accessor, value) -> {
-                  ((CombiningState<InputT, AccumT, OutputT>) accessor)
-                      .addAccum(
-                          ExceptionUtils.uncheckedFactory(
-                              () -> CoderUtils.decodeFromByteArray(accumCoder, value.getValue())));
-                });
-            return null;
-          }
-
-          @Override
-          public @Nullable WatermarkHoldState bindWatermark(
-              String id, StateSpec<WatermarkHoldState> spec, TimestampCombiner timestampCombiner) {
-            return null;
-          }
-        });
+    stateSpec.bind("dummy", createUpdaterBinder(consumer));
     return consumer.get();
   }
 
@@ -400,168 +272,305 @@ public class MethodCallUtils {
   private static @Nullable BiFunction<Object, byte[], Iterable<StateValue>> createReader(
       StateSpec<?> stateSpec) {
     AtomicReference<BiFunction<Object, byte[], Iterable<StateValue>>> res = new AtomicReference<>();
-    stateSpec.bind(
-        "dummy",
-        new StateBinder() {
-          @Override
-          public <T> @Nullable ValueState<T> bindValue(
-              String id, StateSpec<ValueState<T>> spec, Coder<T> coder) {
-            res.set(
-                (accessor, key) -> {
-                  T value = ((ValueState<T>) accessor).read();
-                  if (value != null) {
-                    byte[] bytes =
-                        ExceptionUtils.uncheckedFactory(
-                            () -> CoderUtils.encodeToByteArray(coder, value));
-                    return Collections.singletonList(new StateValue(key, id, bytes));
-                  }
-                  return Collections.emptyList();
-                });
-            return null;
-          }
-
-          @Override
-          public <T> @Nullable BagState<T> bindBag(
-              String id, StateSpec<BagState<T>> spec, Coder<T> elemCoder) {
-            res.set(
-                (accessor, key) ->
-                    Iterables.transform(
-                        ((BagState<T>) accessor).read(),
-                        v ->
-                            new StateValue(
-                                key,
-                                id,
-                                ExceptionUtils.uncheckedFactory(
-                                    () -> CoderUtils.encodeToByteArray(elemCoder, v)))));
-            return null;
-          }
-
-          @Override
-          public <T> @Nullable SetState<T> bindSet(
-              String id, StateSpec<SetState<T>> spec, Coder<T> elemCoder) {
-            res.set(
-                (accessor, key) ->
-                    Iterables.transform(
-                        ((SetState<T>) accessor).read(),
-                        v ->
-                            new StateValue(
-                                key,
-                                id,
-                                ExceptionUtils.uncheckedFactory(
-                                    () -> CoderUtils.encodeToByteArray(elemCoder, v)))));
-            return null;
-          }
-
-          @Override
-          public <KeyT, ValueT> @Nullable MapState<KeyT, ValueT> bindMap(
-              String id,
-              StateSpec<MapState<KeyT, ValueT>> spec,
-              Coder<KeyT> mapKeyCoder,
-              Coder<ValueT> mapValueCoder) {
-            KvCoder<KeyT, ValueT> coder = KvCoder.of(mapKeyCoder, mapValueCoder);
-            res.set(
-                (accessor, key) ->
-                    Iterables.transform(
-                        ((MapState<KeyT, ValueT>) accessor).entries().read(),
-                        v ->
-                            new StateValue(
-                                key,
-                                id,
-                                ExceptionUtils.uncheckedFactory(
-                                    () ->
-                                        CoderUtils.encodeToByteArray(
-                                            coder, KV.of(v.getKey(), v.getValue()))))));
-            return null;
-          }
-
-          @Override
-          public <T> @Nullable OrderedListState<T> bindOrderedList(
-              String id, StateSpec<OrderedListState<T>> spec, Coder<T> elemCoder) {
-            KvCoder<T, Instant> coder = KvCoder.of(elemCoder, InstantCoder.of());
-            res.set(
-                (accessor, key) ->
-                    Iterables.transform(
-                        ((OrderedListState<T>) accessor).read(),
-                        v ->
-                            new StateValue(
-                                key,
-                                id,
-                                ExceptionUtils.uncheckedFactory(
-                                    () ->
-                                        CoderUtils.encodeToByteArray(
-                                            coder, KV.of(v.getValue(), v.getTimestamp()))))));
-            return null;
-          }
-
-          @Override
-          public <KeyT, ValueT> @Nullable MultimapState<KeyT, ValueT> bindMultimap(
-              String id,
-              StateSpec<MultimapState<KeyT, ValueT>> spec,
-              Coder<KeyT> keyCoder,
-              Coder<ValueT> valueCoder) {
-            KvCoder<KeyT, ValueT> coder = KvCoder.of(keyCoder, valueCoder);
-            res.set(
-                (accessor, key) ->
-                    Iterables.transform(
-                        ((MultimapState<KeyT, ValueT>) accessor).entries().read(),
-                        v ->
-                            new StateValue(
-                                key,
-                                id,
-                                ExceptionUtils.uncheckedFactory(
-                                    () ->
-                                        CoderUtils.encodeToByteArray(
-                                            coder, KV.of(v.getKey(), v.getValue()))))));
-            return null;
-          }
-
-          @Override
-          public <InputT, AccumT, OutputT> @Nullable
-              CombiningState<InputT, AccumT, OutputT> bindCombining(
-                  String id,
-                  StateSpec<CombiningState<InputT, AccumT, OutputT>> spec,
-                  Coder<AccumT> accumCoder,
-                  CombineFn<InputT, AccumT, OutputT> combineFn) {
-            res.set(
-                (accessor, key) -> {
-                  AccumT accum = ((CombiningState<InputT, AccumT, OutputT>) accessor).getAccum();
-                  return Collections.singletonList(
-                      new StateValue(
-                          key,
-                          id,
-                          ExceptionUtils.uncheckedFactory(
-                              () -> CoderUtils.encodeToByteArray(accumCoder, accum))));
-                });
-            return null;
-          }
-
-          @Override
-          public <InputT, AccumT, OutputT> @Nullable
-              CombiningState<InputT, AccumT, OutputT> bindCombiningWithContext(
-                  String id,
-                  StateSpec<CombiningState<InputT, AccumT, OutputT>> spec,
-                  Coder<AccumT> accumCoder,
-                  CombineFnWithContext<InputT, AccumT, OutputT> combineFn) {
-            res.set(
-                (accessor, key) -> {
-                  AccumT accum = ((CombiningState<InputT, AccumT, OutputT>) accessor).getAccum();
-                  return Collections.singletonList(
-                      new StateValue(
-                          key,
-                          id,
-                          ExceptionUtils.uncheckedFactory(
-                              () -> CoderUtils.encodeToByteArray(accumCoder, accum))));
-                });
-            return null;
-          }
-
-          @Override
-          public @Nullable WatermarkHoldState bindWatermark(
-              String id, StateSpec<WatermarkHoldState> spec, TimestampCombiner timestampCombiner) {
-            return null;
-          }
-        });
+    stateSpec.bind("dummy", createStateReaderBinder(res));
     return res.get();
+  }
+
+  @VisibleForTesting
+  static StateBinder createUpdaterBinder(AtomicReference<BiConsumer<Object, StateValue>> consumer) {
+    return new StateBinder() {
+      @Override
+      public <T> @Nullable ValueState<T> bindValue(
+          String id, StateSpec<ValueState<T>> spec, Coder<T> coder) {
+        consumer.set(
+            (accessor, value) ->
+                ((ValueState<T>) accessor)
+                    .write(
+                        ExceptionUtils.uncheckedFactory(
+                            () -> CoderUtils.decodeFromByteArray(coder, value.getValue()))));
+        return null;
+      }
+
+      @Override
+      public <T> @Nullable BagState<T> bindBag(
+          String id, StateSpec<BagState<T>> spec, Coder<T> elemCoder) {
+        consumer.set(
+            (accessor, value) -> {
+              ((BagState<T>) accessor)
+                  .add(
+                      ExceptionUtils.uncheckedFactory(
+                          () -> CoderUtils.decodeFromByteArray(elemCoder, value.getValue())));
+            });
+        return null;
+      }
+
+      @Override
+      public <T> @Nullable SetState<T> bindSet(
+          String id, StateSpec<SetState<T>> spec, Coder<T> elemCoder) {
+        consumer.set(
+            (accessor, value) -> {
+              ((SetState<T>) accessor)
+                  .add(
+                      ExceptionUtils.uncheckedFactory(
+                          () -> CoderUtils.decodeFromByteArray(elemCoder, value.getValue())));
+            });
+        return null;
+      }
+
+      @Override
+      public <KeyT, ValueT> @Nullable MapState<KeyT, ValueT> bindMap(
+          String id,
+          StateSpec<MapState<KeyT, ValueT>> spec,
+          Coder<KeyT> mapKeyCoder,
+          Coder<ValueT> mapValueCoder) {
+        KvCoder<KeyT, ValueT> coder = KvCoder.of(mapKeyCoder, mapValueCoder);
+        consumer.set(
+            (accessor, value) -> {
+              KV<KeyT, ValueT> decoded =
+                  ExceptionUtils.uncheckedFactory(
+                      () -> CoderUtils.decodeFromByteArray(coder, value.getValue()));
+              ((MapState<KeyT, ValueT>) accessor).put(decoded.getKey(), decoded.getValue());
+            });
+        return null;
+      }
+
+      @Override
+      public <T> @Nullable OrderedListState<T> bindOrderedList(
+          String id, StateSpec<OrderedListState<T>> spec, Coder<T> elemCoder) {
+        KvCoder<T, Instant> coder = KvCoder.of(elemCoder, InstantCoder.of());
+        consumer.set(
+            (accessor, value) -> {
+              KV<T, Instant> decoded =
+                  ExceptionUtils.uncheckedFactory(
+                      () -> CoderUtils.decodeFromByteArray(coder, value.getValue()));
+              ((OrderedListState<T>) accessor)
+                  .add(TimestampedValue.of(decoded.getKey(), decoded.getValue()));
+            });
+        return null;
+      }
+
+      @Override
+      public <KeyT, ValueT> @Nullable MultimapState<KeyT, ValueT> bindMultimap(
+          String id,
+          StateSpec<MultimapState<KeyT, ValueT>> spec,
+          Coder<KeyT> keyCoder,
+          Coder<ValueT> valueCoder) {
+        KvCoder<KeyT, ValueT> coder = KvCoder.of(keyCoder, valueCoder);
+        consumer.set(
+            (accessor, value) -> {
+              KV<KeyT, ValueT> decoded =
+                  ExceptionUtils.uncheckedFactory(
+                      () -> CoderUtils.decodeFromByteArray(coder, value.getValue()));
+              ((MapState<KeyT, ValueT>) accessor).put(decoded.getKey(), decoded.getValue());
+            });
+        return null;
+      }
+
+      @Override
+      public <InputT, AccumT, OutputT> @Nullable
+          CombiningState<InputT, AccumT, OutputT> bindCombining(
+              String id,
+              StateSpec<CombiningState<InputT, AccumT, OutputT>> spec,
+              Coder<AccumT> accumCoder,
+              CombineFn<InputT, AccumT, OutputT> combineFn) {
+        consumer.set(
+            (accessor, value) -> {
+              ((CombiningState<InputT, AccumT, OutputT>) accessor)
+                  .addAccum(
+                      ExceptionUtils.uncheckedFactory(
+                          () -> CoderUtils.decodeFromByteArray(accumCoder, value.getValue())));
+            });
+        return null;
+      }
+
+      @Override
+      public <InputT, AccumT, OutputT> @Nullable
+          CombiningState<InputT, AccumT, OutputT> bindCombiningWithContext(
+              String id,
+              StateSpec<CombiningState<InputT, AccumT, OutputT>> spec,
+              Coder<AccumT> accumCoder,
+              CombineFnWithContext<InputT, AccumT, OutputT> combineFn) {
+        consumer.set(
+            (accessor, value) -> {
+              ((CombiningState<InputT, AccumT, OutputT>) accessor)
+                  .addAccum(
+                      ExceptionUtils.uncheckedFactory(
+                          () -> CoderUtils.decodeFromByteArray(accumCoder, value.getValue())));
+            });
+        return null;
+      }
+
+      @Override
+      public @Nullable WatermarkHoldState bindWatermark(
+          String id, StateSpec<WatermarkHoldState> spec, TimestampCombiner timestampCombiner) {
+        return null;
+      }
+    };
+  }
+
+  @VisibleForTesting
+  static StateBinder createStateReaderBinder(
+      AtomicReference<BiFunction<Object, byte[], Iterable<StateValue>>> res) {
+
+    return new StateBinder() {
+      @Override
+      public <T> @Nullable ValueState<T> bindValue(
+          String id, StateSpec<ValueState<T>> spec, Coder<T> coder) {
+        res.set(
+            (accessor, key) -> {
+              T value = ((ValueState<T>) accessor).read();
+              if (value != null) {
+                byte[] bytes =
+                    ExceptionUtils.uncheckedFactory(
+                        () -> CoderUtils.encodeToByteArray(coder, value));
+                return Collections.singletonList(new StateValue(key, id, bytes));
+              }
+              return Collections.emptyList();
+            });
+        return null;
+      }
+
+      @Override
+      public <T> @Nullable BagState<T> bindBag(
+          String id, StateSpec<BagState<T>> spec, Coder<T> elemCoder) {
+        res.set(
+            (accessor, key) ->
+                Iterables.transform(
+                    ((BagState<T>) accessor).read(),
+                    v ->
+                        new StateValue(
+                            key,
+                            id,
+                            ExceptionUtils.uncheckedFactory(
+                                () -> CoderUtils.encodeToByteArray(elemCoder, v)))));
+        return null;
+      }
+
+      @Override
+      public <T> @Nullable SetState<T> bindSet(
+          String id, StateSpec<SetState<T>> spec, Coder<T> elemCoder) {
+        res.set(
+            (accessor, key) ->
+                Iterables.transform(
+                    ((SetState<T>) accessor).read(),
+                    v ->
+                        new StateValue(
+                            key,
+                            id,
+                            ExceptionUtils.uncheckedFactory(
+                                () -> CoderUtils.encodeToByteArray(elemCoder, v)))));
+        return null;
+      }
+
+      @Override
+      public <KeyT, ValueT> @Nullable MapState<KeyT, ValueT> bindMap(
+          String id,
+          StateSpec<MapState<KeyT, ValueT>> spec,
+          Coder<KeyT> mapKeyCoder,
+          Coder<ValueT> mapValueCoder) {
+        KvCoder<KeyT, ValueT> coder = KvCoder.of(mapKeyCoder, mapValueCoder);
+        res.set(
+            (accessor, key) ->
+                Iterables.transform(
+                    ((MapState<KeyT, ValueT>) accessor).entries().read(),
+                    v ->
+                        new StateValue(
+                            key,
+                            id,
+                            ExceptionUtils.uncheckedFactory(
+                                () ->
+                                    CoderUtils.encodeToByteArray(
+                                        coder, KV.of(v.getKey(), v.getValue()))))));
+        return null;
+      }
+
+      @Override
+      public <T> @Nullable OrderedListState<T> bindOrderedList(
+          String id, StateSpec<OrderedListState<T>> spec, Coder<T> elemCoder) {
+        KvCoder<T, Instant> coder = KvCoder.of(elemCoder, InstantCoder.of());
+        res.set(
+            (accessor, key) ->
+                Iterables.transform(
+                    ((OrderedListState<T>) accessor).read(),
+                    v ->
+                        new StateValue(
+                            key,
+                            id,
+                            ExceptionUtils.uncheckedFactory(
+                                () ->
+                                    CoderUtils.encodeToByteArray(
+                                        coder, KV.of(v.getValue(), v.getTimestamp()))))));
+        return null;
+      }
+
+      @Override
+      public <KeyT, ValueT> @Nullable MultimapState<KeyT, ValueT> bindMultimap(
+          String id,
+          StateSpec<MultimapState<KeyT, ValueT>> spec,
+          Coder<KeyT> keyCoder,
+          Coder<ValueT> valueCoder) {
+        KvCoder<KeyT, ValueT> coder = KvCoder.of(keyCoder, valueCoder);
+        res.set(
+            (accessor, key) ->
+                Iterables.transform(
+                    ((MultimapState<KeyT, ValueT>) accessor).entries().read(),
+                    v ->
+                        new StateValue(
+                            key,
+                            id,
+                            ExceptionUtils.uncheckedFactory(
+                                () ->
+                                    CoderUtils.encodeToByteArray(
+                                        coder, KV.of(v.getKey(), v.getValue()))))));
+        return null;
+      }
+
+      @Override
+      public <InputT, AccumT, OutputT> @Nullable
+          CombiningState<InputT, AccumT, OutputT> bindCombining(
+              String id,
+              StateSpec<CombiningState<InputT, AccumT, OutputT>> spec,
+              Coder<AccumT> accumCoder,
+              CombineFn<InputT, AccumT, OutputT> combineFn) {
+        res.set(
+            (accessor, key) -> {
+              AccumT accum = ((CombiningState<InputT, AccumT, OutputT>) accessor).getAccum();
+              return Collections.singletonList(
+                  new StateValue(
+                      key,
+                      id,
+                      ExceptionUtils.uncheckedFactory(
+                          () -> CoderUtils.encodeToByteArray(accumCoder, accum))));
+            });
+        return null;
+      }
+
+      @Override
+      public <InputT, AccumT, OutputT> @Nullable
+          CombiningState<InputT, AccumT, OutputT> bindCombiningWithContext(
+              String id,
+              StateSpec<CombiningState<InputT, AccumT, OutputT>> spec,
+              Coder<AccumT> accumCoder,
+              CombineFnWithContext<InputT, AccumT, OutputT> combineFn) {
+        res.set(
+            (accessor, key) -> {
+              AccumT accum = ((CombiningState<InputT, AccumT, OutputT>) accessor).getAccum();
+              return Collections.singletonList(
+                  new StateValue(
+                      key,
+                      id,
+                      ExceptionUtils.uncheckedFactory(
+                          () -> CoderUtils.encodeToByteArray(accumCoder, accum))));
+            });
+        return null;
+      }
+
+      @Override
+      public @Nullable WatermarkHoldState bindWatermark(
+          String id, StateSpec<WatermarkHoldState> spec, TimestampCombiner timestampCombiner) {
+        return null;
+      }
+    };
   }
 
   private MethodCallUtils() {}
