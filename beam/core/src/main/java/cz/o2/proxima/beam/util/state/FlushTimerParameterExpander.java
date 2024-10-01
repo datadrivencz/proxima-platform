@@ -19,6 +19,7 @@ import static cz.o2.proxima.beam.util.state.ExternalStateExpander.*;
 import static cz.o2.proxima.beam.util.state.MethodCallUtils.*;
 
 import cz.o2.proxima.core.util.Pair;
+import cz.o2.proxima.internal.com.google.common.base.Preconditions;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
@@ -35,6 +36,7 @@ import org.apache.beam.sdk.state.Timer;
 import org.apache.beam.sdk.state.ValueState;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.values.KV;
+import org.apache.beam.sdk.values.TimestampedValue;
 import org.apache.beam.sdk.values.TupleTag;
 import org.joda.time.Instant;
 
@@ -50,8 +52,8 @@ interface FlushTimerParameterExpander {
     final LinkedHashMap<TypeId, Pair<Annotation, Type>> processArgs = extractArgs(processElement);
     final LinkedHashMap<TypeId, Pair<AnnotationDescription, TypeDefinition>> wrapperArgs =
         createWrapperArgs(doFn, inputType);
-    final List<java.util.function.BiFunction<Object[], KV<?, ?>, Object>> processArgsGenerators =
-        projectArgs(wrapperArgs, processArgs, mainTag, outputType);
+    final List<java.util.function.BiFunction<Object[], TimestampedValue<KV<?, ?>>, Object>>
+        processArgsGenerators = projectArgs(wrapperArgs, processArgs, mainTag, outputType);
 
     return new FlushTimerParameterExpander() {
       @Override
@@ -60,7 +62,8 @@ interface FlushTimerParameterExpander {
       }
 
       @Override
-      public Object[] getProcessElementArgs(KV<?, ?> input, Object[] wrapperArgs) {
+      public Object[] getProcessElementArgs(
+          TimestampedValue<KV<?, ?>> input, Object[] wrapperArgs) {
         return fromGenerators(input, processArgsGenerators, wrapperArgs);
       }
     };
@@ -71,12 +74,18 @@ interface FlushTimerParameterExpander {
 
     List<Pair<Annotation, Type>> states =
         Arrays.stream(doFn.getClass().getDeclaredFields())
+            .filter(f -> f.getAnnotation(DoFn.StateId.class) != null)
             .map(
-                f ->
-                    Pair.of(
-                        (Annotation) f.getAnnotation(DoFn.StateId.class),
-                        ((ParameterizedType) f.getGenericType()).getActualTypeArguments()[0]))
-            .filter(p -> p.getFirst() != null)
+                f -> {
+                  Preconditions.checkArgument(
+                      f.getGenericType() instanceof ParameterizedType,
+                      "Field %s has invalid type %s",
+                      f.getName(),
+                      f.getGenericType());
+                  return Pair.of(
+                      (Annotation) f.getAnnotation(DoFn.StateId.class),
+                      ((ParameterizedType) f.getGenericType()).getActualTypeArguments()[0]);
+                })
             .collect(Collectors.toList());
 
     List<Pair<AnnotationDescription, TypeDefinition>> types =
@@ -137,5 +146,5 @@ interface FlushTimerParameterExpander {
    * Get parameters that should be passed to {@code @}ProcessElement from wrapper's
    * {@code @}OnWindowExpiration
    */
-  Object[] getProcessElementArgs(KV<?, ?> input, Object[] wrapperArgs);
+  Object[] getProcessElementArgs(TimestampedValue<KV<?, ?>> input, Object[] wrapperArgs);
 }

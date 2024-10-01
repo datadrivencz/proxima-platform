@@ -21,7 +21,9 @@ import java.lang.annotation.Annotation;
 import java.lang.reflect.Type;
 import net.bytebuddy.description.annotation.AnnotationDescription;
 import net.bytebuddy.description.type.TypeDefinition;
+import net.bytebuddy.description.type.TypeDescription;
 import org.apache.beam.sdk.transforms.DoFn;
+import org.apache.beam.sdk.transforms.DoFn.OutputReceiver;
 import org.apache.beam.sdk.transforms.DoFn.StateId;
 
 class TypeId {
@@ -31,6 +33,9 @@ class TypeId {
 
   private static final TypeId ELEMENT_TYPE =
       TypeId.of(AnnotationDescription.Builder.ofType(DoFn.Element.class).build());
+
+  private static final TypeId MULTI_OUTPUT_TYPE =
+      TypeId.of(TypeDescription.ForLoadedType.of(DoFn.MultiOutputReceiver.class));
 
   public static TypeId of(Annotation annotation) {
     return new TypeId(annotation.toString());
@@ -91,5 +96,20 @@ class TypeId {
 
   public boolean isTimestamp() {
     return equals(TIMESTAMP_TYPE);
+  }
+
+  public boolean isOutputReceiver(Type outputType) {
+    return equals(
+        TypeId.of(
+            TypeDescription.Generic.Builder.parameterizedType(OutputReceiver.class, outputType)
+                .build()));
+  }
+
+  public boolean isOutput(Type outputType) {
+    return isOutputReceiver(outputType) || isMultiOutput();
+  }
+
+  public boolean isMultiOutput() {
+    return equals(MULTI_OUTPUT_TYPE);
   }
 }

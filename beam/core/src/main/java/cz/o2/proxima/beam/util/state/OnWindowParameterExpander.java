@@ -41,6 +41,7 @@ import net.bytebuddy.description.type.TypeDescription;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.DoFn.StateId;
 import org.apache.beam.sdk.values.KV;
+import org.apache.beam.sdk.values.TimestampedValue;
 import org.apache.beam.sdk.values.TupleTag;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
@@ -60,9 +61,9 @@ interface OnWindowParameterExpander {
         createWrapperArgList(processArgs, onWindowArgs);
     final LinkedHashMap<TypeId, Pair<AnnotationDescription, TypeDefinition>> wrapperArgs =
         createWrapperArgs(inputType, wrapperArgList);
-    final List<BiFunction<Object[], KV<?, ?>, Object>> processArgsGenerators =
+    final List<BiFunction<Object[], TimestampedValue<KV<?, ?>>, Object>> processArgsGenerators =
         projectArgs(wrapperArgs, processArgs, mainTag, outputType);
-    final List<BiFunction<Object[], KV<?, ?>, Object>> windowArgsGenerators =
+    final List<BiFunction<Object[], TimestampedValue<KV<?, ?>>, Object>> windowArgsGenerators =
         projectArgs(wrapperArgs, onWindowArgs, mainTag, outputType);
 
     return new OnWindowParameterExpander() {
@@ -72,7 +73,8 @@ interface OnWindowParameterExpander {
       }
 
       @Override
-      public Object[] getProcessElementArgs(KV<?, ?> input, Object[] wrapperArgs) {
+      public Object[] getProcessElementArgs(
+          TimestampedValue<KV<?, ?>> input, Object[] wrapperArgs) {
         return fromGenerators(input, processArgsGenerators, wrapperArgs);
       }
 
@@ -147,7 +149,7 @@ interface OnWindowParameterExpander {
    * Get parameters that should be passed to {@code @}ProcessElement from wrapper's
    * {@code @}OnWindowExpiration
    */
-  Object[] getProcessElementArgs(KV<?, ?> input, Object[] wrapperArgs);
+  Object[] getProcessElementArgs(TimestampedValue<KV<?, ?>> input, Object[] wrapperArgs);
 
   /** Get parameters that should be passed to {@code @}OnWindowExpiration from wrapper's call. */
   Object[] getOnWindowExpirationArgs(Object[] wrapperArgs);

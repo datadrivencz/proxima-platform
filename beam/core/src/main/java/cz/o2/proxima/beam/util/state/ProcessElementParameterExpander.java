@@ -47,7 +47,6 @@ import org.apache.beam.sdk.state.Timer;
 import org.apache.beam.sdk.state.ValueState;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.DoFn.MultiOutputReceiver;
-import org.apache.beam.sdk.transforms.DoFn.OutputReceiver;
 import org.apache.beam.sdk.transforms.DoFn.StateId;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.TimestampedValue;
@@ -67,7 +66,7 @@ interface ProcessElementParameterExpander {
     final LinkedHashMap<TypeId, Pair<Annotation, Type>> processArgs = extractArgs(processElement);
     final LinkedHashMap<TypeId, Pair<AnnotationDescription, TypeDefinition>> wrapperArgs =
         createWrapperArgs(inputType, outputType, processArgs.values());
-    final List<BiFunction<Object[], KV<?, ?>, Object>> processArgsGenerators =
+    final List<BiFunction<Object[], TimestampedValue<KV<?, ?>>, Object>> processArgsGenerators =
         projectArgs(wrapperArgs, processArgs, mainTag, outputType);
 
     return new ProcessElementParameterExpander() {
@@ -106,10 +105,8 @@ interface ProcessElementParameterExpander {
       Method method,
       Instant stateWriteInstant) {
 
-    int elementPos = findParameter(wrapperArgs.keySet(), TypeId::isElement);
-    Preconditions.checkState(elementPos >= 0, "Missing @Element annotation on method %s", method);
     Map<String, BiConsumer<Object, StateValue>> stateUpdaterMap = getStateUpdaters(doFn);
-    return new ProcessFn(elementPos, stateWriteInstant, wrapperArgs, method, stateUpdaterMap);
+    return new ProcessFn(stateWriteInstant, wrapperArgs, method, stateUpdaterMap);
   }
 
   private static int findParameter(Collection<TypeId> args, Predicate<TypeId> predicate) {
@@ -129,11 +126,9 @@ interface ProcessElementParameterExpander {
       Collection<Pair<Annotation, Type>> processArgs) {
 
     LinkedHashMap<TypeId, Pair<AnnotationDescription, TypeDefinition>> res = new LinkedHashMap<>();
-    TypeId mainOutputReceiverId =
-        TypeId.of(Builder.parameterizedType(OutputReceiver.class, outputType).build());
     processArgs.stream()
         .map(p -> transformProcessArg(inputType, p))
-        .filter(p -> !p.getFirst().equals(mainOutputReceiverId) && !p.getFirst().isTimestamp())
+        .filter(p -> !p.getFirst().isOutput(outputType) && !p.getFirst().isTimestamp())
         .forEachOrdered(p -> res.put(p.getFirst(), p.getSecond()));
 
     // add @Timestamp
@@ -201,16 +196,17 @@ interface ProcessElementParameterExpander {
     private final Map<String, BiConsumer<Object, StateValue>> stateUpdaterMap;
 
     public ProcessFn(
-        int elementPos,
         Instant stateWriteInstant,
         LinkedHashMap<TypeId, Pair<AnnotationDescription, TypeDefinition>> wrapperArgs,
         Method method,
         Map<String, BiConsumer<Object, StateValue>> stateUpdaterMap) {
-      this.elementPos = elementPos;
+
+      this.elementPos = findParameter(wrapperArgs.keySet(), TypeId::isElement);
       this.stateWriteInstant = stateWriteInstant;
       this.wrapperArgs = wrapperArgs;
       this.method = method;
       this.stateUpdaterMap = stateUpdaterMap;
+      Preconditions.checkState(elementPos >= 0, "Missing @Element annotation on method %s", method);
     }
 
     @Override

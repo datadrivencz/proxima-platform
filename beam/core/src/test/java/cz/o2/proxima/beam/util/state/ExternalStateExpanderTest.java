@@ -15,16 +15,18 @@
  */
 package cz.o2.proxima.beam.util.state;
 
+import static com.mongodb.internal.connection.tlschannel.util.Util.assertTrue;
 import static org.junit.Assert.assertEquals;
 
 import com.google.common.base.MoreObjects;
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Iterables;
 import cz.o2.proxima.core.util.SerializableScopedValue;
+import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
+import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
+import java.util.PriorityQueue;
 import java.util.UUID;
 import org.apache.beam.runners.direct.DirectRunner;
 import org.apache.beam.runners.flink.FlinkRunner;
@@ -47,6 +49,7 @@ import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.MapElements;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
+import org.apache.beam.sdk.transforms.Reify;
 import org.apache.beam.sdk.transforms.WithKeys;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.util.CoderUtils;
@@ -182,7 +185,7 @@ public class ExternalStateExpanderTest {
   }
 
   @Test
-  public void testSimpleExpandWithStateStore() {
+  public void testSimpleExpandWithStateStore() throws CoderException {
     Pipeline pipeline = createPipeline();
     Instant now = new Instant(0);
     PCollection<String> inputs =
@@ -194,7 +197,9 @@ public class ExternalStateExpanderTest {
                 .withKeyType(TypeDescriptors.integers()));
     PCollection<Long> count = withKeys.apply("sum", ParDo.of(getSumFn()));
     PAssert.that(count).containsInAnyOrder(1L, 2L);
-    Map<String, StateValue> states = new HashMap<>();
+    PriorityQueue<TimestampedValue<KV<String, StateValue>>> states =
+        // compare StateValue by toString, lombok's @Value has stable .toString() in this case
+        new PriorityQueue<>(Comparator.comparing(e -> e.getValue().getValue().toString()));
     Pipeline expanded =
         ExternalStateExpander.expand(
             pipeline,
@@ -203,7 +208,22 @@ public class ExternalStateExpanderTest {
             current -> current.equals(now) ? now.plus(1) : BoundedWindow.TIMESTAMP_MAX_VALUE,
             collectStates(states));
     expanded.run();
-    assertEquals(1, states.size());
+    assertEquals(2, states.size());
+    TimestampedValue<KV<String, StateValue>> first = states.poll();
+    assertEquals(new Instant(1), first.getTimestamp());
+    assertTrue(first.getValue().getKey().startsWith("sum"));
+    assertEquals(
+        0,
+        (int)
+            CoderUtils.decodeFromByteArray(VarIntCoder.of(), first.getValue().getValue().getKey()));
+    TimestampedValue<KV<String, StateValue>> second = states.poll();
+    assertEquals(new Instant(1), second.getTimestamp());
+    assertTrue(second.getValue().getKey().startsWith("sum"));
+    assertEquals(
+        1,
+        (int)
+            CoderUtils.decodeFromByteArray(
+                VarIntCoder.of(), second.getValue().getValue().getKey()));
   }
 
   @Test
@@ -223,7 +243,7 @@ public class ExternalStateExpanderTest {
                 .withKeyType(TypeDescriptors.integers()));
     PCollection<Long> count = withKeys.apply("sum", ParDo.of(getSumFn()));
     PAssert.that(count).containsInAnyOrder(4L);
-    Map<String, StateValue> states = new HashMap<>();
+    List<TimestampedValue<KV<String, StateValue>>> states = new ArrayList<>();
     Pipeline expanded =
         ExternalStateExpander.expand(
             pipeline,
@@ -233,33 +253,136 @@ public class ExternalStateExpanderTest {
             collectStates(states));
     expanded.run();
     assertEquals(1, states.size());
+    TimestampedValue<KV<String, StateValue>> first = states.get(0);
     assertEquals(
         1L,
         (long)
             CoderUtils.decodeFromByteArray(
-                VarLongCoder.of(), Iterables.getOnlyElement(states.values()).getValue()));
+                VarLongCoder.of(), first.getValue().getValue().getValue()));
+  }
+
+  @Test
+  public void testBufferedTimestampInject() {
+    testTimestampInject(false);
+  }
+
+  @Test
+  public void testBufferedTimestampInjectToMultiOutput() {
+    testTimestampInject(true);
+  }
+
+  private void testTimestampInject(boolean multiOutput) {
+    Pipeline pipeline = createPipeline();
+    Instant now = new Instant(0);
+    PCollection<String> inputs =
+        pipeline.apply(
+            TestStream.create(StringUtf8Coder.of())
+                // the second timestamped value MUST not be part of the state produced at 1
+                .addElements(TimestampedValue.of("1", now))
+                .advanceWatermarkTo(new Instant(0))
+                .addElements(TimestampedValue.of("3", now.plus(10)))
+                .advanceWatermarkTo(new Instant(1))
+                .advanceWatermarkToInfinity());
+    PCollection<KV<Integer, String>> withKeys =
+        inputs.apply(
+            WithKeys.<Integer, String>of(e -> Integer.parseInt(e) % 2)
+                .withKeyType(TypeDescriptors.integers()));
+    PCollection<TimestampedValue<String>> outputs =
+        withKeys.apply("sum", bufferWithTimestamp(multiOutput));
+    PAssert.that(outputs)
+        .containsInAnyOrder(
+            TimestampedValue.of("KV{1, 1}@0", now),
+            TimestampedValue.of("KV{1, 3}@10", now.plus(10)));
+    Pipeline expanded =
+        ExternalStateExpander.expand(
+            pipeline,
+            Create.empty(KvCoder.of(StringUtf8Coder.of(), StateValue.coder())),
+            now,
+            current ->
+                current.isBefore(now.plus(2)) ? current.plus(1) : BoundedWindow.TIMESTAMP_MAX_VALUE,
+            dummy());
+    expanded.run();
   }
 
   private static PTransform<PCollection<KV<String, StateValue>>, PDone> collectStates(
-      Map<String, StateValue> states) {
+      Collection<TimestampedValue<KV<String, StateValue>>> states) {
 
     String id = UUID.randomUUID().toString();
-    final SerializableScopedValue<String, Map<String, StateValue>> val =
-        new SerializableScopedValue<>(id, states);
+    final SerializableScopedValue<String, Collection<TimestampedValue<KV<String, StateValue>>>>
+        val = new SerializableScopedValue<>(id, states);
     return new PTransform<>() {
       @Override
       public PDone expand(PCollection<KV<String, StateValue>> input) {
         input.apply(
-            MapElements.into(TypeDescriptors.voids())
-                .via(
-                    e -> {
-                      Map<String, StateValue> m = val.get(id);
-                      synchronized (m) {
-                        m.put(e.getKey(), e.getValue());
-                      }
-                      return null;
-                    }));
+            ParDo.of(
+                new DoFn<KV<String, StateValue>, Void>() {
+                  @ProcessElement
+                  public void process(@Element KV<String, StateValue> elem, @Timestamp Instant ts) {
+                    Collection<TimestampedValue<KV<String, StateValue>>> m = val.get(id);
+                    synchronized (m) {
+                      m.add(TimestampedValue.of(elem, ts));
+                    }
+                  }
+                }));
         return PDone.in(input.getPipeline());
+      }
+    };
+  }
+
+  private static PTransform<PCollection<KV<Integer, String>>, PCollection<TimestampedValue<String>>>
+      bufferWithTimestamp(boolean withMultiOutput) {
+
+    if (withMultiOutput) {
+      return new PTransform<>() {
+        @Override
+        public PCollection<TimestampedValue<String>> expand(
+            PCollection<KV<Integer, String>> input) {
+          TupleTag<String> mainOutput = new TupleTag<>() {};
+          return input
+              .apply(
+                  ParDo.of(
+                          new DoFn<KV<Integer, String>, String>() {
+                            // just declare state to be expanded
+                            @StateId("state")
+                            private final StateSpec<ValueState<Integer>> buf = StateSpecs.value();
+
+                            @ProcessElement
+                            public void process(
+                                @Element KV<Integer, String> elem,
+                                @Timestamp Instant ts,
+                                MultiOutputReceiver output) {
+
+                              output.get(mainOutput).output(elem + "@" + ts.getMillis());
+                            }
+                          })
+                      .withOutputTags(mainOutput, TupleTagList.empty()))
+              .get(mainOutput)
+              .apply(Reify.timestamps());
+        }
+      };
+    }
+
+    return new PTransform<>() {
+      @Override
+      public PCollection<TimestampedValue<String>> expand(PCollection<KV<Integer, String>> input) {
+        return input
+            .apply(
+                ParDo.of(
+                    new DoFn<KV<Integer, String>, String>() {
+                      // just declare state to be expanded
+                      @StateId("state")
+                      private final StateSpec<ValueState<Integer>> buf = StateSpecs.value();
+
+                      @ProcessElement
+                      public void process(
+                          @Element KV<Integer, String> elem,
+                          @Timestamp Instant ts,
+                          OutputReceiver<String> output) {
+
+                        output.output(elem + "@" + ts.getMillis());
+                      }
+                    }))
+            .apply(Reify.timestamps());
       }
     };
   }

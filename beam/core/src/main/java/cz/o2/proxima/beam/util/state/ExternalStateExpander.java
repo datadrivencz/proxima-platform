@@ -112,6 +112,7 @@ import org.apache.beam.sdk.values.TypeDescriptor;
 import org.apache.beam.sdk.values.TypeDescriptors;
 import org.apache.beam.vendor.guava.v32_1_2_jre.com.google.common.reflect.TypeToken;
 import org.checkerframework.checker.nullness.qual.NonNull;
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Instant;
 
 @Slf4j
@@ -168,11 +169,14 @@ public class ExternalStateExpander {
             }
           }
         });
-    PCollectionList<KV<String, StateValue>> list = PCollectionList.empty(pipeline);
-    for (Pair<String, PCollection<StateValue>> p : stateValues) {
-      list = list.and(p.getSecond().apply(WithKeys.of(p.getFirst())));
+    if (!stateValues.isEmpty()) {
+      PCollectionList<KV<String, StateValue>> list = PCollectionList.empty(pipeline);
+      for (Pair<String, PCollection<StateValue>> p : stateValues) {
+        PCollection<KV<String, StateValue>> mapped = p.getSecond().apply(WithKeys.of(p.getFirst()));
+        list = list.and(mapped);
+      }
+      list.apply(Flatten.pCollections()).apply(stateSink);
     }
-    list.apply(Flatten.pCollections()).apply(stateSink);
 
     return pipeline;
   }
@@ -537,7 +541,7 @@ public class ExternalStateExpander {
           Builder<DoFn<InputT, OutputT>> builder) {
 
     Class<? extends Annotation> annotation = DoFn.OnWindowExpiration.class;
-    Method onWindowExpirationMethod = findMethod(doFn, annotation);
+    @Nullable Method onWindowExpirationMethod = findMethod(doFn, annotation);
     Method processElementMethod = findMethod(doFn, DoFn.ProcessElement.class);
     Type outputType = doFn.getOutputTypeDescriptor().getType();
     if (processElementMethod != null) {
@@ -548,8 +552,10 @@ public class ExternalStateExpander {
       MethodDefinition<DoFn<InputT, OutputT>> methodDefinition =
           builder
               .defineMethod(
-                  onWindowExpirationMethod.getName(),
-                  onWindowExpirationMethod.getReturnType(),
+                  onWindowExpirationMethod == null
+                      ? "_onWindowExpiration"
+                      : onWindowExpirationMethod.getName(),
+                  void.class,
                   Visibility.PUBLIC)
               .withParameters(
                   wrapperArgs.stream().map(Pair::getSecond).collect(Collectors.toList()))
@@ -786,13 +792,13 @@ public class ExternalStateExpander {
   private static class OnWindowExpirationInterceptor<K, V> {
     private final DoFn<KV<K, V>, ?> doFn;
     private final Method processElement;
-    private final Method onWindowExpiration;
+    private final @Nullable Method onWindowExpiration;
     private final OnWindowParameterExpander expander;
 
     public OnWindowExpirationInterceptor(
         DoFn<KV<K, V>, ?> doFn,
         Method processElementMethod,
-        Method onWindowExpirationMethod,
+        @Nullable Method onWindowExpirationMethod,
         OnWindowParameterExpander expander) {
 
       this.doFn = doFn;
@@ -806,19 +812,19 @@ public class ExternalStateExpander {
         @This DoFn<KV<V, StateOrInput<V>>, ?> proxy, @AllArguments Object[] allArgs) {
 
       @SuppressWarnings("unchecked")
-      BagState<TimestampedValue<KV<K, V>>> buf =
-          (BagState<TimestampedValue<KV<K, V>>>) allArgs[allArgs.length - 1];
-      Iterable<TimestampedValue<KV<K, V>>> buffered = buf.read();
+      BagState<TimestampedValue<KV<?, ?>>> buf =
+          (BagState<TimestampedValue<KV<?, ?>>>) allArgs[allArgs.length - 1];
+      Iterable<TimestampedValue<KV<?, ?>>> buffered = buf.read();
       // feed all data to @ProcessElement
-      for (TimestampedValue<KV<K, V>> kv : buffered) {
+      for (TimestampedValue<KV<?, ?>> kv : buffered) {
         ExceptionUtils.unchecked(
-            () ->
-                processElement.invoke(
-                    doFn, expander.getProcessElementArgs(kv.getValue(), allArgs)));
+            () -> processElement.invoke(doFn, expander.getProcessElementArgs(kv, allArgs)));
       }
       // invoke onWindowExpiration
-      ExceptionUtils.unchecked(
-          () -> onWindowExpiration.invoke(doFn, expander.getOnWindowExpirationArgs(allArgs)));
+      if (onWindowExpiration != null) {
+        ExceptionUtils.unchecked(
+            () -> onWindowExpiration.invoke(doFn, expander.getOnWindowExpirationArgs(allArgs)));
+      }
     }
   }
 
@@ -869,8 +875,9 @@ public class ExternalStateExpander {
       @SuppressWarnings("unchecked")
       BagState<TimestampedValue<KV<K, V>>> bufState =
           (BagState<TimestampedValue<KV<K, V>>>) args[args.length - 2];
+      @SuppressWarnings({"unchecked", "rawtypes"})
       List<TimestampedValue<KV<K, V>>> pushedBackElements =
-          processBuffer(args, bufState.read(), MoreObjects.firstNonNull(lastFlush, now));
+          processBuffer(args, (Iterable) bufState.read(), MoreObjects.firstNonNull(lastFlush, now));
       bufState.clear();
       // if we have already processed state data
       if (lastFlush != null) {
@@ -885,22 +892,23 @@ public class ExternalStateExpander {
           values.forEach(output::output);
         }
       }
+      @SuppressWarnings({"unchecked", "rawtypes"})
       List<TimestampedValue<KV<K, V>>> remaining =
           processBuffer(
               args,
-              pushedBackElements,
+              (List) pushedBackElements,
               MoreObjects.firstNonNull(nextFlush, BoundedWindow.TIMESTAMP_MAX_VALUE));
       remaining.forEach(bufState::add);
     }
 
     private List<TimestampedValue<KV<K, V>>> processBuffer(
-        Object[] args, Iterable<TimestampedValue<KV<K, V>>> buffer, Instant maxTs) {
+        Object[] args, Iterable<TimestampedValue<KV<?, ?>>> buffer, Instant maxTs) {
 
-      List<TimestampedValue<KV<K, V>>> pushedBackElements = new ArrayList<>();
+      List<TimestampedValue<KV<?, ?>>> pushedBackElements = new ArrayList<>();
       buffer.forEach(
           kv -> {
             if (kv.getTimestamp().isBefore(maxTs)) {
-              Object[] processArgs = expander.getProcessElementArgs(kv.getValue(), args);
+              Object[] processArgs = expander.getProcessElementArgs(kv, args);
               ExceptionUtils.unchecked(() -> processElementMethod.invoke(this.doFn, processArgs));
             } else {
               // return back to buffer
@@ -908,7 +916,9 @@ public class ExternalStateExpander {
               pushedBackElements.add(kv);
             }
           });
-      return pushedBackElements;
+      @SuppressWarnings({"unchecked", "rawtypes"})
+      List<TimestampedValue<KV<K, V>>> res = (List) pushedBackElements;
+      return res;
     }
   }
 

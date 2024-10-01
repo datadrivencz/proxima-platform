@@ -63,6 +63,7 @@ import org.apache.beam.sdk.transforms.DoFn.OutputReceiver;
 import org.apache.beam.sdk.transforms.windowing.TimestampCombiner;
 import org.apache.beam.sdk.util.CoderUtils;
 import org.apache.beam.sdk.values.KV;
+import org.apache.beam.sdk.values.Row;
 import org.apache.beam.sdk.values.TimestampedValue;
 import org.apache.beam.sdk.values.TupleTag;
 import org.checkerframework.checker.nullness.qual.Nullable;
@@ -71,14 +72,15 @@ import org.joda.time.Instant;
 class MethodCallUtils {
 
   static Object[] fromGenerators(
-      List<BiFunction<Object[], KV<?, ?>, Object>> generators, Object[] wrapperArgs) {
+      List<BiFunction<Object[], TimestampedValue<KV<?, ?>>, Object>> generators,
+      Object[] wrapperArgs) {
 
     return fromGenerators(null, generators, wrapperArgs);
   }
 
   static Object[] fromGenerators(
-      @Nullable KV<?, ?> elem,
-      List<BiFunction<Object[], KV<?, ?>, Object>> generators,
+      @Nullable TimestampedValue<KV<?, ?>> elem,
+      List<BiFunction<Object[], TimestampedValue<KV<?, ?>>, Object>> generators,
       Object[] wrapperArgs) {
 
     Object[] res = new Object[generators.size()];
@@ -88,16 +90,14 @@ class MethodCallUtils {
     return res;
   }
 
-  static List<BiFunction<Object[], KV<?, ?>, Object>> projectArgs(
+  static List<BiFunction<Object[], TimestampedValue<KV<?, ?>>, Object>> projectArgs(
       LinkedHashMap<TypeId, Pair<AnnotationDescription, TypeDefinition>> wrapperArgList,
       LinkedHashMap<TypeId, Pair<Annotation, Type>> argsMap,
       TupleTag<?> mainTag,
       Type outputType) {
 
-    // FIXME: interchange @Timestamp and transform OutputReceiver to output correct
-    // timestamp
-
-    List<BiFunction<Object[], KV<?, ?>, Object>> res = new ArrayList<>(argsMap.size());
+    List<BiFunction<Object[], TimestampedValue<KV<?, ?>>, Object>> res =
+        new ArrayList<>(argsMap.size());
     List<TypeDefinition> wrapperParamsIds =
         wrapperArgList.values().stream()
             .map(p -> p.getFirst() != null ? p.getFirst().getAnnotationType() : p.getSecond())
@@ -105,21 +105,29 @@ class MethodCallUtils {
     for (Map.Entry<TypeId, Pair<Annotation, Type>> e : argsMap.entrySet()) {
       int wrapperArg = findArgIndex(wrapperArgList.keySet(), e.getKey());
       if (wrapperArg < 0) {
+        // the wrapper does not have the required argument
         if (e.getKey().isElement()) {
-          res.add((args, elem) -> Objects.requireNonNull(elem));
-        } else if (e.getKey()
-            .equals(
-                TypeId.of(
-                    TypeDescription.Generic.Builder.parameterizedType(
-                            OutputReceiver.class, outputType)
-                        .build()))) {
-          // remap OutputReceiver to MultiOutputReceiver
-          int outputPos =
+          // wrapper does not have @Element, we need to provide it from input element
+          res.add((args, elem) -> Objects.requireNonNull(elem.getValue()));
+        } else if (e.getKey().isTimestamp()) {
+          // wrapper does not have timestamp
+          res.add((args, elem) -> elem.getTimestamp());
+        } else if (e.getKey().isOutput(outputType)) {
+          int wrapperPos =
               wrapperParamsIds.indexOf(
                   TypeDescription.ForLoadedType.of(DoFn.MultiOutputReceiver.class));
-          Preconditions.checkState(outputPos >= 0);
-          res.add(
-              (args, elem) -> fromMultiOutput((DoFn.MultiOutputReceiver) args[outputPos], mainTag));
+          if (e.getKey().isMultiOutput()) {
+            // inject timestamp
+            res.add(
+                (args, elem) ->
+                    remapTimestampIfNeeded((DoFn.MultiOutputReceiver) args[wrapperPos], elem));
+          } else {
+            // remap MultiOutputReceiver to OutputReceiver
+            Preconditions.checkState(wrapperPos >= 0);
+            res.add(
+                (args, elem) ->
+                    singleOutput((DoFn.MultiOutputReceiver) args[wrapperPos], elem, mainTag));
+          }
         } else {
           throw new IllegalStateException(
               "Missing argument "
@@ -129,7 +137,30 @@ class MethodCallUtils {
         }
       } else {
         if (e.getKey().isElement()) {
-          res.add((args, elem) -> extractValue((KV<?, StateOrInput<?>>) args[wrapperArg]));
+          // this applies to @ProcessElement only, the input element holds KV<?, StateOrInput>
+          res.add(
+              (args, elem) ->
+                  extractValue((TimestampedValue<KV<?, StateOrInput<?>>>) args[wrapperArg]));
+        } else if (e.getKey().isTimestamp()) {
+          res.add((args, elem) -> elem == null ? args[wrapperArg] : elem.getTimestamp());
+        } else if (e.getKey().isOutput(outputType)) {
+          if (e.getKey().isMultiOutput()) {
+            res.add(
+                (args, elem) ->
+                    elem == null
+                        ? args[wrapperArg]
+                        : remapTimestampIfNeeded(
+                            (DoFn.MultiOutputReceiver) args[wrapperArg], elem));
+          } else {
+            res.add(
+                (args, elem) -> {
+                  if (elem == null) {
+                    return args[wrapperArg];
+                  }
+                  OutputReceiver<?> parent = (OutputReceiver<?>) args[wrapperArg];
+                  return new TimestampedOutputReceiver<>(parent, elem.getTimestamp());
+                });
+          }
         } else {
           res.add((args, elem) -> args[wrapperArg]);
         }
@@ -138,9 +169,30 @@ class MethodCallUtils {
     return res;
   }
 
-  private static KV<?, ?> extractValue(KV<?, StateOrInput<?>> arg) {
-    Preconditions.checkArgument(!arg.getValue().isState());
-    return KV.of(arg.getKey(), arg.getValue().getInput());
+  private static DoFn.MultiOutputReceiver remapTimestampIfNeeded(
+      MultiOutputReceiver parent, @Nullable TimestampedValue<KV<?, ?>> elem) {
+
+    if (elem == null) {
+      return parent;
+    }
+    return new MultiOutputReceiver() {
+      @Override
+      public <T> OutputReceiver<T> get(TupleTag<T> tag) {
+        OutputReceiver<T> parentReceiver = parent.get(tag);
+        return new TimestampedOutputReceiver<>(parentReceiver, elem.getTimestamp());
+      }
+
+      @Override
+      public <T> OutputReceiver<Row> getRowReceiver(TupleTag<T> tag) {
+        OutputReceiver<Row> parentReceiver = parent.getRowReceiver(tag);
+        return new TimestampedOutputReceiver<>(parentReceiver, elem.getTimestamp());
+      }
+    };
+  }
+
+  private static KV<?, ?> extractValue(TimestampedValue<KV<?, StateOrInput<?>>> arg) {
+    Preconditions.checkArgument(!arg.getValue().getValue().isState());
+    return KV.of(arg.getValue().getKey(), arg.getValue().getValue().getInput());
   }
 
   private static int findArgIndex(Collection<TypeId> collection, TypeId key) {
@@ -190,13 +242,19 @@ class MethodCallUtils {
     return Generic.Builder.parameterizedType(KV.class, keyType, valueType).build();
   }
 
-  private static <T> OutputReceiver<T> fromMultiOutput(
-      MultiOutputReceiver multiOutput, TupleTag<T> mainTag) {
+  private static <T> OutputReceiver<T> singleOutput(
+      MultiOutputReceiver multiOutput,
+      @Nullable TimestampedValue<KV<?, ?>> elem,
+      TupleTag<T> mainTag) {
 
     return new OutputReceiver<T>() {
       @Override
       public void output(T output) {
-        multiOutput.get(mainTag).output(output);
+        if (elem == null) {
+          multiOutput.get(mainTag).output(output);
+        } else {
+          multiOutput.get(mainTag).outputWithTimestamp(output, elem.getTimestamp());
+        }
       }
 
       @Override
@@ -572,4 +630,25 @@ class MethodCallUtils {
   }
 
   private MethodCallUtils() {}
+
+  private static class TimestampedOutputReceiver<T> implements OutputReceiver<T> {
+
+    private final OutputReceiver<T> parentReceiver;
+    private final Instant elementTimestamp;
+
+    public TimestampedOutputReceiver(OutputReceiver<T> parentReceiver, Instant timestamp) {
+      this.parentReceiver = parentReceiver;
+      this.elementTimestamp = timestamp;
+    }
+
+    @Override
+    public void output(T output) {
+      outputWithTimestamp(output, elementTimestamp);
+    }
+
+    @Override
+    public void outputWithTimestamp(T output, Instant timestamp) {
+      parentReceiver.outputWithTimestamp(output, timestamp);
+    }
+  }
 }
