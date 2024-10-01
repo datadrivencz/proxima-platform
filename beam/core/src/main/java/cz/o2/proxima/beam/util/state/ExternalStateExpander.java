@@ -344,7 +344,9 @@ public class ExternalStateExpander {
 
     ClassLoadingStrategy<ClassLoader> strategy = ByteBuddyUtils.getClassLoadingStrategy(doFnClass);
     final String className =
-        doFnClass.getName() + "$Expanded" + Objects.hash(stateWriteInstant, nextFlushInstantFn);
+        doFnClass.getName()
+            + "$Expanded"
+            + (Objects.hash(stateWriteInstant, nextFlushInstantFn) & Integer.MAX_VALUE);
     final ClassLoader classLoader = ExternalStateExpander.class.getClassLoader();
     try {
       @SuppressWarnings("unchecked")
