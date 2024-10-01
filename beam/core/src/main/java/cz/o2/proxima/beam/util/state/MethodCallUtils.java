@@ -39,7 +39,6 @@ import java.util.function.BiFunction;
 import java.util.stream.Collectors;
 import net.bytebuddy.description.annotation.AnnotationDescription;
 import net.bytebuddy.description.type.TypeDefinition;
-import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.description.type.TypeDescription.ForLoadedType;
 import net.bytebuddy.description.type.TypeDescription.Generic;
 import org.apache.beam.sdk.coders.Coder;
@@ -105,68 +104,82 @@ class MethodCallUtils {
     for (Map.Entry<TypeId, Pair<Annotation, Type>> e : argsMap.entrySet()) {
       int wrapperArg = findArgIndex(wrapperArgList.keySet(), e.getKey());
       if (wrapperArg < 0) {
-        // the wrapper does not have the required argument
-        if (e.getKey().isElement()) {
-          // wrapper does not have @Element, we need to provide it from input element
-          res.add((args, elem) -> Objects.requireNonNull(elem.getValue()));
-        } else if (e.getKey().isTimestamp()) {
-          // wrapper does not have timestamp
-          res.add((args, elem) -> elem.getTimestamp());
-        } else if (e.getKey().isOutput(outputType)) {
-          int wrapperPos =
-              wrapperParamsIds.indexOf(
-                  TypeDescription.ForLoadedType.of(DoFn.MultiOutputReceiver.class));
-          if (e.getKey().isMultiOutput()) {
-            // inject timestamp
-            res.add(
-                (args, elem) ->
-                    remapTimestampIfNeeded((DoFn.MultiOutputReceiver) args[wrapperPos], elem));
-          } else {
-            // remap MultiOutputReceiver to OutputReceiver
-            Preconditions.checkState(wrapperPos >= 0);
-            res.add(
-                (args, elem) ->
-                    singleOutput((DoFn.MultiOutputReceiver) args[wrapperPos], elem, mainTag));
-          }
-        } else {
-          throw new IllegalStateException(
-              "Missing argument "
-                  + e.getKey()
-                  + " in wrapper. Options are "
-                  + wrapperArgList.keySet());
-        }
+        addUnknownWrapperArgument(
+            mainTag, outputType, e.getKey(), wrapperParamsIds, wrapperArgList.keySet(), res);
       } else {
-        if (e.getKey().isElement()) {
-          // this applies to @ProcessElement only, the input element holds KV<?, StateOrInput>
-          res.add(
-              (args, elem) ->
-                  extractValue((TimestampedValue<KV<?, StateOrInput<?>>>) args[wrapperArg]));
-        } else if (e.getKey().isTimestamp()) {
-          res.add((args, elem) -> elem == null ? args[wrapperArg] : elem.getTimestamp());
-        } else if (e.getKey().isOutput(outputType)) {
-          if (e.getKey().isMultiOutput()) {
-            res.add(
-                (args, elem) ->
-                    elem == null
-                        ? args[wrapperArg]
-                        : remapTimestampIfNeeded(
-                            (DoFn.MultiOutputReceiver) args[wrapperArg], elem));
-          } else {
-            res.add(
-                (args, elem) -> {
-                  if (elem == null) {
-                    return args[wrapperArg];
-                  }
-                  OutputReceiver<?> parent = (OutputReceiver<?>) args[wrapperArg];
-                  return new TimestampedOutputReceiver<>(parent, elem.getTimestamp());
-                });
-          }
-        } else {
-          res.add((args, elem) -> args[wrapperArg]);
-        }
+        remapKnownArgument(outputType, e.getKey(), wrapperArg, res);
       }
     }
     return res;
+  }
+
+  private static void remapKnownArgument(
+      Type outputType,
+      TypeId typeId,
+      int wrapperArg,
+      List<BiFunction<Object[], TimestampedValue<KV<?, ?>>, Object>> res) {
+
+    if (typeId.isElement()) {
+      // this applies to @ProcessElement only, the input element holds KV<?, StateOrInput>
+      res.add(
+          (args, elem) ->
+              extractValue((TimestampedValue<KV<?, StateOrInput<?>>>) args[wrapperArg]));
+    } else if (typeId.isTimestamp()) {
+      res.add((args, elem) -> elem == null ? args[wrapperArg] : elem.getTimestamp());
+    } else if (typeId.isOutput(outputType)) {
+      if (typeId.isMultiOutput()) {
+        res.add(
+            (args, elem) ->
+                elem == null
+                    ? args[wrapperArg]
+                    : remapTimestampIfNeeded((MultiOutputReceiver) args[wrapperArg], elem));
+      } else {
+        res.add(
+            (args, elem) -> {
+              if (elem == null) {
+                return args[wrapperArg];
+              }
+              OutputReceiver<?> parent = (OutputReceiver<?>) args[wrapperArg];
+              return new TimestampedOutputReceiver<>(parent, elem.getTimestamp());
+            });
+      }
+    } else {
+      res.add((args, elem) -> args[wrapperArg]);
+    }
+  }
+
+  private static void addUnknownWrapperArgument(
+      TupleTag<?> mainTag,
+      Type outputType,
+      TypeId typeId,
+      List<TypeDefinition> wrapperParamsIds,
+      Iterable<TypeId> wrapperIds,
+      List<BiFunction<Object[], TimestampedValue<KV<?, ?>>, Object>> res) {
+
+    // the wrapper does not have the required argument
+    if (typeId.isElement()) {
+      // wrapper does not have @Element, we need to provide it from input element
+      res.add((args, elem) -> Objects.requireNonNull(elem.getValue()));
+    } else if (typeId.isTimestamp()) {
+      // wrapper does not have timestamp
+      res.add((args, elem) -> elem.getTimestamp());
+    } else if (typeId.isOutput(outputType)) {
+      int wrapperPos = wrapperParamsIds.indexOf(ForLoadedType.of(MultiOutputReceiver.class));
+      if (typeId.isMultiOutput()) {
+        // inject timestamp
+        res.add(
+            (args, elem) -> remapTimestampIfNeeded((MultiOutputReceiver) args[wrapperPos], elem));
+      } else {
+        // remap MultiOutputReceiver to OutputReceiver
+        Preconditions.checkState(wrapperPos >= 0);
+        res.add(
+            (args, elem) -> singleOutput((MultiOutputReceiver) args[wrapperPos], elem, mainTag));
+      }
+    } else {
+      throw new IllegalStateException(
+          String.format(
+              "Missing argument %s in wrapper. Available options are %s", typeId, wrapperIds));
+    }
   }
 
   private static DoFn.MultiOutputReceiver remapTimestampIfNeeded(
