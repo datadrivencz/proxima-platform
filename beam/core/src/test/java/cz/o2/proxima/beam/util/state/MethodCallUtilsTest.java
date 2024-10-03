@@ -15,16 +15,24 @@
  */
 package cz.o2.proxima.beam.util.state;
 
+import static com.mongodb.internal.connection.tlschannel.util.Util.assertTrue;
+import static org.junit.Assert.assertEquals;
+
+import cz.o2.proxima.beam.util.state.MethodCallUtils.MethodInvoker;
 import cz.o2.proxima.core.functional.BiConsumer;
+import cz.o2.proxima.core.functional.Factory;
+import cz.o2.proxima.core.functional.UnaryFunction;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
+import net.bytebuddy.ByteBuddy;
 import org.apache.beam.sdk.coders.VarIntCoder;
 import org.apache.beam.sdk.state.StateBinder;
 import org.apache.beam.sdk.state.StateSpec;
 import org.apache.beam.sdk.state.StateSpecs;
-import org.apache.beam.sdk.transforms.Sum;
 import org.junit.Test;
 
 public class MethodCallUtilsTest {
@@ -37,6 +45,51 @@ public class MethodCallUtilsTest {
     testBinder(MethodCallUtils.createUpdaterBinder(tmp2));
   }
 
+  @Test
+  public void testMethodInvoker()
+      throws NoSuchMethodException,
+          InvocationTargetException,
+          InstantiationException,
+          IllegalAccessException {
+
+    testMethodInvokerWith(Sum::new, Integer::valueOf, int.class);
+  }
+
+  @Test
+  public void testMethodInvokerLong()
+      throws NoSuchMethodException,
+          InvocationTargetException,
+          InstantiationException,
+          IllegalAccessException {
+
+    testMethodInvokerWith(Sum2::new, Long::valueOf, Long.class);
+  }
+
+  <T, V> void testMethodInvokerWith(
+      Factory<T> instanceFactory, UnaryFunction<Integer, V> valueFactory, Class<?> paramType)
+      throws NoSuchMethodException,
+          InvocationTargetException,
+          InstantiationException,
+          IllegalAccessException {
+
+    ByteBuddy buddy = new ByteBuddy();
+    T s = instanceFactory.apply();
+    Method method = s.getClass().getDeclaredMethod("apply", paramType, paramType);
+    MethodInvoker<T, V> invoker = MethodInvoker.of(method, buddy, this.getClass().getClassLoader());
+    System.err.println(Arrays.toString(invoker.getClass().getDeclaredMethods()));
+    assertEquals(
+        valueFactory.apply(3),
+        invoker.invoke(
+            instanceFactory.apply(), new Object[] {valueFactory.apply(1), valueFactory.apply(2)}));
+
+    long start = System.nanoTime();
+    for (int i = 0; i < 1_000_000; i++) {
+      invoker.invoke(s, new Object[] {valueFactory.apply(i), valueFactory.apply(i)});
+    }
+    long duration = System.nanoTime() - start;
+    assertTrue(duration < 1_000_000_000);
+  }
+
   private void testBinder(StateBinder binder) {
     List<StateSpec<?>> specs =
         Arrays.asList(
@@ -44,12 +97,24 @@ public class MethodCallUtilsTest {
             StateSpecs.value(),
             StateSpecs.map(),
             StateSpecs.multimap(),
-            StateSpecs.combining(Sum.ofIntegers()),
+            StateSpecs.combining(org.apache.beam.sdk.transforms.Sum.ofIntegers()),
             StateSpecs.orderedList(VarIntCoder.of()));
     specs.forEach(s -> testBinder(s, binder));
   }
 
   private void testBinder(StateSpec<?> s, StateBinder binder) {
     s.bind("dummy", binder);
+  }
+
+  public static class Sum {
+    public Integer apply(int a, int b) {
+      return a + b;
+    }
+  }
+
+  public static class Sum2 {
+    public Long apply(Long a, Long b) {
+      return a + b;
+    }
   }
 }

@@ -23,6 +23,7 @@ import cz.o2.proxima.internal.com.google.common.base.Preconditions;
 import cz.o2.proxima.internal.com.google.common.collect.Iterables;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
@@ -37,10 +38,27 @@ import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
 import java.util.stream.Collectors;
+import net.bytebuddy.ByteBuddy;
 import net.bytebuddy.description.annotation.AnnotationDescription;
+import net.bytebuddy.description.method.MethodDescription;
+import net.bytebuddy.description.method.ParameterDescription;
+import net.bytebuddy.description.modifier.Visibility;
 import net.bytebuddy.description.type.TypeDefinition;
 import net.bytebuddy.description.type.TypeDescription.ForLoadedType;
 import net.bytebuddy.description.type.TypeDescription.Generic;
+import net.bytebuddy.description.type.TypeDescription.Generic.Builder;
+import net.bytebuddy.dynamic.scaffold.InstrumentedType;
+import net.bytebuddy.implementation.Implementation;
+import net.bytebuddy.implementation.MethodCall;
+import net.bytebuddy.implementation.MethodCall.ArgumentLoader;
+import net.bytebuddy.implementation.MethodCall.ArgumentLoader.ArgumentProvider;
+import net.bytebuddy.implementation.MethodCall.ArgumentLoader.Factory;
+import net.bytebuddy.implementation.bytecode.StackManipulation;
+import net.bytebuddy.implementation.bytecode.assign.Assigner;
+import net.bytebuddy.implementation.bytecode.assign.Assigner.Typing;
+import net.bytebuddy.implementation.bytecode.collection.ArrayAccess;
+import net.bytebuddy.implementation.bytecode.constant.IntegerConstant;
+import net.bytebuddy.implementation.bytecode.member.MethodVariableAccess;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.InstantCoder;
 import org.apache.beam.sdk.coders.KvCoder;
@@ -663,5 +681,92 @@ class MethodCallUtils {
     public void outputWithTimestamp(T output, Instant timestamp) {
       parentReceiver.outputWithTimestamp(output, timestamp);
     }
+  }
+
+  public static class MethodParameterArrayElement implements ArgumentLoader {
+    private final ParameterDescription parameterDescription;
+    private final int index;
+
+    public MethodParameterArrayElement(ParameterDescription parameterDescription, int index) {
+      this.parameterDescription = parameterDescription;
+      this.index = index;
+    }
+
+    @Override
+    public StackManipulation toStackManipulation(
+        ParameterDescription target, Assigner assigner, Assigner.Typing typing) {
+      StackManipulation stackManipulation =
+          new StackManipulation.Compound(
+              MethodVariableAccess.load(this.parameterDescription),
+              IntegerConstant.forValue(this.index),
+              ArrayAccess.of(this.parameterDescription.getType().getComponentType()).load(),
+              assigner.assign(
+                  this.parameterDescription.getType().getComponentType(),
+                  target.getType(),
+                  Typing.DYNAMIC));
+      if (!stackManipulation.isValid()) {
+        throw new IllegalStateException(
+            "Cannot assign "
+                + this.parameterDescription.getType().getComponentType()
+                + " to "
+                + target);
+      } else {
+        return stackManipulation;
+      }
+    }
+  }
+
+  public static class ArrayArgumentProvider implements Factory, ArgumentProvider {
+
+    public InstrumentedType prepare(InstrumentedType instrumentedType) {
+      return instrumentedType;
+    }
+
+    public ArgumentProvider make(Implementation.Target implementationTarget) {
+      return this;
+    }
+
+    public List<ArgumentLoader> resolve(
+        MethodDescription instrumentedMethod, MethodDescription invokedMethod) {
+
+      ParameterDescription desc = instrumentedMethod.getParameters().get(1);
+      List<ArgumentLoader> res = new ArrayList(invokedMethod.getParameters().size());
+      for (int i = 0; i < invokedMethod.getParameters().size(); ++i) {
+        res.add(new MethodParameterArrayElement(desc, i));
+      }
+      return res;
+    }
+  }
+
+  public abstract static class MethodInvoker<T, R> {
+
+    public static <T, R> MethodInvoker<T, R> of(
+        Method method, ByteBuddy buddy, ClassLoader classLoader)
+        throws NoSuchMethodException,
+            InvocationTargetException,
+            InstantiationException,
+            IllegalAccessException {
+
+      String className = method.getDeclaringClass().getName();
+      String methodName = method.getName();
+      Generic superType =
+          Builder.parameterizedType(
+                  MethodInvoker.class, method.getDeclaringClass(), method.getGenericReturnType())
+              .build();
+      return (MethodInvoker<T, R>)
+          buddy
+              .subclass(superType)
+              .name(className + "$" + methodName + "Invoker")
+              .defineMethod("invoke", method.getGenericReturnType(), Visibility.PUBLIC)
+              .withParameters(method.getDeclaringClass(), Object[].class)
+              .intercept(MethodCall.invoke(method).onArgument(0).with(new ArrayArgumentProvider()))
+              .make()
+              .load(classLoader)
+              .getLoaded()
+              .getDeclaredConstructor()
+              .newInstance();
+    }
+
+    public abstract R invoke(T _this, Object[] args);
   }
 }
