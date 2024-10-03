@@ -47,6 +47,7 @@ import net.bytebuddy.description.type.TypeDefinition;
 import net.bytebuddy.description.type.TypeDescription.ForLoadedType;
 import net.bytebuddy.description.type.TypeDescription.Generic;
 import net.bytebuddy.description.type.TypeDescription.Generic.Builder;
+import net.bytebuddy.dynamic.loading.ClassLoadingStrategy;
 import net.bytebuddy.dynamic.scaffold.InstrumentedType;
 import net.bytebuddy.implementation.Implementation;
 import net.bytebuddy.implementation.MethodCall;
@@ -78,6 +79,7 @@ import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.DoFn.MultiOutputReceiver;
 import org.apache.beam.sdk.transforms.DoFn.OutputReceiver;
 import org.apache.beam.sdk.transforms.windowing.TimestampCombiner;
+import org.apache.beam.sdk.util.ByteBuddyUtils;
 import org.apache.beam.sdk.util.CoderUtils;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.Row;
@@ -660,8 +662,6 @@ class MethodCallUtils {
     };
   }
 
-  private MethodCallUtils() {}
-
   private static class TimestampedOutputReceiver<T> implements OutputReceiver<T> {
 
     private final OutputReceiver<T> parentReceiver;
@@ -738,35 +738,78 @@ class MethodCallUtils {
     }
   }
 
-  public abstract static class MethodInvoker<T, R> {
+  public interface MethodInvoker<T, R> {
 
-    public static <T, R> MethodInvoker<T, R> of(
-        Method method, ByteBuddy buddy, ClassLoader classLoader)
+    static <T, R> MethodInvoker<T, R> of(Method method, ByteBuddy buddy)
         throws NoSuchMethodException,
             InvocationTargetException,
             InstantiationException,
             IllegalAccessException {
 
-      String className = method.getDeclaringClass().getName();
-      String methodName = method.getName();
-      Generic superType =
-          Builder.parameterizedType(
-                  MethodInvoker.class, method.getDeclaringClass(), method.getGenericReturnType())
-              .build();
-      return (MethodInvoker<T, R>)
-          buddy
-              .subclass(superType)
-              .name(className + "$" + methodName + "Invoker")
-              .defineMethod("invoke", method.getGenericReturnType(), Visibility.PUBLIC)
-              .withParameters(method.getDeclaringClass(), Object[].class)
-              .intercept(MethodCall.invoke(method).onArgument(0).with(new ArrayArgumentProvider()))
-              .make()
-              .load(classLoader)
-              .getLoaded()
-              .getDeclaredConstructor()
-              .newInstance();
+      return getInvoker(method, buddy);
     }
 
-    public abstract R invoke(T _this, Object[] args);
+    R invoke(T _this, Object[] args);
   }
+
+  public interface VoidMethodInvoker<T> {
+
+    static <T> VoidMethodInvoker<T> of(Method method, ByteBuddy buddy)
+        throws NoSuchMethodException,
+            InvocationTargetException,
+            InstantiationException,
+            IllegalAccessException {
+
+      return getInvoker(method, buddy);
+    }
+
+    void invoke(T _this, Object[] args);
+  }
+
+  private static <T> T getInvoker(Method method, ByteBuddy buddy)
+      throws NoSuchMethodException,
+          InvocationTargetException,
+          InstantiationException,
+          IllegalAccessException {
+
+    Class<?> declaringClass = method.getDeclaringClass();
+    String className = declaringClass.getName();
+    String methodName = method.getName();
+    Type returnType = method.getGenericReturnType();
+    Generic implement =
+        returnType.equals(void.class)
+            ? Builder.parameterizedType(VoidMethodInvoker.class, declaringClass).build()
+            : Builder.parameterizedType(MethodInvoker.class, declaringClass, returnType).build();
+    System.err.println(" loader " + declaringClass.getClassLoader());
+    // classLoader = method.getDeclaringClass().getClassLoader();
+    ClassLoadingStrategy<ClassLoader> strategy =
+        ByteBuddyUtils.getClassLoadingStrategy(declaringClass);
+    String subclassName = className + "$" + methodName + "Invoker";
+    try {
+      @SuppressWarnings("unchecked")
+      Class<T> loaded = (Class<T>) declaringClass.getClassLoader().loadClass(subclassName);
+      return loaded.getDeclaredConstructor().newInstance();
+    } catch (Exception ex) {
+      // define the class
+    }
+    @SuppressWarnings("unchecked")
+    Class<T> cls =
+        (Class<T>)
+            buddy
+                .subclass(declaringClass)
+                .implement(implement)
+                .name(subclassName)
+                .defineMethod("invoke", returnType, Visibility.PUBLIC)
+                .withParameters(declaringClass, Object[].class)
+                .intercept(
+                    MethodCall.invoke(method).onArgument(0).with(new ArrayArgumentProvider()))
+                .make()
+                .load(null, strategy)
+                .getLoaded();
+
+    System.err.println(" *** " + Arrays.toString(cls.getDeclaredConstructors()));
+    return cls.getDeclaredConstructor().newInstance();
+  }
+
+  private MethodCallUtils() {}
 }

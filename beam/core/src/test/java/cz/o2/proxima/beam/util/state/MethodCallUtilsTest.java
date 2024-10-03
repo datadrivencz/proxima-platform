@@ -19,11 +19,15 @@ import static com.mongodb.internal.connection.tlschannel.util.Util.assertTrue;
 import static org.junit.Assert.assertEquals;
 
 import cz.o2.proxima.beam.util.state.MethodCallUtils.MethodInvoker;
+import cz.o2.proxima.beam.util.state.MethodCallUtils.VoidMethodInvoker;
 import cz.o2.proxima.core.functional.BiConsumer;
+import cz.o2.proxima.core.functional.Consumer;
 import cz.o2.proxima.core.functional.Factory;
 import cz.o2.proxima.core.functional.UnaryFunction;
+import cz.o2.proxima.core.util.ExceptionUtils;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
@@ -65,6 +69,59 @@ public class MethodCallUtilsTest {
     testMethodInvokerWith(Sum2::new, Long::valueOf, Long.class);
   }
 
+  @Test
+  public void testMethodInvokerWithVoid()
+      throws NoSuchMethodException,
+          InvocationTargetException,
+          InstantiationException,
+          IllegalAccessException {
+
+    ByteBuddy buddy = new ByteBuddy();
+    SumCollect s = new SumCollect();
+    Method method = s.getClass().getDeclaredMethod("apply", int.class, int.class, Consumer.class);
+    VoidMethodInvoker<SumCollect> invoker = VoidMethodInvoker.of(method, buddy);
+    List<Integer> list = new ArrayList<>();
+    Consumer<Integer> c = list::add;
+    invoker.invoke(s, new Object[] {1, 2, c});
+    assertEquals(3, (int) list.get(0));
+
+    long start = System.nanoTime();
+    Consumer<Integer> ign = dummy -> {};
+    for (int i = 0; i < 1_000_000; i++) {
+      invoker.invoke(s, new Object[] {1, 2, ign});
+    }
+    long duration = System.nanoTime() - start;
+    assertTrue(duration < 1_000_000_000);
+  }
+
+  @Test
+  public void testNonStaticSubclass()
+      throws InvocationTargetException,
+          NoSuchMethodException,
+          InstantiationException,
+          IllegalAccessException {
+    Sum s =
+        new Sum() {
+          MethodInvoker<Delegate, Integer> invoker =
+              MethodInvoker.of(
+                  ExceptionUtils.uncheckedFactory(
+                      () -> Delegate.class.getDeclaredMethod("apply", int.class, int.class)),
+                  new ByteBuddy());
+
+          class Delegate {
+            Integer apply(int a, int b) {
+              return a + b;
+            }
+          }
+
+          @Override
+          public Integer apply(int a, int b) {
+            return invoker.invoke(new Delegate(), new Object[] {a, b});
+          }
+        };
+    assertEquals(3, (int) s.apply(1, 2));
+  }
+
   <T, V> void testMethodInvokerWith(
       Factory<T> instanceFactory, UnaryFunction<Integer, V> valueFactory, Class<?> paramType)
       throws NoSuchMethodException,
@@ -75,8 +132,7 @@ public class MethodCallUtilsTest {
     ByteBuddy buddy = new ByteBuddy();
     T s = instanceFactory.apply();
     Method method = s.getClass().getDeclaredMethod("apply", paramType, paramType);
-    MethodInvoker<T, V> invoker = MethodInvoker.of(method, buddy, this.getClass().getClassLoader());
-    System.err.println(Arrays.toString(invoker.getClass().getDeclaredMethods()));
+    MethodInvoker<T, V> invoker = MethodInvoker.of(method, buddy);
     assertEquals(
         valueFactory.apply(3),
         invoker.invoke(
@@ -115,6 +171,12 @@ public class MethodCallUtilsTest {
   public static class Sum2 {
     public Long apply(Long a, Long b) {
       return a + b;
+    }
+  }
+
+  public static class SumCollect {
+    public void apply(int a, int b, Consumer<Integer> result) {
+      result.accept(a + b);
     }
   }
 }

@@ -39,6 +39,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.BiFunction;
 import java.util.stream.Collectors;
@@ -408,6 +409,7 @@ public class ExternalStateExpander {
             outputType,
             stateWriteInstant,
             nextFlushInstantFn,
+            buddy,
             builder);
     Unloaded<DoFn<InputT, OutputT>> dynamicClass = builder.make();
     return ExceptionUtils.uncheckedFactory(
@@ -469,15 +471,17 @@ public class ExternalStateExpander {
           Type outputType,
           Instant stateWriteInstant,
           UnaryFunction<Instant, Instant> nextFlushInstantFn,
+          ByteBuddy buddy,
           Builder<DoFn<InputT, OutputT>> builder) {
 
     builder = addProcessingMethod(doFn, DoFn.Setup.class, builder);
     builder = addProcessingMethod(doFn, DoFn.StartBundle.class, builder);
     builder =
-        addProcessElementMethod(doFn, inputType, mainTag, outputType, stateWriteInstant, builder);
+        addProcessElementMethod(
+            doFn, inputType, mainTag, outputType, stateWriteInstant, buddy, builder);
     builder = addProcessingMethod(doFn, DoFn.FinishBundle.class, builder);
     builder = addProcessingMethod(doFn, DoFn.Teardown.class, builder);
-    builder = addOnWindowExpirationMethod(doFn, inputType, mainTag, builder);
+    builder = addOnWindowExpirationMethod(doFn, inputType, mainTag, buddy, builder);
     builder = addProcessingMethod(doFn, DoFn.GetInitialRestriction.class, builder);
     builder = addProcessingMethod(doFn, DoFn.SplitRestriction.class, builder);
     builder = addProcessingMethod(doFn, DoFn.GetRestrictionCoder.class, builder);
@@ -495,6 +499,7 @@ public class ExternalStateExpander {
             STATE_TUPLE_TAG,
             outputType,
             nextFlushInstantFn,
+            buddy,
             builder);
     return builder;
   }
@@ -506,6 +511,7 @@ public class ExternalStateExpander {
           TupleTag<OutputT> mainTag,
           Type outputType,
           Instant stateWriteInstant,
+          ByteBuddy buddy,
           Builder<DoFn<InputT, OutputT>> builder) {
 
     Class<? extends Annotation> annotation = ProcessElement.class;
@@ -521,7 +527,8 @@ public class ExternalStateExpander {
               .withParameters(
                   wrapperArgs.stream().map(Pair::getSecond).collect(Collectors.toList()))
               .intercept(
-                  MethodDelegation.to(new ProcessElementInterceptor<>(doFn, expander, method)));
+                  MethodDelegation.to(
+                      new ProcessElementInterceptor<>(doFn, expander, method, buddy)));
 
       for (int i = 0; i < wrapperArgs.size(); i++) {
         Pair<AnnotationDescription, TypeDefinition> arg = wrapperArgs.get(i);
@@ -540,6 +547,7 @@ public class ExternalStateExpander {
           DoFn<KV<K, V>, OutputT> doFn,
           ParameterizedType inputType,
           TupleTag<OutputT> mainTag,
+          ByteBuddy buddy,
           Builder<DoFn<InputT, OutputT>> builder) {
 
     Class<? extends Annotation> annotation = DoFn.OnWindowExpiration.class;
@@ -564,7 +572,7 @@ public class ExternalStateExpander {
               .intercept(
                   MethodDelegation.to(
                       new OnWindowExpirationInterceptor<>(
-                          doFn, processElementMethod, onWindowExpirationMethod, expander)));
+                          doFn, processElementMethod, onWindowExpirationMethod, expander, buddy)));
 
       // retrieve parameter annotations and apply them
       for (int i = 0; i < wrapperArgs.size(); i++) {
@@ -588,6 +596,7 @@ public class ExternalStateExpander {
           TupleTag<StateValue> stateTag,
           Type outputType,
           UnaryFunction<Instant, Instant> nextFlushInstantFn,
+          ByteBuddy buddy,
           Builder<DoFn<InputT, OutputT>> builder) {
 
     Method processElement = findMethod(doFn, ProcessElement.class);
@@ -601,7 +610,13 @@ public class ExternalStateExpander {
             .intercept(
                 MethodDelegation.to(
                     new FlushTimerInterceptor<>(
-                        doFn, processElement, expander, keyCoder, stateTag, nextFlushInstantFn)));
+                        doFn,
+                        processElement,
+                        expander,
+                        keyCoder,
+                        stateTag,
+                        nextFlushInstantFn,
+                        buddy)));
     int i = 0;
     for (Pair<AnnotationDescription, TypeDefinition> p : wrapperArgs) {
       if (p.getFirst() != null) {
@@ -770,14 +785,19 @@ public class ExternalStateExpander {
     private final ProcessElementParameterExpander expander;
     private final Method process;
     private final UnaryFunction<Object[], Boolean> processFn;
+    private final VoidMethodInvoker<Object> invoker;
 
     ProcessElementInterceptor(
-        DoFn<KV<K, V>, ?> doFn, ProcessElementParameterExpander expander, Method process) {
+        DoFn<KV<K, V>, ?> doFn,
+        ProcessElementParameterExpander expander,
+        Method process,
+        ByteBuddy buddy) {
 
       this.doFn = doFn;
       this.expander = expander;
       this.process = process;
       this.processFn = expander.getProcessFn();
+      this.invoker = ExceptionUtils.uncheckedFactory(() -> VoidMethodInvoker.of(process, buddy));
     }
 
     @RuntimeType
@@ -786,26 +806,31 @@ public class ExternalStateExpander {
 
       if (processFn.apply(allArgs)) {
         Object[] methodArgs = expander.getProcessElementArgs(allArgs);
-        ExceptionUtils.unchecked(() -> process.invoke(doFn, methodArgs));
+        ExceptionUtils.unchecked(() -> invoker.invoke(doFn, methodArgs));
       }
     }
   }
 
   private static class OnWindowExpirationInterceptor<K, V> {
     private final DoFn<KV<K, V>, ?> doFn;
-    private final Method processElement;
-    private final @Nullable Method onWindowExpiration;
+    private final VoidMethodInvoker<Object> processElement;
+    private final @Nullable VoidMethodInvoker<Object> onWindowExpiration;
     private final OnWindowParameterExpander expander;
 
     public OnWindowExpirationInterceptor(
         DoFn<KV<K, V>, ?> doFn,
         Method processElementMethod,
         @Nullable Method onWindowExpirationMethod,
-        OnWindowParameterExpander expander) {
+        OnWindowParameterExpander expander,
+        ByteBuddy buddy) {
 
       this.doFn = doFn;
-      this.processElement = processElementMethod;
-      this.onWindowExpiration = onWindowExpirationMethod;
+      this.processElement =
+          ExceptionUtils.uncheckedFactory(() -> VoidMethodInvoker.of(processElementMethod, buddy));
+      this.onWindowExpiration =
+          Optional.ofNullable(onWindowExpirationMethod)
+              .map(m -> ExceptionUtils.uncheckedFactory(() -> VoidMethodInvoker.of(m, buddy)))
+              .orElse(null);
       this.expander = expander;
     }
 
@@ -824,6 +849,8 @@ public class ExternalStateExpander {
       }
       // invoke onWindowExpiration
       if (onWindowExpiration != null) {
+        // FIXME:
+        System.err.println(Arrays.toString(onWindowExpiration.getClass().getDeclaredMethods()));
         ExceptionUtils.unchecked(
             () -> onWindowExpiration.invoke(doFn, expander.getOnWindowExpirationArgs(allArgs)));
       }
@@ -835,7 +862,7 @@ public class ExternalStateExpander {
     private final DoFn<KV<K, V>, ?> doFn;
     private final LinkedHashMap<String, BiFunction<Object, byte[], Iterable<StateValue>>>
         stateReaders;
-    private final Method processElementMethod;
+    private final VoidMethodInvoker<Object> processElementMethod;
     private final FlushTimerParameterExpander expander;
     private final Coder<K> keyCoder;
     private final TupleTag<StateValue> stateTag;
@@ -847,11 +874,13 @@ public class ExternalStateExpander {
         FlushTimerParameterExpander expander,
         Coder<K> keyCoder,
         TupleTag<StateValue> stateTag,
-        UnaryFunction<Instant, Instant> nextFlushInstantFn) {
+        UnaryFunction<Instant, Instant> nextFlushInstantFn,
+        ByteBuddy buddy) {
 
       this.doFn = doFn;
       this.stateReaders = getStateReaders(doFn);
-      this.processElementMethod = processElementMethod;
+      this.processElementMethod =
+          ExceptionUtils.uncheckedFactory(() -> VoidMethodInvoker.of(processElementMethod, buddy));
       this.expander = expander;
       this.keyCoder = keyCoder;
       this.stateTag = stateTag;
