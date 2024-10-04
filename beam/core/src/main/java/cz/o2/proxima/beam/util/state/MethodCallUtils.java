@@ -149,24 +149,31 @@ class MethodCallUtils {
     } else if (typeId.isTimestamp()) {
       res.add((args, elem) -> elem == null ? args[wrapperArg] : elem.getTimestamp());
     } else if (typeId.isOutput(outputType)) {
-      if (typeId.isMultiOutput()) {
-        res.add(
-            (args, elem) ->
-                elem == null
-                    ? args[wrapperArg]
-                    : remapTimestampIfNeeded((MultiOutputReceiver) args[wrapperArg], elem));
-      } else {
-        res.add(
-            (args, elem) -> {
-              if (elem == null) {
-                return args[wrapperArg];
-              }
-              OutputReceiver<?> parent = (OutputReceiver<?>) args[wrapperArg];
-              return new TimestampedOutputReceiver<>(parent, elem.getTimestamp());
-            });
-      }
+      remapOutputs(typeId, wrapperArg, res);
     } else {
       res.add((args, elem) -> args[wrapperArg]);
+    }
+  }
+
+  private static void remapOutputs(
+      TypeId typeId,
+      int wrapperArg,
+      List<BiFunction<Object[], TimestampedValue<KV<?, ?>>, Object>> res) {
+    if (typeId.isMultiOutput()) {
+      res.add(
+          (args, elem) ->
+              elem == null
+                  ? args[wrapperArg]
+                  : remapTimestampIfNeeded((MultiOutputReceiver) args[wrapperArg], elem));
+    } else {
+      res.add(
+          (args, elem) -> {
+            if (elem == null) {
+              return args[wrapperArg];
+            }
+            OutputReceiver<?> parent = (OutputReceiver<?>) args[wrapperArg];
+            return new TimestampedOutputReceiver<>(parent, elem.getTimestamp());
+          });
     }
   }
 
@@ -732,7 +739,7 @@ class MethodCallUtils {
         MethodDescription instrumentedMethod, MethodDescription invokedMethod) {
 
       ParameterDescription desc = instrumentedMethod.getParameters().get(1);
-      List<ArgumentLoader> res = new ArrayList(invokedMethod.getParameters().size());
+      List<ArgumentLoader> res = new ArrayList<>(invokedMethod.getParameters().size());
       for (int i = 0; i < invokedMethod.getParameters().size(); ++i) {
         res.add(new MethodParameterArrayElement(desc, i));
       }
@@ -782,7 +789,6 @@ class MethodCallUtils {
         returnType.equals(void.class)
             ? Builder.parameterizedType(VoidMethodInvoker.class, declaringClass).build()
             : Builder.parameterizedType(MethodInvoker.class, declaringClass, returnType).build();
-    // classLoader = method.getDeclaringClass().getClassLoader();
     ClassLoadingStrategy<ClassLoader> strategy = ByteBuddyUtils.getClassLoadingStrategy(superClass);
     String subclassName = declaringClass.getName() + "$" + methodName + "Invoker";
     try {
@@ -821,7 +827,7 @@ class MethodCallUtils {
     return Arrays.stream(cls.getDeclaredConstructors()).anyMatch(c -> c.getParameterCount() == 0);
   }
 
-  private static <T, I> T newInstance(Class<T> cls)
+  private static <T> T newInstance(Class<T> cls)
       throws NoSuchMethodException,
           InvocationTargetException,
           InstantiationException,

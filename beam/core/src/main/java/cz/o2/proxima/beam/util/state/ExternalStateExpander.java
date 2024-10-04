@@ -782,7 +782,6 @@ public class ExternalStateExpander {
 
     private final DoFn<KV<K, V>, ?> doFn;
     private final ProcessElementParameterExpander expander;
-    private final Method process;
     private final UnaryFunction<Object[], Boolean> processFn;
     private final VoidMethodInvoker<Object> invoker;
 
@@ -794,7 +793,6 @@ public class ExternalStateExpander {
 
       this.doFn = doFn;
       this.expander = expander;
-      this.process = process;
       this.processFn = expander.getProcessFn();
       this.invoker = ExceptionUtils.uncheckedFactory(() -> VoidMethodInvoker.of(process, buddy));
     }
@@ -849,8 +847,6 @@ public class ExternalStateExpander {
       }
       // invoke onWindowExpiration
       if (onWindowExpiration != null) {
-        // FIXME:
-        System.err.println(Arrays.toString(onWindowExpiration.getClass().getDeclaredMethods()));
         ExceptionUtils.unchecked(
             () -> onWindowExpiration.invoke(doFn, expander.getOnWindowExpirationArgs(allArgs)));
       }
