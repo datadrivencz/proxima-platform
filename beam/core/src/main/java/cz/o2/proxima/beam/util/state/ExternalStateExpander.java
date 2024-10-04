@@ -39,7 +39,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.function.BiFunction;
 import java.util.stream.Collectors;
@@ -813,8 +812,8 @@ public class ExternalStateExpander {
 
   private static class OnWindowExpirationInterceptor<K, V> {
     private final DoFn<KV<K, V>, ?> doFn;
-    private final VoidMethodInvoker<Object> processElement;
-    private final @Nullable VoidMethodInvoker<Object> onWindowExpiration;
+    private final VoidMethodInvoker<DoFn<KV<K, V>, ?>> processElement;
+    private final @Nullable VoidMethodInvoker<DoFn<KV<K, V>, ?>> onWindowExpiration;
     private final OnWindowParameterExpander expander;
 
     public OnWindowExpirationInterceptor(
@@ -828,9 +827,10 @@ public class ExternalStateExpander {
       this.processElement =
           ExceptionUtils.uncheckedFactory(() -> VoidMethodInvoker.of(processElementMethod, buddy));
       this.onWindowExpiration =
-          Optional.ofNullable(onWindowExpirationMethod)
-              .map(m -> ExceptionUtils.uncheckedFactory(() -> VoidMethodInvoker.of(m, buddy)))
-              .orElse(null);
+          onWindowExpirationMethod == null
+              ? null
+              : ExceptionUtils.uncheckedFactory(
+                  () -> VoidMethodInvoker.of(onWindowExpirationMethod, buddy));
       this.expander = expander;
     }
 

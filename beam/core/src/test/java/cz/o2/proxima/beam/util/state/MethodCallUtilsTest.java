@@ -102,7 +102,7 @@ public class MethodCallUtilsTest {
           IllegalAccessException {
     Sum s =
         new Sum() {
-          MethodInvoker<Delegate, Integer> invoker =
+          final MethodInvoker<Delegate, Integer> invoker =
               MethodInvoker.of(
                   ExceptionUtils.uncheckedFactory(
                       () -> Delegate.class.getDeclaredMethod("apply", int.class, int.class)),

@@ -38,6 +38,7 @@ import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
 import java.util.stream.Collectors;
+import lombok.extern.slf4j.Slf4j;
 import net.bytebuddy.ByteBuddy;
 import net.bytebuddy.description.annotation.AnnotationDescription;
 import net.bytebuddy.description.method.MethodDescription;
@@ -88,6 +89,7 @@ import org.apache.beam.sdk.values.TupleTag;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.joda.time.Instant;
 
+@Slf4j
 class MethodCallUtils {
 
   static Object[] fromGenerators(
@@ -773,22 +775,20 @@ class MethodCallUtils {
           IllegalAccessException {
 
     Class<?> declaringClass = method.getDeclaringClass();
-    String className = declaringClass.getName();
+    Class<?> superClass = fromDeclaringClass(declaringClass);
     String methodName = method.getName();
     Type returnType = method.getGenericReturnType();
     Generic implement =
         returnType.equals(void.class)
             ? Builder.parameterizedType(VoidMethodInvoker.class, declaringClass).build()
             : Builder.parameterizedType(MethodInvoker.class, declaringClass, returnType).build();
-    System.err.println(" loader " + declaringClass.getClassLoader());
     // classLoader = method.getDeclaringClass().getClassLoader();
-    ClassLoadingStrategy<ClassLoader> strategy =
-        ByteBuddyUtils.getClassLoadingStrategy(declaringClass);
-    String subclassName = className + "$" + methodName + "Invoker";
+    ClassLoadingStrategy<ClassLoader> strategy = ByteBuddyUtils.getClassLoadingStrategy(superClass);
+    String subclassName = declaringClass.getName() + "$" + methodName + "Invoker";
     try {
       @SuppressWarnings("unchecked")
-      Class<T> loaded = (Class<T>) declaringClass.getClassLoader().loadClass(subclassName);
-      return loaded.getDeclaredConstructor().newInstance();
+      Class<T> loaded = (Class<T>) superClass.getClassLoader().loadClass(subclassName);
+      return newInstance(loaded);
     } catch (Exception ex) {
       // define the class
     }
@@ -796,7 +796,7 @@ class MethodCallUtils {
     Class<T> cls =
         (Class<T>)
             buddy
-                .subclass(declaringClass)
+                .subclass(superClass)
                 .implement(implement)
                 .name(subclassName)
                 .defineMethod("invoke", returnType, Visibility.PUBLIC)
@@ -807,7 +807,26 @@ class MethodCallUtils {
                 .load(null, strategy)
                 .getLoaded();
 
-    System.err.println(" *** " + Arrays.toString(cls.getDeclaredConstructors()));
+    return newInstance(cls);
+  }
+
+  private static Class<?> fromDeclaringClass(Class<?> cls) {
+    if (cls.getEnclosingClass() != null && !hasDefaultConstructor(cls)) {
+      return fromDeclaringClass(cls.getEnclosingClass());
+    }
+    return cls;
+  }
+
+  private static boolean hasDefaultConstructor(Class<?> cls) {
+    return Arrays.stream(cls.getDeclaredConstructors()).anyMatch(c -> c.getParameterCount() == 0);
+  }
+
+  private static <T, I> T newInstance(Class<T> cls)
+      throws NoSuchMethodException,
+          InvocationTargetException,
+          InstantiationException,
+          IllegalAccessException {
+
     return cls.getDeclaredConstructor().newInstance();
   }
 
