@@ -145,9 +145,7 @@ class MethodCallUtils {
 
     if (typeId.isElement()) {
       // this applies to @ProcessElement only, the input element holds KV<?, StateOrInput>
-      res.add(
-          (args, elem) ->
-              extractValue((TimestampedValue<KV<?, StateOrInput<?>>>) args[wrapperArg]));
+      res.add((args, elem) -> extractValue((KV<?, StateOrInput<?>>) args[wrapperArg]));
     } else if (typeId.isTimestamp()) {
       res.add((args, elem) -> elem == null ? args[wrapperArg] : elem.getTimestamp());
     } else if (typeId.isOutput(outputType)) {
@@ -234,9 +232,9 @@ class MethodCallUtils {
     };
   }
 
-  private static KV<?, ?> extractValue(TimestampedValue<KV<?, StateOrInput<?>>> arg) {
-    Preconditions.checkArgument(!arg.getValue().getValue().isState());
-    return KV.of(arg.getValue().getKey(), arg.getValue().getValue().getInput());
+  private static KV<?, ?> extractValue(KV<?, StateOrInput<?>> arg) {
+    Preconditions.checkArgument(!arg.getValue().isState());
+    return KV.of(arg.getKey(), arg.getValue().getInput());
   }
 
   private static int findArgIndex(Collection<TypeId> collection, TypeId key) {
