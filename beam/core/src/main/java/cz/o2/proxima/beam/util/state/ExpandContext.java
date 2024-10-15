@@ -270,7 +270,9 @@ class ExpandContext {
                   .ifPresent(
                       p ->
                           stateValues.add(
-                              Pair.of(node.getFullName(), (PCollection<StateValue>) p)));
+                              Pair.of(
+                                  asStableTransformName(node.getFullName()),
+                                  (PCollection<StateValue>) p)));
             }
           }
         });
@@ -297,13 +299,17 @@ class ExpandContext {
 
           @Override
           public CompositeBehavior enterCompositeTransform(TransformHierarchy.Node node) {
-            Preconditions.checkState(names.add(node.getFullName()));
+            String name = node.getFullName();
+            Preconditions.checkState(
+                names.add(name), "Node %s has conflicting state name %s", node, name);
             return CompositeBehavior.ENTER_TRANSFORM;
           }
 
           @Override
           public void visitPrimitiveTransform(TransformHierarchy.Node node) {
-            Preconditions.checkState(names.add(node.getFullName()));
+            String name = node.getFullName();
+            Preconditions.checkState(
+                names.add(name), "Node %s has conflicting state name %s", node, name);
           }
         });
   }
@@ -345,7 +351,7 @@ class ExpandContext {
     if (!DoFnSignatures.isStateful(doFn)) {
       return PTransformReplacement.of(pMainInput, (PTransform) transform.getTransform());
     }
-    String transformName = transform.getFullName();
+    String transformName = asStableTransformName(transform.getFullName());
     PCollection<StateValue> transformInputs =
         inputs
             .apply(Filter.by(kv -> kv.getKey().equals(transformName)))
@@ -404,9 +410,9 @@ class ExpandContext {
                 .setCoder(KvCoder.of(keyCoder, StateOrInput.coder(valueCoder)));
         PCollection<KV<K, StateOrInput<V>>> flattened =
             PCollectionList.of(state).and(transformInputs).apply(Flatten.pCollections());
-        // FIXME: add name?
         PCollectionTuple tuple =
             flattened.apply(
+                "expanded",
                 ParDo.of(transformedDoFn(doFn, (KvCoder<K, V>) input.getCoder(), mainOutputTag))
                     .withOutputTags(mainOutputTag, otherOutputs.and(STATE_TUPLE_TAG)));
         PCollectionTuple res = PCollectionTuple.empty(input.getPipeline());
@@ -1007,6 +1013,16 @@ class ExpandContext {
             TypeDescription.ForLoadedType.of(BagState.class),
             Generic.Builder.parameterizedType(TimestampedValue.class, inputType).build())
         .build();
+  }
+
+  private static String asStableTransformName(String name) {
+    if (name.endsWith("/expanded")) {
+      return asStableTransformName(name.substring(0, name.length() - 9));
+    }
+    if (name.endsWith("/ParMultiDo(Anonymous)")) {
+      return asStableTransformName(name.substring(0, name.length() - 22));
+    }
+    return name;
   }
 
   public interface DoFnProvider {

@@ -79,16 +79,6 @@ interface ProcessElementParameterExpander extends Serializable {
   /** Get function to process elements and delegate to original DoFn. */
   UnaryFunction<Object[], Boolean> getProcessFn();
 
-  private static UnaryFunction<Object[], Boolean> createProcessFn(
-      LinkedHashMap<TypeId, Pair<AnnotationDescription, TypeDefinition>> wrapperArgs,
-      DoFn<?, ?> doFn,
-      Method method,
-      Instant stateWriteInstant) {
-
-    Map<String, BiConsumer<Object, StateValue>> stateUpdaterMap = getStateUpdaters(doFn);
-    return new ProcessFn(stateWriteInstant, wrapperArgs, method, stateUpdaterMap);
-  }
-
   private static int findParameter(
       Collection<TypeId> args, UnaryFunction<TypeId, Boolean> predicate) {
     int i = 0;
@@ -269,6 +259,16 @@ interface ProcessElementParameterExpander extends Serializable {
     @Override
     public UnaryFunction<Object[], Boolean> getProcessFn() {
       return processFn;
+    }
+
+    private static UnaryFunction<Object[], Boolean> createProcessFn(
+        LinkedHashMap<TypeId, Pair<AnnotationDescription, TypeDefinition>> wrapperArgs,
+        DoFn<?, ?> doFn,
+        Method method,
+        Instant stateWriteInstant) {
+
+      Map<String, BiConsumer<Object, StateValue>> stateUpdaterMap = getStateUpdaters(doFn);
+      return new ProcessFn(stateWriteInstant, wrapperArgs, method, stateUpdaterMap);
     }
   }
 }
