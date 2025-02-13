@@ -70,7 +70,7 @@ public class IngestServiceTest {
     responses = new LinkedBlockingQueue<>();
 
     responseObserver =
-        new StreamObserver<Rpc.StatusBulk>() {
+        new StreamObserver<>() {
 
           @Override
           public void onNext(Rpc.StatusBulk status) {
@@ -89,7 +89,6 @@ public class IngestServiceTest {
 
   @Test(timeout = 10000)
   public void testIngestBulkInvalidScheme() throws InterruptedException {
-
     StreamObserver<Rpc.IngestBulk> result = ingest.ingestBulk(responseObserver);
     result.onNext(
         bulk(
@@ -109,7 +108,6 @@ public class IngestServiceTest {
 
   @Test(timeout = 10000)
   public void testIngestBulkInvalidEntity() throws InterruptedException {
-
     StreamObserver<Rpc.IngestBulk> result = ingest.ingestBulk(responseObserver);
     result.onNext(
         bulk(
@@ -130,7 +128,6 @@ public class IngestServiceTest {
 
   @Test(timeout = 10000)
   public void testIngestBulkInvalidEntityAttribute() throws InterruptedException {
-
     StreamObserver<Rpc.IngestBulk> result = ingest.ingestBulk(responseObserver);
     result.onNext(
         bulk(
@@ -147,6 +144,25 @@ public class IngestServiceTest {
     assertEquals(1, responses.size());
     Rpc.Status status = responses.poll();
     assertEquals(404, status.getStatus());
+  }
+
+  @Test(timeout = 10000)
+  public void testIngestBulkInvalidKey() throws InterruptedException {
+    StreamObserver<Rpc.IngestBulk> result = ingest.ingestBulk(responseObserver);
+    result.onNext(
+        bulk(
+            Rpc.Ingest.newBuilder()
+                .setEntity("gateway")
+                .setAttribute("status")
+                .setValue(ByteString.EMPTY)
+                .build()));
+
+    result.onCompleted();
+    latch.await();
+
+    assertEquals(1, responses.size());
+    Rpc.Status status = responses.poll();
+    assertEquals(400, status.getStatus());
   }
 
   @Test(timeout = 10000)

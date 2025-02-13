@@ -165,7 +165,7 @@ public class TransformationDescriptor implements Serializable {
   }
 
   public ConsumerNameFactory<TransformationDescriptor> getConsumerNameFactory() {
-    return new ConsumerNameFactory<TransformationDescriptor>() {
+    return new ConsumerNameFactory<>() {
 
       private static final long serialVersionUID = 1L;
 

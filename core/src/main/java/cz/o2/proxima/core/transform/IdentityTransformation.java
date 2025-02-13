@@ -20,7 +20,7 @@ import cz.o2.proxima.core.repository.Repository;
 import cz.o2.proxima.core.storage.StreamElement;
 import java.util.Map;
 
-/** Transform perfoming identity mapping. */
+/** Transform performing identity mapping. */
 @Stable
 public class IdentityTransformation
     implements ElementWiseTransformation, ElementWiseProxyTransform {

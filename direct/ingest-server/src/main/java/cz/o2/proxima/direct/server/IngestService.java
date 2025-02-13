@@ -366,7 +366,8 @@ public class IngestService extends IngestServiceGrpc.IngestServiceImplBase {
 
     if (Strings.isNullOrEmpty(request.getKey())
         || Strings.isNullOrEmpty(request.getEntity())
-        || Strings.isNullOrEmpty(request.getAttribute())) {
+        || Strings.isNullOrEmpty(request.getAttribute())
+        || Strings.isNullOrEmpty(request.getKey())) {
 
       consumer.accept(status(request.getUuid(), 400, "Missing required fields in input message"));
       return null;
