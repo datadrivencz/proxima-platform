@@ -461,6 +461,7 @@ public class CommitLogRead extends PTransform<PBegin, PCollection<StreamElement>
         handle = observeBulkPartitions(name, restriction, reader, observer);
       }
       runningObserves.put(partition.getId(), handle);
+      log.info("Started observer for partition {}", partition);
     }
 
     abstract ObserveHandle observeBulkOffsets(
@@ -483,7 +484,10 @@ public class CommitLogRead extends PTransform<PBegin, PCollection<StreamElement>
               .<Integer, ObserveHandle>removalListener(
                   notification -> {
                     if (notification.wasEvicted()) {
-                      log.info("Closing observer {} due to expiry", notification.getKey());
+                      log.info(
+                          "Closing observer {} due to expiry {}",
+                          notification.getKey(),
+                          notification.getCause());
                       Optional.ofNullable(observers.remove(notification.getKey()))
                           .ifPresent(o -> o.stop(true));
                       notification.getValue().close();
