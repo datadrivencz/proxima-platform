@@ -1,0 +1,7 @@
+syntax = "proto3";
+package cz.o2.proxima.direct.sql.proto;
+
+message UserDetails {
+  string name = 1;
+  string email = 2;
+}
