@@ -111,20 +111,23 @@ public class ProximaIO {
     @FinishBundle
     public void finishBundle() {
       while (pendingWrites != null && missingResponses.get() > 0) {
-        // clone to avoid ConcurrentModificationException
-        final Collection<CompletableFuture<Pair<Boolean, Throwable>>> unfinished;
-        synchronized (pendingWrites) {
-          unfinished = new ArrayList<>(pendingWrites);
-          pendingWrites.clear();
-        }
-        Optional<Pair<Boolean, Throwable>> failedFuture =
-            unfinished.stream()
-                .map(f -> ExceptionUtils.uncheckedFactory(f::get))
-                .filter(p -> !p.getFirst())
-                .filter(p -> !(p.getSecond() instanceof TransactionRejectedException))
-                .findAny();
-        if (failedFuture.isPresent()) {
-          throw new IllegalStateException(failedFuture.get().getSecond());
+        while (!pendingWrites.isEmpty()) {
+          // clone to avoid ConcurrentModificationException
+          final Collection<CompletableFuture<Pair<Boolean, Throwable>>> unfinished;
+          synchronized (pendingWrites) {
+            unfinished = new ArrayList<>(pendingWrites);
+            pendingWrites.clear();
+          }
+          Optional<Pair<Boolean, Throwable>> failedFuture =
+              unfinished.stream()
+                  .map(f -> ExceptionUtils.uncheckedFactory(f::get))
+                  .filter(p -> !p.getFirst())
+                  // this will be retried
+                  .filter(p -> !(p.getSecond() instanceof TransactionRejectedException))
+                  .findAny();
+          if (failedFuture.isPresent()) {
+            throw new IllegalStateException(failedFuture.get().getSecond());
+          }
         }
       }
       // bundle finished
