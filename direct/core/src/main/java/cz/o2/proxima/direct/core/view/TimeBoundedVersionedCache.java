@@ -20,6 +20,7 @@ import cz.o2.proxima.core.functional.Consumer;
 import cz.o2.proxima.core.functional.UnaryFunction;
 import cz.o2.proxima.core.repository.AttributeDescriptor;
 import cz.o2.proxima.core.repository.EntityDescriptor;
+import cz.o2.proxima.core.storage.StreamElement;
 import cz.o2.proxima.core.util.Pair;
 import cz.o2.proxima.internal.com.google.common.annotations.VisibleForTesting;
 import java.io.Serializable;
@@ -28,6 +29,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -44,8 +46,7 @@ class TimeBoundedVersionedCache implements Serializable {
 
   @Value
   static class Payload {
-    @Nullable Object data;
-    long seqId;
+    StreamElement data;
     boolean overridable;
   }
 
@@ -63,7 +64,6 @@ class TimeBoundedVersionedCache implements Serializable {
 
   @Nullable
   synchronized Pair<Long, Payload> get(String key, String attribute, long stamp) {
-
     NavigableMap<String, NavigableMap<Long, Payload>> attrMap;
     attrMap = cache.get(key);
     if (attrMap != null) {
@@ -107,16 +107,15 @@ class TimeBoundedVersionedCache implements Serializable {
       return;
     }
     String lastParent = null;
-    Pair<Long, Payload> parentEntry = null;
+    Pair<Long, Payload> parentEntry;
     long parentTombstoneStamp = stamp;
     for (Map.Entry<String, NavigableMap<Long, Payload>> e : attrMap.tailMap(offset).entrySet()) {
-
       if (e.getKey().startsWith(prefix)) {
         if (!e.getKey().equals(offset)) {
           if (lastParent == null || !e.getKey().startsWith(lastParent)) {
             lastParent = parentRecordExtractor.apply(e.getKey());
             parentEntry = lastParent == null ? null : get(key, lastParent, stamp);
-            boolean isDelete = parentEntry != null && parentEntry.getSecond().getData() == null;
+            boolean isDelete = parentEntry != null && parentEntry.getSecond().getData().isDelete();
             parentTombstoneStamp = isDelete ? parentEntry.getFirst() : -1;
           }
           Map.Entry<Long, Payload> floorEntry = e.getValue().floorEntry(stamp);
@@ -194,30 +193,34 @@ class TimeBoundedVersionedCache implements Serializable {
     }
   }
 
-  synchronized boolean put(
-      String key,
-      String attribute,
-      long stamp,
-      long sequentialId,
-      boolean overwrite,
-      @Nullable Object value) {
-
+  synchronized boolean put(StreamElement element, boolean overwrite) {
     AtomicBoolean updated = new AtomicBoolean();
+    String key = element.getKey();
     cache.compute(
         key,
         (k, attrMap) -> {
           if (attrMap == null) {
             attrMap = new TreeMap<>();
           }
+          String attribute =
+              element.isDeleteWildcard()
+                  ? element.getAttributeDescriptor().toAttributePrefix()
+                  : element.getAttribute();
+          long stamp = element.getStamp();
+
           NavigableMap<Long, Payload> valueMap =
               attrMap.computeIfAbsent(attribute, tmp -> new TreeMap<>());
           if (valueMap.isEmpty() || valueMap.firstKey() - keepDuration < stamp) {
             final Payload oldPayload = valueMap.get(stamp);
             if (overwrite || oldPayload == null || oldPayload.overridable) {
-              logPayloadUpdateIfNecessary(key, attribute, stamp, value);
-              Payload newPayload = new Payload(value, sequentialId, !overwrite);
+              logPayloadUpdateIfNecessary(key, attribute, stamp, element);
+              Payload newPayload = new Payload(element, !overwrite);
               valueMap.put(stamp, newPayload);
-              updated.set(!newPayload.equals(oldPayload));
+              Object oldParsed =
+                  Optional.ofNullable(oldPayload == null ? null : oldPayload.getData())
+                      .flatMap(StreamElement::getParsed)
+                      .orElse(null);
+              updated.set(!element.getParsed().equals(oldParsed));
             }
           }
           long first;
@@ -230,9 +233,10 @@ class TimeBoundedVersionedCache implements Serializable {
   }
 
   private void logPayloadUpdateIfNecessary(
-      String key, String attribute, long stamp, @Nullable Object value) {
+      String key, String attribute, long stamp, StreamElement element) {
 
     if (log.isDebugEnabled()) {
+      Object value = element.getParsed().orElse(null);
       AttributeDescriptor<Object> attrDesc = entity.findAttribute(attribute, true).orElse(null);
       if (attrDesc != null) {
         log.debug(
