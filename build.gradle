@@ -235,6 +235,9 @@ def configureRepositores(project) {
       maven {
         url = uri('https://packages.confluent.io/maven/')
       }
+      maven {
+        url = uri('https://repository.apache.org/content/repositories/orgapachebeam-1422/')
+      }
       if (project.version.endsWith("-SNAPSHOT")) {
         maven {
           url = uri("https://central.sonatype.com/repository/maven-snapshots/")
