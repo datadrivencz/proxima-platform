@@ -1091,6 +1091,7 @@ public class RetrieveServiceTest {
     String key = "my-fancy-entity-key";
     ExtendedMessage payload = ExtendedMessage.newBuilder().setFirst(1).setSecond(2).build();
 
+    long now = System.currentTimeMillis();
     Optionals.get(server.direct.getWriter(attribute))
         .write(
             StreamElement.upsert(
@@ -1099,7 +1100,7 @@ public class RetrieveServiceTest {
                 UUID.randomUUID().toString(),
                 key,
                 attribute.getName(),
-                System.currentTimeMillis(),
+                now,
                 payload.toByteArray()),
             CommitCallback.noop());
     Rpc.GetRequest request =
@@ -1140,6 +1141,7 @@ public class RetrieveServiceTest {
         200,
         response.getStatus());
     assertEquals(payload, ExtendedMessage.parseFrom(response.getValue().toByteArray()));
+    assertEquals(now, response.getStamp());
   }
 
   @Test
@@ -1192,6 +1194,7 @@ public class RetrieveServiceTest {
     String key = "my-fancy-entity-key";
 
     OnlineAttributeWriter writer = Optionals.get(server.direct.getWriter(attribute));
+    long now = System.currentTimeMillis();
     writer.write(
         StreamElement.upsert(
             entity,
@@ -1199,7 +1202,7 @@ public class RetrieveServiceTest {
             UUID.randomUUID().toString(),
             key,
             attribute.toAttributePrefix() + "non-prefix",
-            System.currentTimeMillis(),
+            now,
             new byte[] {}),
         CommitCallback.noop());
     writer.write(
@@ -1209,7 +1212,7 @@ public class RetrieveServiceTest {
             UUID.randomUUID().toString(),
             key,
             attribute.toAttributePrefix() + "prefix",
-            System.currentTimeMillis(),
+            now,
             new byte[] {}),
         CommitCallback.noop());
 
