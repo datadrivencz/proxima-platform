@@ -491,6 +491,13 @@ public class RetrieveServiceTest {
     runListTestWithPrefix("wildcard.*");
   }
 
+  @Test
+  public void testListValidMany() {
+    runListTestWithPrefixMany("wildcard");
+    runListTestWithPrefixMany("wildcard.");
+    runListTestWithPrefixMany("wildcard.*");
+  }
+
   private void runListTestWithPrefix(String prefix) {
     EntityDescriptor entity = server.repo.getEntity("dummy");
     AttributeDescriptor<?> attribute = entity.getAttribute("wildcard.*");
@@ -558,6 +565,61 @@ public class RetrieveServiceTest {
     assertArrayEquals(new byte[] {1, 2, 3}, response.getValue(0).getValue().toByteArray());
     assertEquals("wildcard.2", response.getValue(1).getAttribute());
     assertArrayEquals(new byte[] {1, 2, 3, 4}, response.getValue(1).getValue().toByteArray());
+  }
+
+  private void runListTestWithPrefixMany(String prefix) {
+    EntityDescriptor entity = server.repo.getEntity("dummy");
+    AttributeDescriptor<?> attribute = entity.getAttribute("wildcard.*");
+    String key = "my-fancy-entity-key";
+
+    for (int i = 1; i <= 500; i++) {
+      Optionals.get(server.direct.getWriter(attribute))
+          .write(
+              StreamElement.upsert(
+                  entity,
+                  attribute,
+                  UUID.randomUUID().toString(),
+                  key,
+                  "wildcard." + i,
+                  System.currentTimeMillis(),
+                  new byte[] {1, 2, 3}),
+              CommitCallback.noop());
+    }
+    Rpc.ListRequest request =
+        Rpc.ListRequest.newBuilder()
+            .setEntity(entity.getName())
+            .setWildcardPrefix(prefix)
+            .setKey(key)
+            .build();
+
+    List<Rpc.ListResponse> responses = new ArrayList<>();
+    AtomicBoolean finished = new AtomicBoolean(false);
+    final StreamObserver<Rpc.ListResponse> responseObserver;
+    responseObserver =
+        new StreamObserver<>() {
+          @Override
+          public void onNext(Rpc.ListResponse res) {
+            responses.add(res);
+          }
+
+          @Override
+          public void onError(Throwable thrwbl) {
+            throw new RuntimeException(thrwbl);
+          }
+
+          @Override
+          public void onCompleted() {
+            finished.set(true);
+          }
+        };
+
+    retrieve.listAttributes(request, responseObserver);
+
+    assertTrue(finished.get());
+    assertEquals(1, responses.size());
+    Rpc.ListResponse response = responses.get(0);
+    assertEquals(200, response.getStatus());
+    assertEquals(500, response.getValueCount());
   }
 
   @Test
