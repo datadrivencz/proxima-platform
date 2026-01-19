@@ -21,7 +21,7 @@ import grpc_tools.protoc as protoc
 from setuptools import setup
 
 def get_version() -> str:
-  return "0.15.0"
+  return "0.16-SNAPSHOT"
 
 def build_ingest_rpc(name: str):
   # Anchor all paths to the project root (the folder that contains this setup.py)
