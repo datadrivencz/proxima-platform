@@ -343,7 +343,9 @@ public class DefaultCqlFactoryTest {
     verify(statement).bind(eq("key"));
     assertNotNull("Bound statement cannot be null", boundStatement);
     assertEquals(1, preparedStatement.size());
-    assertEquals("SELECT my_attribute FROM my_table WHERE hgw=?", preparedStatement.get(0));
+    assertEquals(
+        "SELECT my_attribute, WRITETIME(my_attribute) FROM my_table WHERE hgw=?",
+        preparedStatement.get(0));
   }
 
   @Test
@@ -358,7 +360,9 @@ public class DefaultCqlFactoryTest {
     verify(statement).bind(eq("key"), eq("1"));
     assertNotNull("Bound statement cannot be null", boundStatement);
     assertEquals(1, preparedStatement.size());
-    assertEquals("SELECT my_col FROM my_table WHERE hgw=? AND device=?", preparedStatement.get(0));
+    assertEquals(
+        "SELECT my_col, WRITETIME(my_col) FROM my_table WHERE hgw=? AND device=?",
+        preparedStatement.get(0));
   }
 
   @Test
@@ -373,7 +377,9 @@ public class DefaultCqlFactoryTest {
     verify(statement).bind(eq("key"), eq("1:2"));
     assertNotNull("Bound statement cannot be null", boundStatement);
     assertEquals(1, preparedStatement.size());
-    assertEquals("SELECT my_col FROM my_table WHERE hgw=? AND device=?", preparedStatement.get(0));
+    assertEquals(
+        "SELECT my_col, WRITETIME(my_col) FROM my_table WHERE hgw=? AND device=?",
+        preparedStatement.get(0));
   }
 
   @Test
@@ -388,7 +394,7 @@ public class DefaultCqlFactoryTest {
     assertNotNull("Bound statement cannot be null", boundStatement);
     assertEquals(1, preparedStatement.size());
     assertEquals(
-        "SELECT device, my_col FROM my_table WHERE hgw=? AND device>? LIMIT ?",
+        "SELECT device, my_col, WRITETIME(my_col) FROM my_table WHERE hgw=? AND device>? LIMIT ?",
         preparedStatement.get(0));
   }
 
@@ -404,7 +410,7 @@ public class DefaultCqlFactoryTest {
     assertNotNull("Bound statement cannot be null", boundStatement);
     assertEquals(1, preparedStatement.size());
     assertEquals(
-        "SELECT device, my_col FROM my_table WHERE hgw=? AND device>? LIMIT ?",
+        "SELECT device, my_col, WRITETIME(my_col) FROM my_table WHERE hgw=? AND device>? LIMIT ?",
         preparedStatement.get(0));
   }
 
@@ -437,7 +443,7 @@ public class DefaultCqlFactoryTest {
     assertNotNull("Bound statement cannot be null", boundStatement);
     assertEquals(1, preparedStatement.size());
     assertEquals(
-        "SELECT stamp, my_col FROM my_table WHERE hgw=? AND stamp>? LIMIT ?",
+        "SELECT stamp, my_col, WRITETIME(my_col) FROM my_table WHERE hgw=? AND stamp>? LIMIT ?",
         preparedStatement.get(0));
   }
 

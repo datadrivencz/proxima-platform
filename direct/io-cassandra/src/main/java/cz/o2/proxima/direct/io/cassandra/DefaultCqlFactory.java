@@ -320,26 +320,34 @@ public class DefaultCqlFactory extends CacheableCqlFactory {
 
   @Override
   protected String createGetStatement(String attribute, AttributeDescriptor<?> desc) {
-
     if (desc.isWildcard()) {
       String colName = toColName(desc);
+      String payloadCol = toPayloadCol(desc);
       return String.format(
-          "SELECT %s FROM %s WHERE %s=? AND %s=?",
-          toPayloadCol(desc), getTableName(), primaryField, toUnderScore(colName));
+          "SELECT %s, WRITETIME(%s) FROM %s WHERE %s=? AND %s=?",
+          payloadCol, payloadCol, getTableName(), primaryField, toUnderScore(colName));
     }
 
+    String payloadCol = toUnderScore(attribute);
     return String.format(
-        "SELECT %s FROM %s WHERE %s=?", toUnderScore(attribute), getTableName(), primaryField);
+        "SELECT %s, WRITETIME(%s) FROM %s WHERE %s=?",
+        payloadCol, payloadCol, getTableName(), primaryField);
   }
 
   @Override
   protected String createListStatement(AttributeDescriptor<?> attr) {
-
     String colName = toColName(attr);
     String dataCol = toUnderScore(colName);
+    String payloadCol = toPayloadCol(attr);
     return String.format(
-        "SELECT %s, %s FROM %s WHERE %s=? AND %s%s? LIMIT ?",
-        dataCol, toPayloadCol(attr), getTableName(), primaryField, dataCol, reversed ? "<" : ">");
+        "SELECT %s, %s, WRITETIME(%s) FROM %s WHERE %s=? AND %s%s? LIMIT ?",
+        dataCol,
+        payloadCol,
+        payloadCol,
+        getTableName(),
+        primaryField,
+        dataCol,
+        reversed ? "<" : ">");
   }
 
   private byte[] serializeValue(StreamElement ingest) {

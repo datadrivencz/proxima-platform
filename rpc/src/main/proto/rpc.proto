@@ -197,6 +197,11 @@ message GetResponse {
    **/
   bytes value = 3;
 
+  /**
+   * Timestamp in ms.
+   **/
+  uint64 stamp = 4;
+
 }
 
 /**
@@ -240,6 +245,9 @@ message ListResponse {
 
     /** The value of the attribute. */
     bytes value = 2;
+
+    /** Timestamp */
+    uint64 stamp = 3;
 
   }
 
