@@ -222,7 +222,7 @@ public class RetrieveService extends RetrieveServiceGrpc.RetrieveServiceImplBase
       if (addedKvs.get() == 0 || failedPredicate.get()) {
         break;
       }
-    } while (limit > 0 && kvs.size() < limit);
+    } while (limit <= 0 || kvs.size() < limit);
     return kvs;
   }
 
