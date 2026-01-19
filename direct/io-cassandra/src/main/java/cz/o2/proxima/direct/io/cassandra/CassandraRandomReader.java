@@ -59,6 +59,8 @@ class CassandraRandomReader extends AbstractStorage implements RandomAccessReade
     for (Row row : result) {
       ByteBuffer val = row.get(0, ByteBuffer.class);
       if (val != null) {
+        long rowStamp =
+            row.size() > 1 ? row.get(1, Long.class) / 1000L : System.currentTimeMillis();
         byte[] rowValue = val.array();
         try {
           return Optional.ofNullable(
@@ -69,7 +71,7 @@ class CassandraRandomReader extends AbstractStorage implements RandomAccessReade
                       desc,
                       key,
                       attribute,
-                      System.currentTimeMillis(),
+                      rowStamp,
                       new Offsets.Raw(attribute),
                       rowValue));
         } catch (Exception ex) {
@@ -122,6 +124,8 @@ class CassandraRandomReader extends AbstractStorage implements RandomAccessReade
         Object attribute = row.getObject(0);
         ByteBuffer val = row.get(1, ByteBuffer.class);
         if (val != null) {
+          long rowStamp =
+              row.size() > 2 ? row.get(2, Long.class) / 1000L : System.currentTimeMillis();
           byte[] rowValue = val.array();
           // by convention
           String name = wildcard.toAttributePrefix() + accessor.asString(attribute);
@@ -134,7 +138,7 @@ class CassandraRandomReader extends AbstractStorage implements RandomAccessReade
                       wildcard,
                       key,
                       name,
-                      System.currentTimeMillis(),
+                      rowStamp,
                       new Raw(name),
                       rowValue);
           if (keyValue != null) {
