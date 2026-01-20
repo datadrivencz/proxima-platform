@@ -1,7 +1,7 @@
 [![Build Status](https://github.com/datadrivencz/proxima-platform/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/datadrivencz/proxima-platform/actions/workflows/build.yml)
 [![sonar](https://sonarcloud.io/api/project_badges/measure?project=cz.o2.proxima%3Aplatform-parent&metric=coverage)](https://sonarcloud.io/dashboard?id=cz.o2.proxima%3Aplatform-parent)
 [![sonar](https://sonarcloud.io/api/project_badges/measure?project=cz.o2.proxima%3Aplatform-parent&metric=sqale_rating)](https://sonarcloud.io/dashboard?id=cz.o2.proxima%3Aplatform-parent)
-[![Maven Version](https://maven-badges.herokuapp.com/maven-central/cz.o2.proxima/proxima-core/badge.svg)](http://search.maven.org/#search|gav|1|g:"cz.o2.proxima")
+[![Maven Version](https://maven-badges.sml.io/maven-central/cz.o2.proxima/proxima-core/badge.svg)](http://search.maven.org/#search|gav|1|g:"cz.o2.proxima")
 
 # The Proxima platform
 
