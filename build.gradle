@@ -236,7 +236,7 @@ def configureRepositores(project) {
         url = uri('https://packages.confluent.io/maven/')
       }
       maven {
-        url = uri('https://repository.apache.org/content/repositories/orgapachebeam-1422/')
+        url = uri('https://repository.apache.org/content/repositories/orgapachebeam-1428/')
       }
       if (project.version.endsWith("-SNAPSHOT")) {
         maven {
