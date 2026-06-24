@@ -1221,4 +1221,28 @@ public abstract class GroovyEnvTest extends GroovyTest {
     assertTrue(result.get("wildcard_found"));
     assertFalse(result.get("wildcard_not_found"));
   }
+
+  @Test
+  public void testSql() throws Exception {
+    Script compiled =
+        compile(
+            "def res = []\n"
+                + "env.sql(\"SELECT * FROM proxima.gateway WHERE key = 'gw'\") { row -> res.add(row.key) }\n"
+                + "res");
+
+    write(
+        StreamElement.upsert(
+            gateway,
+            armed,
+            "uuid1",
+            "gw",
+            armed.getName(),
+            System.currentTimeMillis(),
+            new byte[] {}));
+
+    @SuppressWarnings("unchecked")
+    List<String> result = (List<String>) compiled.run();
+    assertEquals(1, result.size());
+    assertEquals("gw", result.get(0));
+  }
 }

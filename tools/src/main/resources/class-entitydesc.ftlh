@@ -256,4 +256,38 @@ class Environment implements RepositoryProvider {
   def <T> WindowedStream<T> periodicImpulse(String name, Closure<T> factory, long durationMs) {
     return console.getPeriodicImpulse(name, factory, durationMs);
   }
+
+  private groovy.sql.Sql sqlInstance = null
+
+  def groovy.sql.Sql getSql() {
+    if (sqlInstance == null) {
+      cz.o2.proxima.tools.groovy.util.SqlContextRepoFactory.setRepo(getRepo())
+      def model = '''{
+        "version": "1.0",
+        "defaultSchema": "PROXIMA",
+        "schemas": [
+          {
+            "type": "custom",
+            "name": "PROXIMA",
+            "factory": "cz.o2.proxima.direct.sql.ProximaSchemaFactory",
+            "operand": {
+              "repo-factory": "cz.o2.proxima.tools.groovy.util.SqlContextRepoFactory"
+            }
+          }
+        ]
+      }'''
+      sqlInstance = groovy.sql.Sql.newInstance("jdbc:calcite:model=inline:" + model, new java.util.Properties(), "org.apache.calcite.jdbc.Driver")
+    }
+    return sqlInstance
+  }
+
+  def void sql(String query) {
+    getSql().eachRow(query) { row ->
+      println row
+    }
+  }
+
+  def void sql(String query, Closure closure) {
+    getSql().eachRow(query, closure)
+  }
 }
