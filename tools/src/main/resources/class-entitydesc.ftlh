@@ -135,6 +135,9 @@ class Environment implements RepositoryProvider {
             def List<KeyValue<${attribute.type}>> listPrefix(String key, String prefix) {
               return ${entity.classname}Descriptor.this.reader.list(key, desc.toAttributePrefix() + prefix)
             }
+            def boolean isCase(String key) {
+              return !list(key).isEmpty()
+            }
             def void put(String key, String attribute, Object value) {
               console.put(${entity.classname}Descriptor.this.desc, desc, key, desc.toAttributePrefix() + attribute, value)
             }
@@ -156,6 +159,9 @@ class Environment implements RepositoryProvider {
           <#else>
             def KeyValue<${attribute.type}> get(String key) {
               return ${entity.classname}Descriptor.this.reader.get(key, name)
+            }
+            def boolean isCase(String key) {
+              return get(key) != null
             }
             def void put(String key, Object value) {
               console.put(${entity.classname}Descriptor.this.desc, desc, key, desc.getName(), value)
