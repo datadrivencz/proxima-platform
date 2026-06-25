@@ -138,3 +138,7 @@ A replica attribute family might also specify an optional `filter`, which will t
 The filter must implement [StorageFilter](https://datadrivencz.github.io/proxima-platform/apidocs/cz/o2/proxima/core/storage/StorageFilter.html) interface.
 
 With this high-level description of entities and attribute families, we are ready to see how will this definition by actually used to access the data and to ensure eventual consistency between primary and replica storages. Let's first see the latter described in [Replication]({{< relref "/book/replication" >}}).
+
+## Supported IO Modules
+
+For a full list of supported physical storages (like Kafka, Cassandra, PubSub, etc.), see [Supported IO Modules]({{< relref "/book/supported-io" >}}).
