@@ -5,12 +5,15 @@ The [Proxima platform](http://github.com/O2-Czech-Republic/proxima-platform.git)
 This documentation covers various aspects of the platform, namely:
 
  * [Data model]({{< relref "/book/datamodel" >}})
+ * [Serialization Schemes]({{< relref "/book/schemes" >}})
  * [Storages]({{< relref "/book/storages" >}})
+ * [Supported IO Modules]({{< relref "/book/supported-io" >}})
  * [Replication]({{< relref "/book/replication" >}})
  * [Transformations]({{< relref "/book/transformations" >}})
  * [Code generator]({{< relref "/book/generator" >}})
  * [Tools]({{< relref "/book/tools" >}})
  * [Data operators]({{< relref "/book/operators" >}})
+ * [RPC Server]({{< relref "/book/rpc" >}})
  * [Transactions]({{< relref "/book/transactions" >}})
 
 The platform uses a specific configuration file that describes the data model, storages and other properties needed. The configuration uses [HOCON](https://github.com/lightbend/config) syntax and various aspects of the configuration are described in the respective chapters of this documentation. The configuration file is then used to create a ```Repository``` as follows:
