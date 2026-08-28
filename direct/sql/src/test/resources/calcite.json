@@ -1,0 +1,14 @@
+{
+  "version": "1.0",
+  "defaultSchema": "PROXIMA",
+  "schemas": [
+    {
+      "type": "custom",
+      "name": "PROXIMA",
+      "factory": "cz.o2.proxima.direct.sql.ProximaSchemaFactory",
+      "operand": {
+        "config": "sql-reference.conf"
+      }
+    }
+  ]
+}

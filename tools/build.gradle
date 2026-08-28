@@ -27,6 +27,7 @@ dependencies {
   api project(path: ':proxima-core')
   api project(path: ':proxima-server-rpc-proto')
   api libraries.groovy
+  api libraries.groovy_sql
   api libraries.groovysh
   implementation "cz.o2.proxima:proxima-vendor:${project.version}"
   implementation libraries.slf4j_api
@@ -50,6 +51,7 @@ dependencies {
   testImplementation project(path: ':proxima-core', configuration: "testsJar")
   testImplementation project(path: ':proxima-direct-core', configuration: "testsJar")
   testImplementation project(path: ':proxima-direct-core')
+  testImplementation project(path: ':proxima-direct-sql')
   compileOnly project(path: ':proxima-direct-core')
   compileOnly libraries.auto_service_annotations
   compileAnnotationProcessor libraries.lombok
