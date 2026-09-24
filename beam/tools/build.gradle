@@ -43,6 +43,7 @@ dependencies {
   testImplementation project(path: ':proxima-direct-core')
   testImplementation project(path: ':proxima-direct-core', configuration: 'testsJar')
   testImplementation project(path: ':proxima-tools', configuration: 'testsJar')
+  testImplementation project(path: ':proxima-direct-sql')
   testImplementation libraries.spark_core
   testImplementation libraries.slf4j_log4j
   testImplementation libraries.log4j_core

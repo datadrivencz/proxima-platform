@@ -1183,4 +1183,66 @@ public abstract class GroovyEnvTest extends GroovyTest {
                 Function.identity(),
                 Collectors.mapping(a -> 1, Collectors.reducing(0, Integer::sum))));
   }
+
+  @Test
+  public void testInOperator() throws Exception {
+    Script compiled =
+        compile(
+            "def res = [:]\n"
+                + "res['regular_found'] = 'key' in env.gateway.armed\n"
+                + "res['regular_not_found'] = 'unknown' in env.gateway.armed\n"
+                + "res['wildcard_found'] = 'key' in env.gateway.device\n"
+                + "res['wildcard_not_found'] = 'unknown' in env.gateway.device\n"
+                + "res");
+
+    write(
+        StreamElement.upsert(
+            gateway,
+            armed,
+            "uuid1",
+            "key",
+            armed.getName(),
+            System.currentTimeMillis(),
+            new byte[] {}));
+    write(
+        StreamElement.upsert(
+            gateway,
+            device,
+            "uuid2",
+            "key",
+            device.toAttributePrefix() + "1",
+            System.currentTimeMillis(),
+            new byte[] {}));
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    Map<String, Boolean> result = (Map) compiled.run();
+    assertTrue(result.get("regular_found"));
+    assertFalse(result.get("regular_not_found"));
+    assertTrue(result.get("wildcard_found"));
+    assertFalse(result.get("wildcard_not_found"));
+  }
+
+  @Test
+  public void testSql() throws Exception {
+    Script compiled =
+        compile(
+            "def res = []\n"
+                + "env.sql(\"SELECT * FROM proxima.gateway WHERE key = 'gw'\") { row -> res.add(row.key) }\n"
+                + "res");
+
+    write(
+        StreamElement.upsert(
+            gateway,
+            armed,
+            "uuid1",
+            "gw",
+            armed.getName(),
+            System.currentTimeMillis(),
+            new byte[] {}));
+
+    @SuppressWarnings("unchecked")
+    List<String> result = (List<String>) compiled.run();
+    assertEquals(1, result.size());
+    assertEquals("gw", result.get(0));
+  }
 }
