@@ -1,0 +1,16 @@
+syntax = "proto3";
+package cz.o2.proxima.direct.sql.proto;
+
+message GatewayDetails {
+  string name = 1;
+  repeated string tags = 2;
+}
+
+message UserToGateway {
+  enum Role {
+    UNKNOWN = 0;
+    USER = 1;
+    OWNER = 2;
+  }
+  Role role = 1;
+}

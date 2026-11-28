@@ -66,6 +66,7 @@ ext.libraries = [
   flink_test_util: "org.apache.flink:flink-test-utils:${flink_version}",
   gen_grpc: "io.grpc:protoc-gen-grpc-java:${grpc_version}",
   groovy: "org.apache.groovy:groovy:${groovy_version}",
+  groovy_sql: "org.apache.groovy:groovy-sql:${groovy_version}",
   groovysh: "org.apache.groovy:groovy-groovysh:${groovy_version}",
   grpc_all: "io.grpc:grpc-all:${grpc_version}",
   grpc_api: "io.grpc:grpc-api:${grpc_version}",

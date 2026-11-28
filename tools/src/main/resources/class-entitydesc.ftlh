@@ -135,6 +135,9 @@ class Environment implements RepositoryProvider {
             def List<KeyValue<${attribute.type}>> listPrefix(String key, String prefix) {
               return ${entity.classname}Descriptor.this.reader.list(key, desc.toAttributePrefix() + prefix)
             }
+            def boolean isCase(String key) {
+              return !list(key).isEmpty()
+            }
             def void put(String key, String attribute, Object value) {
               console.put(${entity.classname}Descriptor.this.desc, desc, key, desc.toAttributePrefix() + attribute, value)
             }
@@ -156,6 +159,9 @@ class Environment implements RepositoryProvider {
           <#else>
             def KeyValue<${attribute.type}> get(String key) {
               return ${entity.classname}Descriptor.this.reader.get(key, name)
+            }
+            def boolean isCase(String key) {
+              return get(key) != null
             }
             def void put(String key, Object value) {
               console.put(${entity.classname}Descriptor.this.desc, desc, key, desc.getName(), value)
@@ -249,5 +255,39 @@ class Environment implements RepositoryProvider {
 
   def <T> WindowedStream<T> periodicImpulse(String name, Closure<T> factory, long durationMs) {
     return console.getPeriodicImpulse(name, factory, durationMs);
+  }
+
+  private groovy.sql.Sql sqlInstance = null
+
+  def groovy.sql.Sql getSql() {
+    if (sqlInstance == null) {
+      cz.o2.proxima.tools.groovy.util.SqlContextRepoFactory.setRepo(getRepo())
+      def model = '''{
+        "version": "1.0",
+        "defaultSchema": "PROXIMA",
+        "schemas": [
+          {
+            "type": "custom",
+            "name": "PROXIMA",
+            "factory": "cz.o2.proxima.direct.sql.ProximaSchemaFactory",
+            "operand": {
+              "repo-factory": "cz.o2.proxima.tools.groovy.util.SqlContextRepoFactory"
+            }
+          }
+        ]
+      }'''
+      sqlInstance = groovy.sql.Sql.newInstance("jdbc:calcite:model=inline:" + model, new java.util.Properties(), "org.apache.calcite.jdbc.Driver")
+    }
+    return sqlInstance
+  }
+
+  def void sql(String query) {
+    getSql().eachRow(query) { row ->
+      println row
+    }
+  }
+
+  def void sql(String query, Closure closure) {
+    getSql().eachRow(query, closure)
   }
 }
